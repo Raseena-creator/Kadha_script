@@ -32,7 +32,9 @@ if allowed_hosts_env:
 elif DEBUG:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '[::1]']
 else:
-    ALLOWED_HOSTS = []
+    ALLOWED_HOSTS = ['kadha-script.onrender.com',
+    'localhost',
+    '127.0.0.1',]
 
 if 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
