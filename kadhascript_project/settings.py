@@ -14,6 +14,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 import os
+import dj_database_url
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -113,16 +114,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'kadhascript_project.wsgi.application'
 
+# ==============================================================================
 # Database Configuration
-# Default: PostgreSQL with environment variables; optional SQLite for dev/testing
-DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
-DB_NAME = os.getenv('DB_NAME', 'kadhascript')
-DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT', '5432')
+# ==============================================================================
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-if 'sqlite' in DB_ENGINE.lower() or os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 't'):
+if DATABASE_URL:
+    # Production: Uses Render's DATABASE_URL connection string
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
+elif os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 't'):
+    # Local fallback to SQLite
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -130,20 +137,20 @@ if 'sqlite' in DB_ENGINE.lower() or os.getenv('USE_SQLITE', 'False').lower() in 
         }
     }
 else:
+    # Local fallback to PostgreSQL via individual environment variables
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
-            'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
+            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+            'NAME': os.getenv('DB_NAME', 'kadhascript'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
             'OPTIONS': {
                 'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '5')),
             },
         }
     }
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
