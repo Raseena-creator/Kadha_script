@@ -59,6 +59,7 @@ class KadhaEditor {
         this.autocompleteDropdown = document.getElementById('characterAutocomplete');
         this.autocompleteIndex = -1;
 
+        window.editor = this;
         this.init();
     }
 
@@ -210,7 +211,6 @@ class KadhaEditor {
 
     renderSceneElements(scene, elements) {
         this.pageContainer.innerHTML = '';
-        this.currentSceneTransition = (scene.transition || this.currentSceneTransition || 'CUT TO').trim();
 
         const allElements = elements || [];
         const contentElements = allElements.filter(e => e.element_type !== 'note');
@@ -224,9 +224,6 @@ class KadhaEditor {
                 this.createElementBlock(elem.element_type, elem.content);
             });
         }
-
-        // Render Scene-End Transition Bar before notes
-        this.renderSceneEndTransition();
 
         // Render any Notes
         noteElements.forEach(elem => {
@@ -245,118 +242,24 @@ class KadhaEditor {
         }
     }
 
-    renderSceneEndTransition() {
-        const transBar = document.createElement('div');
-        transBar.className = 'scene-end-transition-bar user-select-none';
-        transBar.contentEditable = 'false';
+    formatParenthetical(text) {
+        if (!text) return '';
+        let trimmed = text.trim();
+        if (!trimmed) return '';
 
-        const standardTransitions = ['CUT TO', 'DISSOLVE TO', 'FADE OUT', 'INTERCUT', 'CUT BACK TO'];
-        const currentTrans = (this.currentSceneTransition || 'CUT TO').trim();
-        const isStandard = standardTransitions.includes(currentTrans);
+        // Strip any existing outer parentheses (including multiples or unmatched)
+        while (trimmed.startsWith('(') && trimmed.endsWith(')') && trimmed.length >= 2) {
+            trimmed = trimmed.slice(1, -1).trim();
+        }
+        if (trimmed.startsWith('(')) {
+            trimmed = trimmed.slice(1).trim();
+        }
+        if (trimmed.endsWith(')')) {
+            trimmed = trimmed.slice(0, -1).trim();
+        }
 
-        // Clean clickable display element (visible by default)
-        const displayEl = document.createElement('div');
-        displayEl.className = 'scene-end-transition-display font-screenplay';
-        displayEl.title = 'Click to change scene-end transition';
-        displayEl.innerText = currentTrans || 'CUT TO';
-
-        // In-place dropdown / picker (hidden by default)
-        const pickerEl = document.createElement('div');
-        pickerEl.className = 'scene-end-transition-picker';
-        pickerEl.style.display = 'none';
-
-        const select = document.createElement('select');
-        select.className = 'form-select form-select-sm scene-end-transition-select font-screenplay';
-        select.title = 'Select Scene-End Transition';
-
-        select.innerHTML = `
-            <option value="CUT TO" ${currentTrans === 'CUT TO' ? 'selected' : ''}>CUT TO</option>
-            <option value="DISSOLVE TO" ${currentTrans === 'DISSOLVE TO' ? 'selected' : ''}>DISSOLVE TO</option>
-            <option value="FADE OUT" ${currentTrans === 'FADE OUT' ? 'selected' : ''}>FADE OUT</option>
-            <option value="INTERCUT" ${currentTrans === 'INTERCUT' ? 'selected' : ''}>INTERCUT</option>
-            <option value="CUT BACK TO" ${currentTrans === 'CUT BACK TO' ? 'selected' : ''}>CUT BACK TO</option>
-            <option value="Other" ${!isStandard ? 'selected' : ''}>Other</option>
-        `;
-
-        const customInput = document.createElement('input');
-        customInput.type = 'text';
-        customInput.className = 'form-control form-control-sm scene-end-transition-custom font-screenplay font-malayalam';
-        customInput.placeholder = 'Enter custom transition...';
-        customInput.spellcheck = false;
-        customInput.autocomplete = 'off';
-        customInput.value = !isStandard ? currentTrans : '';
-        customInput.style.display = !isStandard ? 'block' : 'none';
-
-        const closePicker = () => {
-            pickerEl.style.display = 'none';
-            displayEl.style.display = 'inline-block';
-            displayEl.innerText = this.currentSceneTransition || 'CUT TO';
-        };
-
-        const openPicker = () => {
-            displayEl.style.display = 'none';
-            pickerEl.style.display = 'inline-flex';
-            if (standardTransitions.includes(this.currentSceneTransition)) {
-                select.value = this.currentSceneTransition;
-                customInput.style.display = 'none';
-                customInput.value = '';
-            } else {
-                select.value = 'Other';
-                customInput.style.display = 'block';
-                customInput.value = this.currentSceneTransition;
-            }
-            select.focus();
-        };
-
-        displayEl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openPicker();
-        });
-
-        select.addEventListener('change', (e) => {
-            e.stopPropagation();
-            if (select.value === 'Other') {
-                customInput.style.display = 'block';
-                customInput.focus();
-                customInput.select();
-                const customVal = customInput.value.trim();
-                this.currentSceneTransition = customVal || 'Other';
-            } else {
-                customInput.style.display = 'none';
-                this.currentSceneTransition = select.value;
-                closePicker();
-            }
-            this.markDirty();
-        });
-
-        customInput.addEventListener('input', (e) => {
-            const val = customInput.value.trim();
-            this.currentSceneTransition = val || 'Other';
-            this.markDirty();
-        });
-
-        customInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                closePicker();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                closePicker();
-            }
-        });
-
-        const handleOutsideClick = (e) => {
-            if (!transBar.contains(e.target) && pickerEl.style.display !== 'none') {
-                closePicker();
-            }
-        };
-        document.addEventListener('click', handleOutsideClick);
-
-        pickerEl.appendChild(select);
-        pickerEl.appendChild(customInput);
-        transBar.appendChild(displayEl);
-        transBar.appendChild(pickerEl);
-        this.pageContainer.appendChild(transBar);
+        if (!trimmed) return '';
+        return `(${trimmed})`;
     }
 
     createElementBlock(type = 'action', content = '', insertAfter = null) {
@@ -485,13 +388,100 @@ class KadhaEditor {
             });
 
             this.bindElementEvents(block, editable);
+        } else if (type === 'transition') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'transition-element-wrapper';
+
+            const editable = document.createElement('div');
+            editable.className = 'element-content font-screenplay font-malayalam';
+            editable.contentEditable = 'true';
+            editable.spellcheck = false;
+            editable.dataset.placeholder = this.getPlaceholderForType(type);
+            editable.innerText = content ? content.trim() : 'CUT TO:';
+
+            const pickerDropdown = document.createElement('div');
+            pickerDropdown.className = 'transition-picker-dropdown dropdown';
+            pickerDropdown.contentEditable = 'false';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-sm transition-dropdown-btn dropdown-toggle';
+            toggleBtn.type = 'button';
+            toggleBtn.dataset.bsToggle = 'dropdown';
+            toggleBtn.dataset.bsPopperConfig = '{"strategy":"fixed"}';
+            toggleBtn.title = 'Select transition';
+            toggleBtn.tabIndex = -1;
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+
+            const menu = document.createElement('ul');
+            menu.className = 'dropdown-menu dropdown-menu-end shadow-sm small transition-options-menu';
+
+            const standardTransitions = [
+                'CUT TO:',
+                'FADE IN:',
+                'FADE OUT:',
+                'DISSOLVE TO:',
+                'SMASH CUT TO:',
+                'MATCH CUT TO:',
+                'INTERCUT',
+                'CUT BACK TO:',
+            ];
+
+            standardTransitions.forEach(trans => {
+                const li = document.createElement('li');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'dropdown-item transition-opt-item';
+                btn.innerText = trans;
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    editable.innerText = trans;
+                    this.markDirty();
+                    this.calculateLiveStats();
+                    editable.focus();
+                    this.setCursorToEnd(editable);
+                });
+                li.appendChild(btn);
+                menu.appendChild(li);
+            });
+
+            const divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            menu.appendChild(divider);
+
+            const customLi = document.createElement('li');
+            const customBtn = document.createElement('button');
+            customBtn.type = 'button';
+            customBtn.className = 'dropdown-item text-muted';
+            customBtn.innerHTML = '<i class="bi bi-pencil me-1"></i> Custom Transition...';
+            customBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editable.focus();
+                const range = document.createRange();
+                range.selectNodeContents(editable);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
+            customLi.appendChild(customBtn);
+            menu.appendChild(customLi);
+
+            pickerDropdown.appendChild(toggleBtn);
+            pickerDropdown.appendChild(menu);
+
+            wrapper.appendChild(editable);
+            wrapper.appendChild(pickerDropdown);
+            block.appendChild(wrapper);
+
+            this.bindElementEvents(block, editable);
         } else {
             const editable = document.createElement('div');
             editable.className = 'element-content font-screenplay font-malayalam';
             editable.contentEditable = 'true';
             editable.spellcheck = false;
             editable.dataset.placeholder = this.getPlaceholderForType(type);
-            editable.innerText = content;
+            editable.innerText = (type === 'parenthetical' && content) ? this.formatParenthetical(content) : content;
 
             block.appendChild(editable);
             this.bindElementEvents(block, editable);
@@ -502,9 +492,9 @@ class KadhaEditor {
         } else if (type === 'note') {
             this.pageContainer.appendChild(block);
         } else {
-            const transBar = this.pageContainer.querySelector('.scene-end-transition-bar');
-            if (transBar && transBar.parentNode === this.pageContainer) {
-                this.pageContainer.insertBefore(block, transBar);
+            const firstNote = this.pageContainer.querySelector('.script-element-block[data-type="note"]');
+            if (firstNote && firstNote.parentNode === this.pageContainer) {
+                this.pageContainer.insertBefore(block, firstNote);
             } else {
                 this.pageContainer.appendChild(block);
             }
@@ -553,6 +543,20 @@ class KadhaEditor {
             this.updateActiveToolbarButton(block.dataset.type);
             if (this.currentTypeEl) {
                 this.currentTypeEl.innerText = this.formatTypeLabel(block.dataset.type);
+            }
+        });
+
+        editable.addEventListener('blur', () => {
+            if (block.dataset.type === 'parenthetical') {
+                const text = editable.innerText.trim();
+                if (text) {
+                    const formatted = this.formatParenthetical(text);
+                    if (editable.innerText !== formatted) {
+                        editable.innerText = formatted;
+                        this.markDirty();
+                        this.calculateLiveStats();
+                    }
+                }
             }
         });
 
@@ -629,7 +633,7 @@ class KadhaEditor {
                     block.remove();
                     this.markDirty();
                     this.calculateLiveStats();
-                    const prevEditable = prevBlock.querySelector('.element-content');
+                    const prevEditable = prevBlock.querySelector('.element-content:not(.d-none)') || prevBlock.querySelector('.element-content');
                     if (prevEditable) {
                         prevEditable.focus();
                         this.setCursorToEnd(prevEditable);
@@ -645,7 +649,7 @@ class KadhaEditor {
                     const prevBlock = block.previousElementSibling;
                     if (prevBlock && prevBlock.classList.contains('script-element-block')) {
                         e.preventDefault();
-                        const prevEditable = prevBlock.querySelector('.element-content');
+                        const prevEditable = prevBlock.querySelector('.element-content:not(.d-none)') || prevBlock.querySelector('.element-content');
                         if (prevEditable) {
                             prevEditable.focus();
                             this.setCursorToEnd(prevEditable);
@@ -658,7 +662,7 @@ class KadhaEditor {
                     const nextBlock = block.nextElementSibling;
                     if (nextBlock && nextBlock.classList.contains('script-element-block')) {
                         e.preventDefault();
-                        const nextEditable = nextBlock.querySelector('.element-content');
+                        const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
                         if (nextEditable) {
                             nextEditable.focus();
                             this.setCursorToStart(nextEditable);
@@ -682,11 +686,17 @@ class KadhaEditor {
         } else if (currentType === 'character') {
             nextType = 'dialogue';
         } else if (currentType === 'parenthetical') {
+            if (currentText) {
+                const formatted = this.formatParenthetical(currentText);
+                if (editable.innerText !== formatted) {
+                    editable.innerText = formatted;
+                }
+            }
             nextType = 'dialogue';
         } else if (currentType === 'dialogue') {
             nextType = currentText ? 'character' : 'action';
         } else if (currentType === 'transition') {
-            nextType = 'scene_heading';
+            nextType = 'action';
         } else if (currentType === 'shot') {
             nextType = 'action';
         } else if (currentType === 'note') {
@@ -694,8 +704,11 @@ class KadhaEditor {
         }
 
         const newBlock = this.createElementBlock(nextType, '', block);
-        const newEditable = newBlock.querySelector('.element-content');
-        newEditable.focus();
+        const newEditable = newBlock.querySelector('.element-content:not(.d-none)') || newBlock.querySelector('.element-content');
+        if (newEditable) {
+            newEditable.focus();
+            this.setCursorToStart(newEditable);
+        }
         this.markDirty();
         this.calculateLiveStats();
     }
@@ -714,14 +727,33 @@ class KadhaEditor {
 
     setElementType(block, newType) {
         const oldType = block.dataset.type;
+        if (oldType === newType) return;
         block.dataset.type = newType;
         const tag = block.querySelector('.element-type-tag');
         if (tag) tag.innerText = this.formatTypeLabel(newType);
 
         let editable = block.querySelector('.element-content');
+        let currentContent = editable ? editable.innerText : '';
 
-        if (oldType !== 'scene_heading' && newType === 'scene_heading') {
-            const currentContent = editable ? editable.innerText : '';
+        // Clean up old complex structures if transitioning away
+        if (oldType === 'scene_heading') {
+            const lineWrapper = block.querySelector('.scene-heading-line');
+            if (lineWrapper) lineWrapper.remove();
+            editable = null;
+        } else if (oldType === 'transition') {
+            const transWrapper = block.querySelector('.transition-element-wrapper');
+            if (transWrapper) {
+                transWrapper.remove();
+                editable = null;
+            }
+        } else if (oldType === 'parenthetical' && newType !== 'parenthetical') {
+            let trimmed = currentContent.trim();
+            if (trimmed.startsWith('(') && trimmed.endsWith(')') && trimmed.length >= 2) {
+                currentContent = trimmed.slice(1, -1).trim();
+            }
+        }
+
+        if (newType === 'scene_heading') {
             const lineWrapper = document.createElement('div');
             lineWrapper.className = 'scene-heading-line';
 
@@ -747,7 +779,6 @@ class KadhaEditor {
             this.bindElementEvents(block, editable);
         } else if (oldType === 'scene_heading' && newType !== 'scene_heading') {
             const lineWrapper = block.querySelector('.scene-heading-line');
-            const currentContent = editable ? editable.innerText : '';
             if (lineWrapper) {
                 lineWrapper.remove();
             }
@@ -756,11 +787,115 @@ class KadhaEditor {
             editable.contentEditable = 'true';
             editable.spellcheck = false;
             editable.dataset.placeholder = this.getPlaceholderForType(newType);
-            editable.innerText = currentContent;
+            if (newType === 'parenthetical' && currentContent.trim()) {
+                editable.innerText = this.formatParenthetical(currentContent);
+            } else {
+                editable.innerText = currentContent;
+            }
             block.appendChild(editable);
             this.bindElementEvents(block, editable);
-        } else if (editable) {
+        } else if (newType === 'transition') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'transition-element-wrapper';
+
+            editable = document.createElement('div');
+            editable.className = 'element-content font-screenplay font-malayalam';
+            editable.contentEditable = 'true';
+            editable.spellcheck = false;
             editable.dataset.placeholder = this.getPlaceholderForType(newType);
+            editable.innerText = currentContent.trim() ? currentContent.trim() : 'CUT TO:';
+
+            const pickerDropdown = document.createElement('div');
+            pickerDropdown.className = 'transition-picker-dropdown dropdown';
+            pickerDropdown.contentEditable = 'false';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'btn btn-sm transition-dropdown-btn dropdown-toggle';
+            toggleBtn.type = 'button';
+            toggleBtn.dataset.bsToggle = 'dropdown';
+            toggleBtn.dataset.bsPopperConfig = '{"strategy":"fixed"}';
+            toggleBtn.title = 'Select transition';
+            toggleBtn.tabIndex = -1;
+            toggleBtn.innerHTML = '<i class="bi bi-chevron-down"></i>';
+
+            const menu = document.createElement('ul');
+            menu.className = 'dropdown-menu dropdown-menu-end shadow-sm small transition-options-menu';
+
+            const standardTransitions = [
+                'CUT TO:',
+                'FADE IN:',
+                'FADE OUT:',
+                'DISSOLVE TO:',
+                'SMASH CUT TO:',
+                'MATCH CUT TO:',
+                'INTERCUT',
+                'CUT BACK TO:',
+            ];
+
+            standardTransitions.forEach(trans => {
+                const li = document.createElement('li');
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'dropdown-item transition-opt-item';
+                btn.innerText = trans;
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    editable.innerText = trans;
+                    this.markDirty();
+                    this.calculateLiveStats();
+                    editable.focus();
+                    this.setCursorToEnd(editable);
+                });
+                li.appendChild(btn);
+                menu.appendChild(li);
+            });
+
+            const divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            menu.appendChild(divider);
+
+            const customLi = document.createElement('li');
+            const customBtn = document.createElement('button');
+            customBtn.type = 'button';
+            customBtn.className = 'dropdown-item text-muted';
+            customBtn.innerHTML = '<i class="bi bi-pencil me-1"></i> Custom Transition...';
+            customBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                editable.focus();
+                const range = document.createRange();
+                range.selectNodeContents(editable);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            });
+            customLi.appendChild(customBtn);
+            menu.appendChild(customLi);
+
+            pickerDropdown.appendChild(toggleBtn);
+            pickerDropdown.appendChild(menu);
+
+            wrapper.appendChild(editable);
+            wrapper.appendChild(pickerDropdown);
+            block.appendChild(wrapper);
+
+            this.bindElementEvents(block, editable);
+        } else {
+            if (!editable) {
+                editable = document.createElement('div');
+                editable.className = 'element-content font-screenplay font-malayalam';
+                editable.contentEditable = 'true';
+                editable.spellcheck = false;
+                block.appendChild(editable);
+                this.bindElementEvents(block, editable);
+            }
+            editable.dataset.placeholder = this.getPlaceholderForType(newType);
+            if (newType === 'parenthetical') {
+                editable.innerText = currentContent.trim() ? this.formatParenthetical(currentContent) : '';
+            } else {
+                editable.innerText = currentContent;
+            }
         }
 
         this.updateActiveToolbarButton(newType);
@@ -884,7 +1019,10 @@ class KadhaEditor {
                 }
             } else {
                 const contentEl = block.querySelector('.element-content');
-                content = contentEl ? contentEl.innerText : '';
+                content = contentEl ? contentEl.innerText.trim() : '';
+                if (type === 'parenthetical' && content) {
+                    content = this.formatParenthetical(content);
+                }
             }
 
             elementsData.push({
@@ -896,9 +1034,85 @@ class KadhaEditor {
 
         return {
             heading: sceneHeading,
-            transition: this.currentSceneTransition || 'CUT TO',
             elements: elementsData,
         };
+    }
+
+    getMainSceneIdForScene(sceneId) {
+        if (!this.scenesTree || !sceneId) return Number(sceneId);
+        const sid = Number(sceneId);
+        const directMatch = this.scenesTree.find(s => Number(s.id) === sid);
+        if (directMatch) {
+            if (directMatch.is_sub_scene && directMatch.parent_scene_id) {
+                return Number(directMatch.parent_scene_id);
+            }
+            return Number(directMatch.id);
+        }
+        for (const mainSc of this.scenesTree) {
+            if (Number(mainSc.id) === sid) return Number(mainSc.id);
+            if (mainSc.sub_scenes && Array.isArray(mainSc.sub_scenes)) {
+                for (const subSc of mainSc.sub_scenes) {
+                    if (Number(subSc.id) === sid) return Number(mainSc.id);
+                }
+            }
+        }
+        return sid;
+    }
+
+    getMainSceneOrderIds() {
+        if (!this.scenesTree) return [];
+        return this.scenesTree
+            .filter(sc => !sc.is_sub_scene && !sc.parent_scene_id)
+            .map(sc => Number(sc.id));
+    }
+
+    getOrderedSceneIds() {
+        const ids = [];
+        if (!this.scenesTree) return ids;
+        this.scenesTree.forEach(mainSc => {
+            ids.push(Number(mainSc.id));
+            if (mainSc.sub_scenes && mainSc.sub_scenes.length > 0) {
+                mainSc.sub_scenes.forEach(subSc => {
+                    ids.push(Number(subSc.id));
+                });
+            }
+        });
+        return ids;
+    }
+
+    ensurePreviousSceneHasTransition() {
+        const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+        if (blocks.length === 0) return;
+
+        // Check if there is already a non-empty transition element
+        const hasTransition = blocks.some(b => {
+            if (b.dataset.type === 'transition') {
+                const text = b.querySelector('.element-content')?.innerText.trim();
+                return Boolean(text);
+            }
+            return false;
+        });
+
+        if (hasTransition) {
+            return;
+        }
+
+        // Find the last non-note element block to insert the transition after
+        let targetBlock = null;
+        for (let i = blocks.length - 1; i >= 0; i--) {
+            if (blocks[i].dataset.type !== 'note') {
+                targetBlock = blocks[i];
+                break;
+            }
+        }
+
+        if (!targetBlock) {
+            targetBlock = blocks[blocks.length - 1];
+        }
+
+        this.createElementBlock('transition', 'CUT TO:', targetBlock);
+        this.markDirty();
+        this.calculateLiveStats();
     }
 
     async saveCurrentScene(force = false) {
@@ -1177,6 +1391,16 @@ class KadhaEditor {
         const targetId = Number(newSceneId);
         if (targetId === Number(this.currentSceneId)) return;
 
+        const currentMainId = this.getMainSceneIdForScene(this.currentSceneId);
+        const targetMainId = this.getMainSceneIdForScene(targetId);
+        const mainOrder = this.getMainSceneOrderIds();
+        const currentMainIdx = mainOrder.indexOf(currentMainId);
+        const targetMainIdx = mainOrder.indexOf(targetMainId);
+
+        if (currentMainIdx !== -1 && targetMainIdx !== -1 && targetMainIdx > currentMainIdx) {
+            this.ensurePreviousSceneHasTransition();
+        }
+
         try {
             await this.flushSave();
         } catch (err) {
@@ -1197,6 +1421,7 @@ class KadhaEditor {
     // SCENE CREATION, INSERTION, SUB-SCENE & MOVE OPERATIONS
     // ----------------------------------------------------
     async appendScene() {
+        this.ensurePreviousSceneHasTransition();
         try {
             await this.flushSave();
         } catch (err) {
@@ -1308,6 +1533,9 @@ class KadhaEditor {
     }
 
     async submitInsertScene(refId, pos, heading, summary) {
+        if (pos === 'after' && Number(refId) === Number(this.currentSceneId)) {
+            this.ensurePreviousSceneHasTransition();
+        }
         try {
             await this.flushSave();
         } catch (err) {

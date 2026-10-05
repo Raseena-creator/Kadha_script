@@ -591,9 +591,47 @@
     text-align: right;
     padding-left: 45%;
 }
+.script-element-block[data-type="transition"] .transition-element-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.35rem;
+    width: 100%;
+}
 .script-element-block[data-type="transition"] .element-content {
     font-weight: 700;
     text-transform: uppercase;
+    text-align: right;
+    flex-grow: 1;
+}
+.script-element-block[data-type="transition"] .transition-dropdown-btn {
+    padding: 0.1rem 0.35rem;
+    font-size: 0.72rem;
+    color: #8c827a;
+    border: 1px solid #d1cbbf;
+    border-radius: 4px;
+    background: #faf8f4;
+    cursor: pointer;
+    opacity: 0.65;
+    transition: all 0.15s ease;
+    user-select: none;
+    flex-shrink: 0;
+}
+.script-element-block[data-type="transition"]:hover .transition-dropdown-btn,
+.script-element-block[data-type="transition"].focused .transition-dropdown-btn {
+    opacity: 1;
+    border-color: #c85a32;
+    color: #c85a32;
+    background-color: #fdf6f0;
+}
+.script-element-block[data-type="transition"] .transition-options-menu {
+    min-width: 165px;
+    font-size: 0.82rem;
+}
+.script-element-block[data-type="transition"] .transition-opt-item {
+    font-family: 'Courier Prime', 'Noto Sans Malayalam', monospace;
+    font-weight: 700;
+    font-size: 13px;
 }
 
 /* 7. Shot */
