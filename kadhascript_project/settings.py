@@ -14,6 +14,7 @@ from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 import os
+import dj_database_url
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -23,23 +24,48 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables from .env
 load_dotenv(BASE_DIR / '.env')
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-kadhascript-malayalam-screenplay-platform-key')
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't', 'yes', 'y')
+SECRET_KEY = os.getenv(
+    'SECRET_KEY',
+    'django-insecure-kadhascript-malayalam-screenplay-platform-key'
+)
 
+DEBUG = os.getenv('DEBUG', 'False').lower() in (
+    'true', '1', 't', 'yes', 'y'
+)
+
+# Allowed Hosts
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+
 if allowed_hosts_env:
-    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
-elif DEBUG:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '[::1]']
+    ALLOWED_HOSTS = [
+        host.strip()
+        for host in allowed_hosts_env.split(',')
+        if host.strip()
+    ]
 else:
-    ALLOWED_HOSTS = []
+    ALLOWED_HOSTS = [
+        'kadha-script.onrender.com',
+        'localhost',
+        '127.0.0.1',
+    ]
 
 if 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
 
-# CSRF Trusted Origins for Staging / Production HTTPS
+
+# CSRF Trusted Origins
 csrf_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
-CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [
+        origin.strip()
+        for origin in csrf_origins_env.split(',')
+        if origin.strip()
+    ]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://kadha-script.onrender.com',
+    ]
 
 # Application definition
 INSTALLED_APPS = [
@@ -88,16 +114,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'kadhascript_project.wsgi.application'
 
+# ==============================================================================
 # Database Configuration
-# Default: PostgreSQL with environment variables; optional SQLite for dev/testing
-DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
-DB_NAME = os.getenv('DB_NAME', 'kadhascript')
-DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT', '5432')
+# ==============================================================================
+DATABASE_URL = os.getenv('DATABASE_URL')
 
-if 'sqlite' in DB_ENGINE.lower() or os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 't'):
+if DATABASE_URL:
+    # Production: Uses Render's DATABASE_URL connection string
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
+    }
+elif os.getenv('USE_SQLITE', 'False').lower() in ('true', '1', 't'):
+    # Local fallback to SQLite
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -105,20 +137,20 @@ if 'sqlite' in DB_ENGINE.lower() or os.getenv('USE_SQLITE', 'False').lower() in 
         }
     }
 else:
+    # Local fallback to PostgreSQL via individual environment variables
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
-            'PASSWORD': DB_PASSWORD,
-            'HOST': DB_HOST,
-            'PORT': DB_PORT,
+            'ENGINE': os.getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+            'NAME': os.getenv('DB_NAME', 'kadhascript'),
+            'USER': os.getenv('DB_USER', 'postgres'),
+            'PASSWORD': os.getenv('DB_PASSWORD', ''),
+            'HOST': os.getenv('DB_HOST', 'localhost'),
+            'PORT': os.getenv('DB_PORT', '5432'),
             'OPTIONS': {
                 'connect_timeout': int(os.getenv('DB_CONNECT_TIMEOUT', '5')),
             },
         }
     }
-
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {
