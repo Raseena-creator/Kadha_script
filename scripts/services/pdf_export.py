@@ -4,6 +4,7 @@ from pathlib import Path
 from django.conf import settings
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
+from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT, TA_JUSTIFY
 from reportlab.platypus import (
@@ -226,10 +227,12 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
         fontName=font_bold,
         fontSize=11,
         leading=15,
-        spaceBefore=18,
+        spaceBefore=16,
         spaceAfter=8,
         keepWithNext=True,
         shaping=True,
+        backColor=colors.HexColor('#ECECEC'),
+        borderPadding=(3, 5, 3, 5),
     )
     action_style = ParagraphStyle(
         'Action',

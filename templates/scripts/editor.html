@@ -18,6 +18,16 @@
         height: 100dvh;
     }
 
+    @media (max-width: 991.98px) {
+        body {
+            overflow-x: hidden;
+            overflow-y: auto;
+            height: auto;
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+    }
+
     footer.ks-footer {
         display: none !important;
     }
@@ -191,116 +201,119 @@
     <!-- Main Writing Column -->
     <section class="editor-main">
 
-        <!-- TOPMOST TOOLBAR: Scene Management (Topmost) -->
-        <div class="editor-toolbar editor-scene-toolbar">
-            <div class="editor-scene-toolbar-left">
-                <div class="editor-nav-group">
-                    <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2"
-                        title="Back to Script Overview">
-                        <i class="bi bi-arrow-left"></i>
-                    </a>
+        <!-- TOP TOOLBARS CONTAINER (Permanently Pinned Row 1 & Row 2) -->
+        <div class="editor-top-toolbars-pinned" id="editorTopToolbarsPinned">
+            <!-- TOPMOST TOOLBAR: Scene Management (Row 1) -->
+            <div class="editor-toolbar editor-scene-toolbar">
+                <div class="editor-scene-toolbar-left">
+                    <div class="editor-nav-group">
+                        <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2"
+                            title="Back to Script Overview">
+                            <i class="bi bi-arrow-left"></i>
+                        </a>
 
-                    <!-- Mobile Drawer Toggle for Scenes -->
-                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 d-lg-none"
-                        data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" title="Open Scenes List">
-                        <i class="bi bi-collection-play text-primary"></i>
-                    </button>
+                        <!-- Mobile Drawer Toggle for Scenes -->
+                        <button type="button" class="btn btn-sm btn-light border py-1 px-2 d-lg-none"
+                            data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" title="Open Scenes List" id="btnMobileScenesToggle">
+                            <i class="bi bi-collection-play text-primary"></i>
+                        </button>
+                    </div>
+
+                    <!-- Dedicated Scene Management Controls -->
+                    <div class="editor-scene-buttons-group">
+                        <button type="button"
+                            class="btn btn-sm btn-primary-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                            id="btnTopAddScene" title="Scene (Alt + S)">
+                            <span>Scene</span>
+                        </button>
+
+                        <button type="button"
+                            class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                            id="btnTopAddSubScene" title="Sub-Scene (Alt + U)">
+                            <span>Sub-Scene</span>
+                        </button>
+
+                        <button type="button"
+                            class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                            id="btnTopAddSubScene2" title="Sub-Scene From (Alt + R)">
+                            <span>Sub-Scene From</span>
+                        </button>
+
+                        <button type="button"
+                            class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                            id="btnTopAddIntercut" title="CutBack To (Alt + B)">
+                            <span>CutBack To</span>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Dedicated Scene Management Controls -->
-                <div class="editor-scene-buttons-group">
-                    <button type="button"
-                        class="btn btn-sm btn-primary-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
-                        id="btnTopAddScene" title="Scene (Alt + S)">
-                        <span>Scene</span>
+                <!-- Right: More tools dropdown -->
+                <div class="dropdown editor-scene-toolbar-right">
+                    <button class="btn btn-sm btn-light border py-1 px-2 dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" title="More Tools">
+                        <i class="bi bi-three-dots-vertical"></i>
                     </button>
-
-                    <button type="button"
-                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
-                        id="btnTopAddSubScene" title="Sub-Scene (Alt + U)">
-                        <span>Sub-Scene</span>
-                    </button>
-
-                    <button type="button"
-                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
-                        id="btnTopAddSubScene2" title="Sub-Scene From (Alt + R)">
-                        <span>Sub-Scene From</span>
-                    </button>
-
-                    <button type="button"
-                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
-                        id="btnTopAddIntercut" title="CutBack To (Alt + B)">
-                        <span>CutBack To</span>
-                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#findReplaceModal"><i
+                                    class="bi bi-search me-2"></i>Find & Replace</button></li>
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#shortcutsModal"><i
+                                    class="bi bi-keyboard me-2"></i>Shortcuts</button></li>
+                        <li><button class="dropdown-item" id="btnToggleFullscreen"><i
+                                    class="bi bi-arrows-fullscreen me-2"></i>Fullscreen</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li class="dropdown-header small text-muted">Exports & Preview</li>
+                        <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i
+                                    class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF</a></li>
+                        <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i
+                                    class="bi bi-file-earmark-word me-2 text-primary"></i>Export Word (.docx)</a></li>
+                        <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i
+                                    class="bi bi-file-earmark-text me-2 text-secondary"></i>Export Plain Text</a></li>
+                        <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i
+                                    class="bi bi-printer me-2"></i>Print Preview</a></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item" href="{% url 'script_title_page' script.id %}"><i
+                                    class="bi bi-file-earmark-richtext me-2 text-primary"></i>Title Page & Metadata</a></li>
+                        <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
+                                    class="bi bi-grid-3x3-gap me-2"></i>Scene Management</a></li>
+                        <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i
+                                    class="bi bi-people me-2"></i>Characters</a></li>
+                        <li><a class="dropdown-item" href="{% url 'notes' script.id %}"><i
+                                    class="bi bi-sticky me-2"></i>Notes</a></li>
+                        <li><a class="dropdown-item" href="{% url 'versions' script.id %}"><i
+                                    class="bi bi-clock-history me-2"></i>Version Snapshots</a></li>
+                    </ul>
                 </div>
             </div>
 
-            <!-- Right: More tools dropdown -->
-            <div class="dropdown editor-scene-toolbar-right">
-                <button class="btn btn-sm btn-light border py-1 px-2 dropdown-toggle" type="button"
-                    data-bs-toggle="dropdown" title="More Tools">
-                    <i class="bi bi-three-dots-vertical"></i>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
-                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#findReplaceModal"><i
-                                class="bi bi-search me-2"></i>Find & Replace</button></li>
-                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#shortcutsModal"><i
-                                class="bi bi-keyboard me-2"></i>Shortcuts</button></li>
-                    <li><button class="dropdown-item" id="btnToggleFullscreen"><i
-                                class="bi bi-arrows-fullscreen me-2"></i>Fullscreen</button></li>
-                    <li>
-                        <hr class="dropdown-divider">
-                    </li>
-                    <li class="dropdown-header small text-muted">Exports & Preview</li>
-                    <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i
-                                class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF</a></li>
-                    <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i
-                                class="bi bi-file-earmark-word me-2 text-primary"></i>Export Word (.docx)</a></li>
-                    <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i
-                                class="bi bi-file-earmark-text me-2 text-secondary"></i>Export Plain Text</a></li>
-                    <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i
-                                class="bi bi-printer me-2"></i>Print Preview</a></li>
-                    <li>
-                        <hr class="dropdown-divider">
-                    </li>
-                    <li><a class="dropdown-item" href="{% url 'script_title_page' script.id %}"><i
-                                class="bi bi-file-earmark-richtext me-2 text-primary"></i>Title Page & Metadata</a></li>
-                    <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
-                                class="bi bi-grid-3x3-gap me-2"></i>Scene Management</a></li>
-                    <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i
-                                class="bi bi-people me-2"></i>Characters</a></li>
-                    <li><a class="dropdown-item" href="{% url 'notes' script.id %}"><i
-                                class="bi bi-sticky me-2"></i>Notes</a></li>
-                    <li><a class="dropdown-item" href="{% url 'versions' script.id %}"><i
-                                class="bi bi-clock-history me-2"></i>Version Snapshots</a></li>
-                </ul>
-            </div>
-        </div>
-
-        <!-- SECOND TOOLBAR: Screenplay Element Controls (Directly Below Scene Toolbar) -->
-        <div class="editor-element-bar">
-            <div class="toolbar-elements-group">
-                <button type="button" class="btn-element" data-type="scene_heading" title="Heading (Ctrl + 1)">
-                    Heading
-                </button>
-                <button type="button" class="btn-element active" data-type="action" title="Action (Ctrl + 2)">
-                    Action
-                </button>
-                <button type="button" class="btn-element" data-type="character" title="Character (Ctrl + 3)">
-                    Character
-                </button>
-                <button type="button" class="btn-element" data-type="dialogue" title="Dialogue (Ctrl + 4)">
-                    Dialogue
-                </button>
-                <button type="button" class="btn-element" data-type="parenthetical" title="Parenthetical (Ctrl + 5)">
-                    Parenthetical
-                </button>
-                <button type="button" class="btn-element" data-type="transition" title="Transition (Ctrl + 6)">
-                    Transition
-                </button>
-                <button type="button" class="btn-element" data-type="note" title="Note (Ctrl + 7)">
-                    Note
-                </button>
+            <!-- SECOND TOOLBAR: Screenplay Element Controls (Row 2) -->
+            <div class="editor-element-bar" id="editorFormattingToolbar">
+                <div class="toolbar-elements-group">
+                    <button type="button" class="btn-element" data-type="scene_heading" title="Heading (Ctrl + 1)">
+                        Heading
+                    </button>
+                    <button type="button" class="btn-element active" data-type="action" title="Action (Ctrl + 2)">
+                        Action
+                    </button>
+                    <button type="button" class="btn-element" data-type="character" title="Character (Ctrl + 3)">
+                        Character
+                    </button>
+                    <button type="button" class="btn-element" data-type="dialogue" title="Dialogue (Ctrl + 4)">
+                        Dialogue
+                    </button>
+                    <button type="button" class="btn-element" data-type="parenthetical" title="Parenthetical (Ctrl + 5)">
+                        Parenthetical
+                    </button>
+                    <button type="button" class="btn-element" data-type="transition" title="Transition (Ctrl + 6)">
+                        Transition
+                    </button>
+                    <button type="button" class="btn-element" data-type="note" title="Note (Ctrl + 7)">
+                        Note
+                    </button>
+                </div>
             </div>
         </div>
 

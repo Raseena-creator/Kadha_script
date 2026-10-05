@@ -14,7 +14,7 @@
                 </a>
             </div>
             <h2 class="fw-bold mb-1">Scene Management</h2>
-            <p class="text-muted small mb-0">Organize, reorder, insert, create sub-scenes, and structure beats in your screenplay.</p>
+            <p class="text-muted small mb-0">Organize, reorder, and navigate scenes in your screenplay.</p>
         </div>
         <div class="d-flex gap-2 mt-2 mt-md-0">
             <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks">
@@ -28,7 +28,7 @@
 
     <div class="row g-4">
         <!-- Scenes List & Management -->
-        <div class="col-lg-8">
+        <div class="col-12">
             <div class="ks-card p-4 bg-white">
                 <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
                     <h5 class="fw-bold mb-0">
@@ -73,18 +73,6 @@
                                     <i class="bi bi-three-dots"></i> Options
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                                    {% if sc.is_sub_scene %}
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="before" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-arrow-up-circle me-2 text-primary"></i> Insert Sub Scene Before
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="after" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-arrow-down-circle me-2 text-success"></i> Insert Sub Scene After
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider"></li>
                                     <li>
                                         <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="up">
                                             <i class="bi bi-arrow-up me-2 text-muted"></i> Move Up
@@ -102,49 +90,10 @@
                                     </li>
                                     <li><hr class="dropdown-divider"></li>
                                     <li>
-                                        <button type="button" class="dropdown-item text-danger btn-del-scene" data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
+                                        <button type="button" class="dropdown-item text-danger btn-del-scene" data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="{{ sc.is_sub_scene|yesno:'true,false' }}" data-heading="{{ sc.heading|escape }}">
                                             <i class="bi bi-trash me-2"></i> Delete
                                         </button>
                                     </li>
-                                    {% else %}
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="before" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-arrow-up-circle me-2 text-primary"></i> Insert Scene Before
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="after" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-arrow-down-circle me-2 text-success"></i> Insert Scene After
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-open-subscene" data-id="{{ sc.id }}" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-diagram-3 me-2 text-info"></i> Add Sub Scene
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="up">
-                                            <i class="bi bi-arrow-up me-2 text-muted"></i> Move Up
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="down">
-                                            <i class="bi bi-arrow-down me-2 text-muted"></i> Move Down
-                                        </button>
-                                    </li>
-                                    <li>
-                                        <button type="button" class="dropdown-item btn-dup-scene" data-id="{{ sc.id }}">
-                                            <i class="bi bi-copy me-2 text-muted"></i> Duplicate
-                                        </button>
-                                    </li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li>
-                                        <button type="button" class="dropdown-item text-danger btn-del-scene" data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
-                                            <i class="bi bi-trash me-2"></i> Delete
-                                        </button>
-                                    </li>
-                                    {% endif %}
                                 </ul>
                             </div>
                         </div>
@@ -157,97 +106,10 @@
                 </div>
             </div>
         </div>
-
-        <!-- Add New Scene Card -->
-        <div class="col-lg-4">
-            <div class="ks-card p-4 bg-white">
-                <h5 class="fw-bold mb-3 pb-2 border-bottom">
-                    <i class="bi bi-plus-circle me-1"></i> Add New Main Scene
-                </h5>
-                <form method="POST">
-                    {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-dark">Scene Heading (Slugline)</label>
-                        {{ form.heading }}
-                        <div class="form-text small">Standard format: INT./EXT. LOCATION - DAY/NIGHT</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-dark">Scene Beat / Summary (Optional)</label>
-                        {{ form.summary }}
-                    </div>
-                    <button type="submit" class="btn-primary-ks w-100 justify-content-center">
-                        <i class="bi bi-plus-lg"></i> Append Scene to End
-                    </button>
-                </form>
-            </div>
-        </div>
     </div>
 
 </div>
 
-<!-- Insert Scene Modal -->
-<div class="modal fade" id="insertSceneModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content ks-card border">
-            <div class="modal-header border-bottom py-2 px-3">
-                <h6 class="modal-title fw-bold" id="insertModalTitle"><i class="bi bi-plus-circle me-1 text-primary"></i> Insert Scene</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body py-3">
-                <form id="insertSceneForm">
-                    <input type="hidden" id="insertRefId" value="">
-                    <input type="hidden" id="insertPosition" value="after">
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-muted">Scene Heading (Slugline)</label>
-                        <input type="text" id="insertHeading" class="form-control font-screenplay font-malayalam" placeholder="INT. LOCATION - DAY" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-muted">Scene Summary (Optional)</label>
-                        <textarea id="insertSummary" class="form-control font-malayalam" rows="2" placeholder="Brief note about the scene beat..."></textarea>
-                    </div>
-                    <div class="d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn-primary-ks btn-sm" id="btnSubmitInsert">
-                            <span id="btnSubmitInsertText">Insert Scene</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Add Sub-Scene Modal -->
-<div class="modal fade" id="subSceneModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content ks-card border">
-            <div class="modal-header border-bottom py-2 px-3">
-                <h6 class="modal-title fw-bold" id="subSceneModalTitle"><i class="bi bi-diagram-3 me-1 text-info"></i> Add Sub-Scene</h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body py-3">
-                <form id="subSceneForm">
-                    <input type="hidden" id="subSceneParentId" value="">
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-muted">Sub-Scene Heading</label>
-                        <input type="text" id="subSceneHeading" class="form-control font-screenplay font-malayalam" placeholder="INT. SUB LOCATION - CONTINUOUS" required>
-                        <div class="form-text small">Sub-scenes (e.g. 3A, 3B) remain attached to their parent scene.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-semibold text-muted">Summary (Optional)</label>
-                        <textarea id="subSceneSummary" class="form-control font-malayalam" rows="2" placeholder="Sub-scene notes..."></textarea>
-                    </div>
-                    <div class="d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn-primary-ks btn-sm" id="btnSubmitSubScene">
-                            <span id="btnSubmitSubSceneText">Create Sub-Scene</span>
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 
 <!-- Delete Scene Confirmation Modal -->
 <div class="modal fade" id="deleteSceneModal" tabindex="-1" aria-hidden="true">
@@ -311,57 +173,7 @@
 
         // Global Event Delegation for scene action dropdown buttons
         document.addEventListener('click', async (e) => {
-            // 1. Insert Scene Before / After button clicked
-            const insertBtn = e.target.closest('.btn-open-insert');
-            if (insertBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                const refId = insertBtn.dataset.id;
-                const pos = insertBtn.dataset.pos || 'after';
-                let heading = insertBtn.dataset.heading;
-                if (!heading) {
-                    const row = insertBtn.closest('.scene-mgmt-row');
-                    heading = row ? row.querySelector('.scene-heading-link')?.textContent?.trim() : '';
-                }
-
-                const isSub = insertBtn.dataset.isSub === 'true';
-                document.getElementById('insertRefId').value = refId;
-                document.getElementById('insertPosition').value = pos;
-                document.getElementById('insertHeading').value = isSub ? 'INT. SUB LOCATION - CONTINUOUS' : 'INT. LOCATION - DAY';
-                document.getElementById('insertSummary').value = '';
-                document.getElementById('insertModalTitle').innerHTML = `<i class="bi bi-plus-circle me-1 text-primary"></i> Insert ${isSub ? 'Sub Scene' : 'Scene'} (${pos.toUpperCase()})`;
-                const btnSubmitText = document.getElementById('btnSubmitInsertText');
-                if (btnSubmitText) btnSubmitText.innerText = `Insert ${isSub ? 'Sub Scene' : 'Scene'}`;
-                
-                const insertModalEl = document.getElementById('insertSceneModal');
-                const insertModal = bootstrap.Modal.getOrCreateInstance(insertModalEl);
-                insertModal.show();
-                return;
-            }
-
-            // 2. Add Sub-Scene button clicked
-            const subBtn = e.target.closest('.btn-open-subscene');
-            if (subBtn) {
-                e.preventDefault();
-                e.stopPropagation();
-                const parentId = subBtn.dataset.id;
-                let parentHeading = subBtn.dataset.heading;
-                if (!parentHeading) {
-                    const row = subBtn.closest('.scene-mgmt-row');
-                    parentHeading = row ? row.querySelector('.scene-heading-link')?.textContent?.trim() : '';
-                }
-
-                document.getElementById('subSceneParentId').value = parentId;
-                document.getElementById('subSceneHeading').value = parentHeading ? `${parentHeading} - CONTINUOUS` : 'INT. SUB LOCATION - CONTINUOUS';
-                document.getElementById('subSceneSummary').value = '';
-                
-                const subModalEl = document.getElementById('subSceneModal');
-                const subSceneModal = bootstrap.Modal.getOrCreateInstance(subModalEl);
-                subSceneModal.show();
-                return;
-            }
-
-            // 3. Move Scene Up / Down button clicked
+            // 1. Move Scene Up / Down button clicked
             const moveBtn = e.target.closest('.btn-move-scene');
             if (moveBtn) {
                 e.preventDefault();
@@ -504,96 +316,6 @@
             });
         }
 
-        // Insert Form Submit Handler
-        const insertForm = document.getElementById('insertSceneForm');
-        if (insertForm) {
-            insertForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const refId = parseInt(document.getElementById('insertRefId').value);
-                const pos = document.getElementById('insertPosition').value;
-                const heading = document.getElementById('insertHeading').value.trim();
-                const summary = document.getElementById('insertSummary').value.trim();
-                const submitBtn = document.getElementById('btnSubmitInsert');
-                const submitBtnText = document.getElementById('btnSubmitInsertText');
-
-                if (submitBtn) submitBtn.disabled = true;
-                if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Inserting...';
-
-                try {
-                    const res = await fetch(`/scripts/api/${scriptId}/scenes/insert/`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken,
-                        },
-                        body: JSON.stringify({
-                            reference_scene_id: refId,
-                            position: pos,
-                            heading: heading,
-                            summary: summary
-                        })
-                    });
-                    const data = await res.json();
-                    if (res.ok && data.status === 'ok') {
-                        const insertModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('insertSceneModal'));
-                        insertModal.hide();
-                        window.location.reload();
-                    } else {
-                        showAlert(data.message || 'Error inserting scene');
-                        if (submitBtn) submitBtn.disabled = false;
-                        if (submitBtnText) submitBtnText.innerText = 'Insert Scene';
-                    }
-                } catch (err) {
-                    showAlert('Network error while inserting scene');
-                    if (submitBtn) submitBtn.disabled = false;
-                    if (submitBtnText) submitBtnText.innerText = 'Insert Scene';
-                }
-            });
-        }
-
-        // Sub Scene Form Submit Handler
-        const subSceneForm = document.getElementById('subSceneForm');
-        if (subSceneForm) {
-            subSceneForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const parentId = parseInt(document.getElementById('subSceneParentId').value);
-                const heading = document.getElementById('subSceneHeading').value.trim();
-                const summary = document.getElementById('subSceneSummary').value.trim();
-                const submitBtn = document.getElementById('btnSubmitSubScene');
-                const submitBtnText = document.getElementById('btnSubmitSubSceneText');
-
-                if (submitBtn) submitBtn.disabled = true;
-                if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Creating...';
-
-                try {
-                    const res = await fetch(`/scripts/api/${scriptId}/scenes/${parentId}/subscene/`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': csrfToken,
-                        },
-                        body: JSON.stringify({
-                            heading: heading,
-                            summary: summary
-                        })
-                    });
-                    const data = await res.json();
-                    if (res.ok && data.status === 'ok') {
-                        const subSceneModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('subSceneModal'));
-                        subSceneModal.hide();
-                        window.location.reload();
-                    } else {
-                        showAlert(data.message || 'Error creating sub-scene');
-                        if (submitBtn) submitBtn.disabled = false;
-                        if (submitBtnText) submitBtnText.innerText = 'Create Sub-Scene';
-                    }
-                } catch (err) {
-                    showAlert('Network error while creating sub-scene');
-                    if (submitBtn) submitBtn.disabled = false;
-                    if (submitBtnText) submitBtnText.innerText = 'Create Sub-Scene';
-                }
-            });
-        }
     }
 
     if (document.readyState === 'loading') {

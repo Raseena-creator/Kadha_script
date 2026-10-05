@@ -173,6 +173,8 @@ class Scene(models.Model):
             suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
             return f"{base}{suffix}"
         if self.is_intercut:
+            if self.intercut_source:
+                return self.intercut_source.scene_identifier
             return f"Scene {self.scene_number}"
         return f"Scene {self.scene_number}{self.duplicate_suffix}"
 

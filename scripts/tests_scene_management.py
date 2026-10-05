@@ -526,18 +526,30 @@ class SceneManagementAndMobileTests(TestCase):
         self.assertNotEqual(cloned_sub.elements.first().id, sub_1a.elements.first().id)
 
     def test_31_subscene_actions_ui_rendering(self):
-        """Verify UI renders Insert Sub Scene Before/After and NO Add Sub Scene for sub-scenes"""
+        """Verify scenes.html has no creation/insert/sub-scene buttons (Req #6), while reordering/duplicate/delete remain, and editor retains sub-scene actions"""
         s7 = Scene.objects.create(script=self.script_a, scene_number=7, heading='SCENE 7', order=0)
         sub_7a = create_sub_scene(self.script_a, parent_scene_id=s7.id, heading='SUB 7A')
-        
-        # Test scenes.html page
+
+        # Test scenes.html page - verify scene creation actions are absent (Req #6)
         res = self.client_a.get(reverse('scenes_management', args=[self.script_a.id]))
         content = res.content.decode('utf-8')
-        self.assertIn('Insert Sub Scene Before', content)
-        self.assertIn('Insert Sub Scene After', content)
-        self.assertIn('Add Sub Scene', content) # Only for main scene
+        self.assertNotIn('Add New Main Scene', content)
+        self.assertNotIn('Append Scene to End', content)
+        self.assertNotIn('Insert Scene Before', content)
+        self.assertNotIn('Insert Scene After', content)
+        self.assertNotIn('Insert Sub Scene Before', content)
+        self.assertNotIn('Insert Sub Scene After', content)
+        self.assertNotIn('Add Sub Scene', content)
 
-        # Test editor.html page
+        # Verify management, reordering, duplicate, delete, and editor navigation remain on scenes.html
+        self.assertIn('Move Up', content)
+        self.assertIn('Move Down', content)
+        self.assertIn('Duplicate', content)
+        self.assertIn('Delete', content)
+        self.assertIn('Open Editor', content)
+        self.assertIn('Edit', content)
+
+        # Test editor.html page - scene creation/insertion remains fully functional in editor
         res_ed = self.client_a.get(f"{reverse('script_editor', args=[self.script_a.id])}?scene={sub_7a.id}")
         content_ed = res_ed.content.decode('utf-8')
         self.assertIn('Insert Sub Scene Before', content_ed)

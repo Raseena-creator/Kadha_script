@@ -74,6 +74,7 @@ class KadhaEditor {
         this.bindSceneSearch();
         this.bindFindReplace();
         this.bindNetworkEvents();
+        this.bindSwipeNavigation();
     }
 
     // CSRF & Headers helper
@@ -98,6 +99,7 @@ class KadhaEditor {
             this.scenesTree = data.scenes_tree || [];
             this.currentSceneIsSub = Boolean(data.scene.is_sub_scene);
             this.currentMainSceneId = data.scene.parent_scene_id || data.scene.id;
+            this.currentSceneIntercutSourceId = data.scene.intercut_source_id || null;
             this.currentSceneIdentifier = data.scene.scene_identifier || (data.scene.is_sub_scene ? 'Scene 1.A' : 'Scene 1');
             this.currentSceneTransition = (data.scene.transition || 'CUT TO').trim();
             const cleanHeading = (data.scene.clean_heading || data.scene.heading || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
@@ -1845,7 +1847,7 @@ class KadhaEditor {
     // ----------------------------------------------------
     // PREVIOUS SCENE SELECTION (SUB-SCENE 2 & INTERCUT)
     // ----------------------------------------------------
-    getPreviousScenes() {
+    getPreviousScenes(includeSubScenes = false) {
         const flat = [];
         const traverse = (items) => {
             if (!items || !Array.isArray(items)) return;
@@ -1867,13 +1869,20 @@ class KadhaEditor {
         const seen = new Set();
         const eligible = [];
         for (const sc of previousItems) {
-            // Find parent if it is a sub-scene or use main scene
-            const target = sc.is_sub_scene && sc.parent_scene_id
-                ? (previousItems.find(p => Number(p.id) === Number(sc.parent_scene_id)) || sc)
-                : sc;
-            if (target && !seen.has(Number(target.id))) {
-                seen.add(Number(target.id));
-                eligible.push(target);
+            if (includeSubScenes) {
+                if (!seen.has(Number(sc.id))) {
+                    seen.add(Number(sc.id));
+                    eligible.push(sc);
+                }
+            } else {
+                // Find parent if it is a sub-scene or use main scene
+                const target = sc.is_sub_scene && sc.parent_scene_id
+                    ? (previousItems.find(p => Number(p.id) === Number(sc.parent_scene_id)) || sc)
+                    : sc;
+                if (target && !seen.has(Number(target.id))) {
+                    seen.add(Number(target.id));
+                    eligible.push(target);
+                }
             }
         }
         return eligible;
@@ -1899,7 +1908,8 @@ class KadhaEditor {
             searchEl.value = '';
         }
 
-        const scenes = this.getPreviousScenes();
+        const includeSubScenes = (mode === 'intercut');
+        const scenes = this.getPreviousScenes(includeSubScenes);
         this.renderSceneSelectItems(scenes);
 
         if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
@@ -1942,10 +1952,21 @@ class KadhaEditor {
         }
 
         const html = filtered.map(sc => {
+            const isSubScene = Boolean(sc.is_sub_scene);
             const fullHeading = sc.full_display_heading || `${sc.scene_identifier || sc.display_number_formatted} : ${sc.clean_heading || sc.heading}`;
+            const isCurrentTarget = this.currentSceneIntercutSourceId && Number(this.currentSceneIntercutSourceId) === Number(sc.id);
+            const indentStyle = isSubScene ? 'padding-left: 1.75rem !important;' : '';
+            const subSceneBadge = isSubScene ? '<span class="badge bg-secondary-subtle text-secondary me-2 px-1.5 py-0.5" style="font-size:0.65rem;">SUB-SCENE</span>' : '';
+            const subScenePrefix = isSubScene ? '<span class="text-muted me-1">↳</span>' : '';
+            const activeClass = isCurrentTarget ? 'border-primary bg-light' : '';
+
             return `
-                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3 border-0 border-bottom editor-scene-select-item" data-scene-id="${sc.id}">
-                    <span class="font-screenplay font-malayalam fw-semibold text-dark text-wrap me-2" style="word-break: break-word; text-align: left;">${fullHeading}</span>
+                <button type="button" class="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 px-3 border-0 border-bottom editor-scene-select-item ${activeClass}" style="${indentStyle}" data-scene-id="${sc.id}">
+                    <div class="d-flex align-items-center flex-wrap me-2 text-start">
+                        ${subScenePrefix}
+                        ${subSceneBadge}
+                        <span class="font-screenplay font-malayalam fw-semibold text-dark text-wrap" style="word-break: break-word;">${fullHeading}</span>
+                    </div>
                     <i class="bi bi-chevron-right text-muted ms-auto small flex-shrink-0"></i>
                 </button>
             `;
@@ -1967,7 +1988,8 @@ class KadhaEditor {
         const searchEl = document.getElementById('editorSceneSelectSearch');
         if (searchEl) {
             searchEl.addEventListener('input', (e) => {
-                const scenes = this.getPreviousScenes();
+                const includeSubScenes = (this.sceneSelectMode === 'intercut');
+                const scenes = this.getPreviousScenes(includeSubScenes);
                 this.renderSceneSelectItems(scenes, e.target.value);
             });
         }
@@ -2340,6 +2362,78 @@ class KadhaEditor {
             console.warn('Network connection lost.');
             this.setSaveStatus('offline', 'Offline / connection problem');
         });
+    }
+
+    bindSwipeNavigation() {
+        if (!this.offcanvasEl) return;
+
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchStartTime = 0;
+        let isEligible = false;
+
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1) {
+                isEligible = false;
+                return;
+            }
+
+            const target = e.target;
+            const elem = target instanceof Element ? target : (target && target.parentElement);
+            // Ignore if touching any editable element, input, button, or modal
+            if (
+                !elem ||
+                elem.isContentEditable ||
+                (elem.closest && elem.closest('[contenteditable="true"], input, textarea, select, button, a, .modal'))
+            ) {
+                isEligible = false;
+                return;
+            }
+
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchStartTime = Date.now();
+            isEligible = true;
+        }, { passive: true });
+
+        document.addEventListener('touchend', (e) => {
+            if (!isEligible || !e.changedTouches || e.changedTouches.length !== 1) {
+                return;
+            }
+
+            const touch = e.changedTouches[0];
+            const deltaX = touch.clientX - touchStartX;
+            const deltaY = touch.clientY - touchStartY;
+            const elapsedTime = Date.now() - touchStartTime;
+
+            // Must be within 500ms and predominantly horizontal
+            if (elapsedTime > 500 || Math.abs(deltaY) > 50 || Math.abs(deltaY) >= Math.abs(deltaX)) {
+                return;
+            }
+
+            const isDrawerOpen = this.offcanvasEl.classList.contains('show');
+            const offcanvasInst = (typeof bootstrap !== 'undefined' && bootstrap.Offcanvas)
+                ? bootstrap.Offcanvas.getOrCreateInstance(this.offcanvasEl)
+                : this.bsOffcanvas;
+
+            if (!isDrawerOpen) {
+                // Swipe RIGHT to OPEN:
+                // Start from the left side (avoiding extreme edge 0-20px for browser back gesture compatibility)
+                if (touchStartX >= 20 && touchStartX <= Math.max(window.innerWidth * 0.35, 120) && deltaX >= 60) {
+                    if (offcanvasInst) {
+                        offcanvasInst.show();
+                    }
+                }
+            } else {
+                // Swipe LEFT to CLOSE:
+                if (deltaX <= -50) {
+                    if (offcanvasInst) {
+                        offcanvasInst.hide();
+                    }
+                }
+            }
+        }, { passive: true });
     }
 
     // ----------------------------------------------------
