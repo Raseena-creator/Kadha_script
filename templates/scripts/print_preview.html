@@ -383,7 +383,9 @@
                     <!-- Scene Elements -->
                     {% for elem in scene.elements.all %}
                         {% if elem.element_type == 'scene_heading' %}
-                        <div class="sp-scene-heading font-malayalam">{{ elem.content|upper }}</div>
+                            {% if not forloop.first and elem.content|upper != scene.clean_heading|upper and elem.content|upper != scene.heading|upper %}
+                            <div class="sp-scene-heading font-malayalam">{{ elem.content|upper }}</div>
+                            {% endif %}
 
                         {% elif elem.element_type == 'action' %}
                         <div class="sp-action font-malayalam">{{ elem.content }}</div>

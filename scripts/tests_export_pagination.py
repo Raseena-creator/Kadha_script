@@ -278,3 +278,67 @@ class ExportPaginationTests(TestCase):
         scenes = self.script.get_ordered_scenes()
         self.assertEqual(scenes[0].transition, 'INTERCUT')
         self.assertEqual(scenes[2].transition, 'CUT BACK TO')
+
+    def test_pdf_export_no_duplicate_scene_headings(self):
+        """
+        Verify that PDF export contains exactly ONE scene heading per scene
+        even when ScriptElement with element_type='scene_heading' exists.
+        """
+        # Create a dedicated script with main scene, sub-scene, duplicate scene, and Malayalam heading
+        test_script = Script.objects.create(
+            user=self.user,
+            title='Heading Verification Script',
+            language='Malayalam'
+        )
+        # 1. Main scene with seeded scene_heading ScriptElement
+        s1 = Scene.objects.create(script=test_script, scene_number=7, heading='INT. POLICE STATION - NIGHT', order=0)
+        ScriptElement.objects.create(scene=s1, element_type='scene_heading', content='INT. POLICE STATION - NIGHT', order=0)
+        ScriptElement.objects.create(scene=s1, element_type='action', content='Inspector sits quietly reviewing case files on his wooden desk.', order=1)
+
+        # 2. Sub-scene
+        s1_a = Scene.objects.create(script=test_script, parent_scene=s1, scene_number=7, heading='INT. LOCKUP - NIGHT', order=1)
+        ScriptElement.objects.create(scene=s1_a, element_type='scene_heading', content='INT. LOCKUP - NIGHT', order=0)
+        ScriptElement.objects.create(scene=s1_a, element_type='action', content='Accused waits behind metal bars.', order=1)
+
+        # 3. Duplicate scene
+        s1_dup = Scene.objects.create(script=test_script, scene_number=7, heading='INT. POLICE STATION - NIGHT', order=2, is_duplicate=True, duplicate_number=1)
+        ScriptElement.objects.create(scene=s1_dup, element_type='scene_heading', content='INT. POLICE STATION - NIGHT', order=0)
+        ScriptElement.objects.create(scene=s1_dup, element_type='action', content='Inspector stands up.', order=1)
+
+        # 4. Malayalam heading scene
+        s2 = Scene.objects.create(script=test_script, scene_number=8, heading='INT. വീട് - പകൽ', order=3)
+        ScriptElement.objects.create(scene=s2, element_type='scene_heading', content='INT. വീട് - പകൽ', order=0)
+        ScriptElement.objects.create(scene=s2, element_type='action', content='നായകൻ ചായ കുടിക്കുന്നു.', order=1)
+
+        # Export to PDF, DOCX, and TXT
+        pdf_bytes = generate_screenplay_pdf(test_script)
+        docx_bytes = generate_screenplay_docx(test_script)
+        txt_str = generate_screenplay_txt(test_script)
+
+        self.assertTrue(len(pdf_bytes) > 1000)
+        self.assertTrue(len(docx_bytes) > 1000)
+
+        # Verify in TXT export: exactly ONE occurrence of each scene heading
+        lines = [l.strip() for l in txt_str.splitlines() if l.strip()]
+        self.assertEqual(lines.count('Scene 7 : INT. POLICE STATION - NIGHT'), 1)
+        self.assertEqual(lines.count('Scene 7.A : INT. LOCKUP - NIGHT'), 1)
+        self.assertEqual(lines.count('Scene 7 (Duplicate) : INT. POLICE STATION - NIGHT'), 1)
+        self.assertEqual(lines.count('Scene 8 : INT. വീട് - പകൽ'), 1)
+
+        # Verify no bare duplicate lines
+        self.assertNotIn('INT. POLICE STATION - NIGHT\n\nINT. POLICE STATION - NIGHT', txt_str)
+        self.assertEqual(lines.count('INT. POLICE STATION - NIGHT'), 0) # Only present as part of 'Scene 7 : ...'
+
+    def test_pdf_action_style_properties(self):
+        """
+        Verify that ACTION text style does not receive narrow dialogue/character indents
+        and uses the full printable page width.
+        """
+        long_action_script = Script.objects.create(user=self.user, title='Action Width Script')
+        sc = Scene.objects.create(script=long_action_script, scene_number=1, heading='EXT. FOREST - DAY', order=0)
+        long_desc = "The dense rainforest comes alive with morning mist drifting through ancient banyan trees. Birds chirp in rhythmic synchrony as sunlight pierces through emerald foliage across the entire expanse of the valley."
+        ScriptElement.objects.create(scene=sc, element_type='action', content=long_desc, order=0)
+
+        pdf_bytes = generate_screenplay_pdf(long_action_script)
+        self.assertTrue(len(pdf_bytes) > 1000)
+

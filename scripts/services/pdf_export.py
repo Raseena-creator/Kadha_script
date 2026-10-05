@@ -237,6 +237,9 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
         fontName=font_regular,
         fontSize=11,
         leading=15,
+        leftIndent=0,
+        rightIndent=0,
+        firstLineIndent=0,
         spaceBefore=6,
         spaceAfter=8,
         alignment=TA_LEFT,
@@ -413,9 +416,23 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             clean_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
             if elem.element_type == 'scene_heading':
+                # Skip duplicate primary scene heading already rendered at the scene header
+                clean_heading_upper = scene.clean_heading.strip().upper()
+                raw_heading_upper = (scene.heading or '').strip().upper()
+                elem_text_upper = text.strip().upper()
+                if elem.order == 0 and (
+                    elem_text_upper == clean_heading_upper
+                    or elem_text_upper == raw_heading_upper
+                ):
+                    continue
                 story.append(Paragraph(clean_text.upper(), scene_heading_style))
             elif elem.element_type == 'action':
-                story.append(Paragraph(clean_text, action_style))
+                raw_paras = [p.strip() for p in text.split('\n\n') if p.strip()]
+                if not raw_paras:
+                    raw_paras = [text]
+                for p_text in raw_paras:
+                    clean_para = p_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+                    story.append(Paragraph(clean_para, action_style))
             elif elem.element_type == 'character':
                 story.append(Paragraph(clean_text.upper(), character_style))
             elif elem.element_type == 'dialogue':

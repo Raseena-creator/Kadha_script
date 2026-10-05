@@ -43,6 +43,14 @@ def generate_screenplay_txt(script, include_notes=False) -> str:
                 continue
 
             if elem.element_type == 'scene_heading':
+                clean_heading_upper = scene.clean_heading.strip().upper()
+                raw_heading_upper = (scene.heading or '').strip().upper()
+                elem_text_upper = text.strip().upper()
+                if elem.order == 0 and (
+                    elem_text_upper == clean_heading_upper
+                    or elem_text_upper == raw_heading_upper
+                ):
+                    continue
                 lines.append(text.upper())
                 lines.append("")
             elif elem.element_type == 'action':

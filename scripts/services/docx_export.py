@@ -157,6 +157,14 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
                 continue
 
             if elem.element_type == 'scene_heading':
+                clean_heading_upper = scene.clean_heading.strip().upper()
+                raw_heading_upper = (scene.heading or '').strip().upper()
+                elem_text_upper = text.strip().upper()
+                if elem.order == 0 and (
+                    elem_text_upper == clean_heading_upper
+                    or elem_text_upper == raw_heading_upper
+                ):
+                    continue
                 elem_p = doc.add_paragraph()
                 elem_p.paragraph_format.space_before = Pt(14)
                 elem_p.paragraph_format.space_after = Pt(6)
