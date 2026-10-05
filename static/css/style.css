@@ -11,10 +11,10 @@
     --ks-text: #1d1b18;
     --ks-text-muted: #6e6a61;
     --ks-text-light: #9c978c;
-    --ks-accent: #c85a32;
-    --ks-accent-hover: #b04923;
-    --ks-accent-light: #faefe9;
-    --ks-accent-border: #eecbc0;
+    --ks-accent: #2A9D8F;
+    --ks-accent-hover: #21867a;
+    --ks-accent-light: #e8f5f3;
+    --ks-accent-border: #b2dfdb;
     --ks-success: #2e7d32;
     --ks-warning: #ed6c02;
     --ks-danger: #d32f2f;
@@ -107,7 +107,7 @@ body {
     background-color: var(--ks-accent-hover);
     color: #ffffff;
     border-color: var(--ks-accent-hover);
-    box-shadow: 0 2px 8px rgba(200, 90, 50, 0.25);
+    box-shadow: 0 2px 8px rgba(42, 157, 143, 0.25);
 }
 
 .btn-outline-ks {
@@ -227,7 +227,7 @@ body {
 
 .form-control:focus, .form-select:focus {
     border-color: var(--ks-accent);
-    box-shadow: 0 0 0 3px rgba(200, 90, 50, 0.15);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.15);
 }
 
 /* Alerts */
@@ -263,4 +263,103 @@ body {
     padding: 2rem 0;
     color: var(--ks-text-muted);
     font-size: 0.88rem;
+}
+
+/* Minimalist Project List */
+.ks-project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ks-project-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.1rem 1.35rem;
+    background-color: var(--ks-surface);
+    border: 1px solid var(--ks-border);
+    border-radius: var(--ks-radius);
+    text-decoration: none;
+    color: var(--ks-text);
+    transition: all 0.15s ease;
+}
+
+.ks-project-item:hover {
+    background-color: var(--ks-surface-subtle);
+    border-color: var(--ks-accent);
+    transform: translateY(-1px);
+    box-shadow: var(--ks-shadow-sm);
+    color: var(--ks-text);
+}
+
+.ks-project-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ks-text);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ks-project-item:hover .ks-project-title {
+    color: var(--ks-accent);
+}
+
+.ks-project-scenes {
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--ks-text-muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+    margin-left: 1rem;
+}
+
+.ks-project-item:hover .ks-project-scenes {
+    color: var(--ks-accent);
+}
+
+/* Minimalist Stat Bar */
+.ks-metrics-bar {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    background-color: var(--ks-surface);
+    border: 1px solid var(--ks-border);
+    border-radius: var(--ks-radius);
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.ks-metric-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+}
+
+.ks-metric-value {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: var(--ks-accent);
+}
+
+.ks-metric-label {
+    color: var(--ks-text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }

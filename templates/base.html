@@ -21,7 +21,7 @@
     <nav class="ks-navbar d-flex align-items-center justify-content-between">
         <div class="d-flex align-items-center gap-3">
             <a href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'landing' %}{% endif %}" class="ks-brand">
-                <i class="bi bi-pen-fill text-danger" style="color: var(--ks-accent) !important;"></i>
+                <i class="bi bi-pen-fill" style="color: var(--ks-accent) !important;"></i>
                 <span>കഥാസ്ക്രിപ്റ്റ്</span>
                 <span class="text-muted fw-normal fs-6">KadhaScript</span>
                 <span class="ks-brand-badge">Beta</span>
@@ -52,7 +52,7 @@
 
                 <a href="{% url 'script_create' %}" class="btn-primary-ks btn-sm">
                     <i class="bi bi-plus-lg"></i>
-                    <span class="d-none d-sm-inline">New Script</span>
+                    <span class="d-none d-sm-inline">New Screenplay</span>
                 </a>
 
                 <div class="dropdown ms-1">

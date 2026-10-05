@@ -13,7 +13,7 @@
         </div>
         <div class="mt-3 mt-md-0">
             <a href="{% url 'script_create' %}" class="btn-primary-ks">
-                <i class="bi bi-plus-lg"></i> New Script
+                <i class="bi bi-plus-lg"></i> New Screenplay
             </a>
         </div>
     </div>
@@ -96,7 +96,7 @@
 
                 <div class="ks-card-body flex-grow-1 pt-2 pb-3">
                     <h5 class="fw-bold mb-1">
-                        <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-dark hover-accent">
+                        <a href="{% url 'script_editor' script.id %}" class="text-decoration-none text-dark hover-accent">
                             {{ script.title }}
                         </a>
                     </h5>
@@ -107,7 +107,7 @@
                     <div class="row g-2 text-muted small bg-light p-2 rounded mb-3">
                         <div class="col-4">
                             <strong class="d-block text-dark">{{ script.scene_count }}</strong>
-                            <span>Scenes</span>
+                            <span>SCENES</span>
                         </div>
                         <div class="col-4">
                             <strong class="d-block text-dark">{{ script.word_count }}</strong>

@@ -1,216 +1,61 @@
 {% extends 'base.html' %}
 {% load static %}
 
-{% block title %}Dashboard — KadhaScript{% endblock %}
+{% block title %}Screenplays — KadhaScript{% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="container py-4" style="max-width: 860px;">
 
-    <!-- Top Welcome Banner -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom">
+    <!-- Top Action Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2">
         <div>
-            <h2 class="fw-bold mb-1">
-                നമസ്കാരം, {{ user.profile.pen_name|default:user.username }}!
-            </h2>
-            <p class="text-muted mb-0 small">
-                Welcome back to your writing studio. Pick up where you left off or begin a new screenplay.
-            </p>
+            <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.5px;">Screenplays</h2>
         </div>
-        <div class="mt-3 mt-md-0 d-flex gap-2">
-            <a href="{% url 'script_list' %}" class="btn btn-outline-ks">
-                <i class="bi bi-collection-play me-1"></i> View All Scripts ({{ total_scripts }})
-            </a>
+        <div>
             <a href="{% url 'script_create' %}" class="btn-primary-ks">
-                <i class="bi bi-plus-lg me-1"></i> Create New Script
+                <i class="bi bi-plus-lg"></i> New Screenplay
             </a>
         </div>
     </div>
 
-    <!-- Stats Overview Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-sm-6 col-lg-4">
-            <div class="ks-stat-card">
-                <div class="ks-stat-icon">
-                    <i class="bi bi-folder2-open"></i>
-                </div>
-                <div>
-                    <div class="ks-stat-value">{{ total_scripts }}</div>
-                    <div class="ks-stat-label">Total Scripts</div>
-                </div>
+    <!-- Minimalist Project Metrics -->
+    <div class="ks-metrics-bar d-flex align-items-center justify-content-between mb-4">
+        <div class="d-flex align-items-center gap-4 flex-wrap">
+            <div class="ks-metric-item">
+                <span class="ks-metric-label">Total Projects</span>
+                <span class="ks-metric-value">{{ total_scripts }}</span>
             </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-            <div class="ks-stat-card">
-                <div class="ks-stat-icon" style="background-color: #e8f5e9; color: #2e7d32;">
-                    <i class="bi bi-camera-reels"></i>
-                </div>
-                <div>
-                    <div class="ks-stat-value">{{ total_scenes }}</div>
-                    <div class="ks-stat-label">Total Scenes</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-4">
-            <div class="ks-stat-card">
-                <div class="ks-stat-icon" style="background-color: #fff3e0; color: #e65100;">
-                    <i class="bi bi-fonts"></i>
-                </div>
-                <div>
-                    <div class="ks-stat-value">{{ total_words }}</div>
-                    <div class="ks-stat-label">Total Words</div>
-                </div>
+            <div class="vr opacity-25 d-none d-sm-block"></div>
+            <div class="ks-metric-item">
+                <span class="ks-metric-label">Total SCENES</span>
+                <span class="ks-metric-value">{{ total_scenes }}</span>
             </div>
         </div>
     </div>
 
-    <!-- Filters & Search Toolbar -->
-    <div class="ks-card p-3 mb-4 bg-white">
-        <form method="GET" action="{% url 'dashboard' %}" class="row g-2 align-items-center">
-            <div class="col-md-5">
-                <div class="input-group">
-                    <span class="input-group-text bg-transparent border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                    <input type="search" name="q" class="form-control border-start-0 ps-0" placeholder="Search by title or logline..." value="{{ search_query }}">
-                </div>
-            </div>
-            <div class="col-sm-6 col-md-3">
-                <select name="genre" class="form-select">
-                    <option value="">All Genres</option>
-                    {% for g_val, g_label in genres %}
-                    <option value="{{ g_val }}" {% if genre_filter == g_val %}selected{% endif %}>{{ g_label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-sm-6 col-md-3">
-                <select name="type" class="form-select">
-                    <option value="">All Formats</option>
-                    {% for t_val, t_label in script_types %}
-                    <option value="{{ t_val }}" {% if type_filter == t_val %}selected{% endif %}>{{ t_label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-1 d-flex gap-1">
-                <button type="submit" class="btn btn-outline-ks w-100 px-2" title="Apply filter">
-                    <i class="bi bi-funnel"></i>
-                </button>
-                {% if search_query or genre_filter or type_filter %}
-                <a href="{% url 'dashboard' %}" class="btn btn-light border px-2" title="Reset filter">
-                    <i class="bi bi-x-lg"></i>
-                </a>
-                {% endif %}
-            </div>
-        </form>
-    </div>
-
-    <!-- Scripts Grid Section -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="fw-bold mb-0">
-            {% if search_query or genre_filter or type_filter %}
-                Filtered Scripts ({{ recent_scripts|length }})
-            {% else %}
-                Recently Edited Scripts
-            {% endif %}
-        </h5>
-        {% if recent_scripts %}
-        <span class="text-muted small">Showing up to {{ recent_scripts|length }} scripts</span>
-        {% endif %}
-    </div>
-
-    {% if recent_scripts %}
-    <div class="row g-4">
-        {% for script in recent_scripts %}
-        <div class="col-md-6 col-xl-4">
-            <div class="ks-card h-100 d-flex flex-column position-relative">
-                <div class="ks-card-header d-flex justify-content-between align-items-start pb-2">
-                    <div>
-                        <span class="badge-ks badge-format me-1">{{ script.script_type }}</span>
-                        <span class="badge-ks badge-genre">{{ script.genre }}</span>
-                    </div>
-                    <div class="dropdown">
-                        <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-three-dots-vertical"></i>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
-                            <li><a class="dropdown-item" href="{% url 'script_detail' script.id %}"><i class="bi bi-eye me-2"></i>Overview</a></li>
-                            <li><a class="dropdown-item" href="{% url 'script_edit_metadata' script.id %}"><i class="bi bi-pencil me-2"></i>Edit Details</a></li>
-                            <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i class="bi bi-layout-sidebar me-2"></i>Scenes ({{ script.scene_count }})</a></li>
-                            <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i class="bi bi-people me-2"></i>Characters</a></li>
-                            <li>
-                                <form action="{% url 'script_duplicate' script.id %}" method="POST" class="d-inline">
-                                    {% csrf_token %}
-                                    <button type="submit" class="dropdown-item border-0 bg-transparent" onclick="return confirm('Duplicate &quot;{{ script.title|escapejs }}&quot;?');">
-                                        <i class="bi bi-copy me-2 text-secondary"></i>Duplicate Script
-                                    </button>
-                                </form>
-                            </li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF</a></li>
-                            <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i class="bi bi-file-earmark-word me-2 text-primary"></i>Export DOCX</a></li>
-                            <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Export TXT</a></li>
-                            <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i class="bi bi-printer me-2"></i>Print Preview</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="{% url 'script_delete' script.id %}"><i class="bi bi-trash me-2"></i>Delete Script</a></li>
-                        </ul>
-                    </div>
-                </div>
-
-                <div class="ks-card-body flex-grow-1 pt-2 pb-3">
-                    <h5 class="fw-bold mb-1">
-                        <a href="{% url 'script_editor' script.id %}" class="text-decoration-none text-dark hover-accent">
-                            {{ script.title }}
-                        </a>
-                    </h5>
-                    {% if script.description %}
-                    <p class="text-muted small mb-3 text-truncate-2" style="display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 38px;">
-                        {{ script.description }}
-                    </p>
-                    {% else %}
-                    <p class="text-muted small mb-3 fst-italic">No logline provided yet.</p>
-                    {% endif %}
-
-                    <!-- Script Metrics -->
-                    <div class="row g-2 text-muted small bg-light p-2 rounded mb-3">
-                        <div class="col-4">
-                            <span class="d-block text-dark fw-bold">{{ script.scene_count }}</span>
-                            <span>Scenes</span>
-                        </div>
-                        <div class="col-4">
-                            <span class="d-block text-dark fw-bold">{{ script.word_count }}</span>
-                            <span>Words</span>
-                        </div>
-                        <div class="col-4">
-                            <span class="d-block text-dark fw-bold">~{{ script.estimated_pages }}</span>
-                            <span>Pages</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="px-3 py-2 border-top bg-light d-flex justify-content-between align-items-center rounded-bottom">
-                    <small class="text-muted" title="{{ script.updated_at }}">
-                        <i class="bi bi-clock me-1"></i> {{ script.updated_at|timesince }} ago
-                    </small>
-                    <div class="d-flex gap-2">
-                        <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks py-1 px-3">
-                            <i class="bi bi-pen"></i> Open Editor
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <!-- Clean Vertical Project List -->
+    {% if scripts %}
+    <div class="ks-project-list">
+        {% for script in scripts %}
+        <a href="{% url 'script_editor' script.id %}" class="ks-project-item" title="Open {{ script.title }} in Screenplay Editor">
+            <span class="ks-project-title font-malayalam">
+                {{ script.title }}
+            </span>
+            <span class="ks-project-scenes">
+                {% with count=script.num_scenes|default:script.scene_count %}
+                    {{ count }} {% if count == 1 %}SCENE{% else %}SCENES{% endif %}
+                {% endwith %}
+            </span>
+        </a>
         {% endfor %}
     </div>
     {% else %}
     <div class="text-center py-5 ks-card bg-white p-5">
-        <i class="bi bi-journal-text fs-1 text-muted d-block mb-3"></i>
-        <h4 class="fw-bold">No screenplays found</h4>
-        <p class="text-muted small" style="max-width: 480px; margin: 0 auto 1.5rem;">
-            {% if search_query or genre_filter or type_filter %}
-                No scripts matched your search criteria. Try clearing the filter or search with different keywords.
-            {% else %}
-                You haven't created any scripts yet. Start by writing your first Malayalam screenplay now!
-            {% endif %}
-        </p>
+        <i class="bi bi-journal-text fs-1 text-muted d-block mb-3" style="color: var(--ks-accent) !important;"></i>
+        <h4 class="fw-bold text-dark mb-2">No screenplays yet</h4>
+        <p class="text-muted small mb-4">Start writing your first Malayalam screenplay.</p>
         <a href="{% url 'script_create' %}" class="btn-primary-ks">
-            <i class="bi bi-plus-lg"></i> Create Your First Script
+            <i class="bi bi-plus-lg"></i> New Screenplay
         </a>
     </div>
     {% endif %}

@@ -13,44 +13,15 @@ def dashboard_view(request):
     user = request.user
     user_scripts = Script.objects.filter(user=user)
     
-    # Filter by genre or type if passed
-    genre_filter = request.GET.get('genre', '').strip()
-    type_filter = request.GET.get('type', '').strip()
-    search_query = request.GET.get('q', '').strip()
-
-    filtered_scripts = user_scripts
-    if search_query:
-        filtered_scripts = filtered_scripts.filter(
-            Q(title__icontains=search_query) |
-            Q(description__icontains=search_query) |
-            Q(author_name__icontains=search_query)
-        )
-    if genre_filter:
-        filtered_scripts = filtered_scripts.filter(genre=genre_filter)
-    if type_filter:
-        filtered_scripts = filtered_scripts.filter(script_type=type_filter)
-
-    # Calculate overall stats
-    all_user_scripts = user_scripts.prefetch_related('scenes__elements')
     total_scripts = user_scripts.count()
     total_scenes = Scene.objects.filter(script__user=user).count()
     
-    total_words = 0
-    for s in all_user_scripts:
-        total_words += s.word_count
-
-    recent_scripts = filtered_scripts.prefetch_related('scenes__elements').order_by('-updated_at')[:8]
+    scripts = user_scripts.annotate(num_scenes=Count('scenes')).order_by('-updated_at')
 
     return render(request, 'core/dashboard.html', {
         'total_scripts': total_scripts,
         'total_scenes': total_scenes,
-        'total_words': total_words,
-        'recent_scripts': recent_scripts,
-        'search_query': search_query,
-        'genre_filter': genre_filter,
-        'type_filter': type_filter,
-        'genres': Script.GENRE_CHOICES,
-        'script_types': Script.SCRIPT_TYPE_CHOICES,
+        'scripts': scripts,
     })
 
 
