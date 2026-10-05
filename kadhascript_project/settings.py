@@ -23,25 +23,48 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load environment variables from .env
 load_dotenv(BASE_DIR / '.env')
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-kadhascript-malayalam-screenplay-platform-key')
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't', 'yes', 'y')
+SECRET_KEY = os.getenv(
+    'SECRET_KEY',
+    'django-insecure-kadhascript-malayalam-screenplay-platform-key'
+)
 
+DEBUG = os.getenv('DEBUG', 'False').lower() in (
+    'true', '1', 't', 'yes', 'y'
+)
+
+# Allowed Hosts
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+
 if allowed_hosts_env:
-    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
-elif DEBUG:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver', '[::1]']
+    ALLOWED_HOSTS = [
+        host.strip()
+        for host in allowed_hosts_env.split(',')
+        if host.strip()
+    ]
 else:
-    ALLOWED_HOSTS = ['kadha-script.onrender.com',
-    'localhost',
-    '127.0.0.1',]
+    ALLOWED_HOSTS = [
+        'kadha-script.onrender.com',
+        'localhost',
+        '127.0.0.1',
+    ]
 
 if 'testserver' not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append('testserver')
 
-# CSRF Trusted Origins for Staging / Production HTTPS
+
+# CSRF Trusted Origins
 csrf_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
-CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [
+        origin.strip()
+        for origin in csrf_origins_env.split(',')
+        if origin.strip()
+    ]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://kadha-script.onrender.com',
+    ]
 
 # Application definition
 INSTALLED_APPS = [
