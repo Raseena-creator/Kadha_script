@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create New Script — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 720px;">
+    <div class="mb-4">
+        <a href="{% url 'dashboard' %}" class="text-decoration-none text-muted small">
+            <i class="bi bi-arrow-left me-1"></i> Back to Dashboard
+        </a>
+        <h2 class="fw-bold mt-2 mb-1">Create New Screenplay</h2>
+        <p class="text-muted small">Set up your project details. You can change these anytime in settings.</p>
+    </div>
+
+    <div class="ks-card p-4 bg-white">
+        {% if form.errors %}
+        <div class="alert alert-danger py-2 mb-3 small" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i> Please correct the errors below.
+        </div>
+        {% endif %}
+
+        <form method="POST" class="prevent-double-submit">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold text-dark">Script Title <span class="text-danger">*</span></label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                <div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>
+                {% endif %}
+                <div class="form-text small">Enter in Malayalam or English (e.g. നീലവെളിച്ചം / Neela Velicham).</div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Script Format / Type</label>
+                    {{ form.script_type }}
+                    {% if form.script_type.errors %}
+                    <div class="text-danger small mt-1">{{ form.script_type.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Genre</label>
+                    {{ form.genre }}
+                    {% if form.genre.errors %}
+                    <div class="text-danger small mt-1">{{ form.genre.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Screenwriter / Author Name</label>
+                    {{ form.author_name }}
+                    {% if form.author_name.errors %}
+                    <div class="text-danger small mt-1">{{ form.author_name.errors.0 }}</div>
+                    {% endif %}
+                    <div class="form-text small">Leave blank to use your writer pen name.</div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Primary Language</label>
+                    {{ form.language }}
+                    {% if form.language.errors %}
+                    <div class="text-danger small mt-1">{{ form.language.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold text-dark">Logline / Synopsis (Optional)</label>
+                {{ form.description }}
+                {% if form.description.errors %}
+                <div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>
+                {% endif %}
+                <div class="form-text small">A 1-2 sentence hook describing your story's protagonist, conflict, and stakes.</div>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                <a href="{% url 'dashboard' %}" class="btn btn-outline-ks">Cancel</a>
+                <button type="submit" class="btn-primary-ks px-4 submit-btn">
+                    <i class="bi bi-pen me-1"></i> Start Writing Screenplay
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

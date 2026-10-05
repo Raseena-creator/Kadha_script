@@ -1,0 +1,266 @@
+/* KadhaScript - Design System & Modern Aesthetics */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Manjari:wght@400;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap');
+
+:root {
+    --ks-bg: #fbf9f5;
+    --ks-surface: #ffffff;
+    --ks-surface-subtle: #f5f2ea;
+    --ks-surface-card: #ffffff;
+    --ks-border: #e6e1d6;
+    --ks-border-subtle: #eeebe3;
+    --ks-text: #1d1b18;
+    --ks-text-muted: #6e6a61;
+    --ks-text-light: #9c978c;
+    --ks-accent: #c85a32;
+    --ks-accent-hover: #b04923;
+    --ks-accent-light: #faefe9;
+    --ks-accent-border: #eecbc0;
+    --ks-success: #2e7d32;
+    --ks-warning: #ed6c02;
+    --ks-danger: #d32f2f;
+    --ks-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+    --ks-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --ks-shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.07);
+    --ks-radius: 8px;
+    --ks-radius-lg: 12px;
+}
+
+body {
+    background-color: var(--ks-bg);
+    color: var(--ks-text);
+    font-family: 'Inter', 'Noto Sans Malayalam', 'Manjari', -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Malayalam Font Class */
+.font-malayalam {
+    font-family: 'Noto Sans Malayalam', 'Manjari', sans-serif;
+}
+
+.font-screenplay {
+    font-family: 'Courier Prime', 'Noto Sans Malayalam', monospace;
+}
+
+/* Navbar */
+.ks-navbar {
+    background-color: var(--ks-surface);
+    border-bottom: 1px solid var(--ks-border);
+    padding: 0.75rem 1.5rem;
+}
+
+.ks-brand {
+    font-weight: 700;
+    font-size: 1.25rem;
+    color: var(--ks-text);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    letter-spacing: -0.3px;
+}
+
+.ks-brand-badge {
+    background-color: var(--ks-accent);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.ks-nav-link {
+    color: var(--ks-text-muted);
+    font-weight: 500;
+    text-decoration: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    transition: all 0.15s ease;
+}
+
+.ks-nav-link:hover, .ks-nav-link.active {
+    color: var(--ks-accent);
+    background-color: var(--ks-accent-light);
+}
+
+/* Buttons */
+.btn-primary-ks {
+    background-color: var(--ks-accent);
+    color: #ffffff;
+    border: 1px solid var(--ks-accent);
+    font-weight: 500;
+    padding: 0.5rem 1.2rem;
+    border-radius: var(--ks-radius);
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-primary-ks:hover {
+    background-color: var(--ks-accent-hover);
+    color: #ffffff;
+    border-color: var(--ks-accent-hover);
+    box-shadow: 0 2px 8px rgba(200, 90, 50, 0.25);
+}
+
+.btn-outline-ks {
+    background-color: transparent;
+    color: var(--ks-text);
+    border: 1px solid var(--ks-border);
+    font-weight: 500;
+    padding: 0.5rem 1.2rem;
+    border-radius: var(--ks-radius);
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-outline-ks:hover {
+    background-color: var(--ks-surface-subtle);
+    border-color: var(--ks-text-muted);
+    color: var(--ks-text);
+}
+
+/* Cards */
+.ks-card {
+    background-color: var(--ks-surface);
+    border: 1px solid var(--ks-border);
+    border-radius: var(--ks-radius-lg);
+    box-shadow: var(--ks-shadow-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.ks-card:hover {
+    box-shadow: var(--ks-shadow-md);
+    border-color: var(--ks-accent-border);
+}
+
+.ks-card-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--ks-border-subtle);
+    background: transparent;
+}
+
+.ks-card-body {
+    padding: 1.5rem;
+}
+
+/* Stat Box */
+.ks-stat-card {
+    background-color: var(--ks-surface);
+    border: 1px solid var(--ks-border);
+    border-radius: var(--ks-radius-lg);
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.ks-stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background-color: var(--ks-accent-light);
+    color: var(--ks-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+}
+
+.ks-stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--ks-text);
+}
+
+.ks-stat-label {
+    font-size: 0.85rem;
+    color: var(--ks-text-muted);
+    margin-top: 0.2rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Badges & Tags */
+.badge-ks {
+    background-color: var(--ks-surface-subtle);
+    color: var(--ks-text);
+    border: 1px solid var(--ks-border);
+    font-weight: 500;
+    padding: 0.35rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+}
+
+.badge-genre {
+    background-color: #f2ede4;
+    color: #4a4539;
+    border: 1px solid #d9d2c5;
+}
+
+.badge-format {
+    background-color: var(--ks-accent-light);
+    color: var(--ks-accent);
+    border: 1px solid var(--ks-accent-border);
+}
+
+/* Forms */
+.form-control, .form-select {
+    border: 1px solid var(--ks-border);
+    border-radius: var(--ks-radius);
+    padding: 0.6rem 0.9rem;
+    font-size: 0.95rem;
+    color: var(--ks-text);
+    background-color: var(--ks-surface);
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--ks-accent);
+    box-shadow: 0 0 0 3px rgba(200, 90, 50, 0.15);
+}
+
+/* Alerts */
+.alert {
+    border-radius: var(--ks-radius);
+    border: 1px solid transparent;
+    font-size: 0.92rem;
+}
+
+.alert-success {
+    background-color: #edf7ed;
+    color: #1e4620;
+    border-color: #c8e6c9;
+}
+
+.alert-danger, .alert-error {
+    background-color: #fdeded;
+    color: #5f2120;
+    border-color: #f5c6cb;
+}
+
+.alert-info {
+    background-color: #e8f4fd;
+    color: #0d3c61;
+    border-color: #b8daff;
+}
+
+/* Footer */
+.ks-footer {
+    margin-top: auto;
+    background-color: var(--ks-surface);
+    border-top: 1px solid var(--ks-border);
+    padding: 2rem 0;
+    color: var(--ks-text-muted);
+    font-size: 0.88rem;
+}

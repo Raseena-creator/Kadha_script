@@ -1,0 +1,482 @@
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.http import HttpResponse, Http404
+from django.db import transaction
+from django.db.models import Q
+from django.utils.text import slugify
+from .models import Script, Scene, ScriptElement, Character, ScriptNote, ScriptVersion, ScriptTitlePage
+from .forms import ScriptForm, CharacterForm, ScriptNoteForm, ScriptVersionForm, SceneForm, ScriptTitlePageForm
+from .services.pdf_export import generate_screenplay_pdf
+from .services.docx_export import generate_screenplay_docx
+from .services.txt_export import generate_screenplay_txt
+from .services.version_service import create_version_snapshot, restore_version_snapshot
+
+
+def get_user_script(user, script_id):
+    """Enforce strict user ownership."""
+    return get_object_or_404(Script, id=script_id, user=user)
+
+@login_required
+def script_list_view(request):
+    scripts = Script.objects.filter(user=request.user).prefetch_related('scenes__elements', 'characters')
+    
+    # Filtering
+    query = request.GET.get('q', '').strip()
+    genre = request.GET.get('genre', '').strip()
+    script_type = request.GET.get('type', '').strip()
+
+    if query:
+        scripts = scripts.filter(
+            Q(title__icontains=query) |
+            Q(description__icontains=query) |
+            Q(author_name__icontains=query)
+        )
+    if genre:
+        scripts = scripts.filter(genre=genre)
+    if script_type:
+        scripts = scripts.filter(script_type=script_type)
+
+    return render(request, 'scripts/script_list.html', {
+        'scripts': scripts.order_by('-updated_at'),
+        'query': query,
+        'genre': genre,
+        'script_type': script_type,
+        'genres': Script.GENRE_CHOICES,
+        'script_types': Script.SCRIPT_TYPE_CHOICES,
+        'total_count': Script.objects.filter(user=request.user).count(),
+    })
+
+
+@login_required
+def script_create_view(request):
+    if request.method == 'POST':
+        form = ScriptForm(request.POST)
+        if form.is_valid():
+            with transaction.atomic():
+                script = form.save(commit=False)
+                script.user = request.user
+                if not script.author_name:
+                    script.author_name = request.user.profile.pen_name or request.user.get_full_name() or request.user.username
+                script.save()
+
+                # Seed with Scene 1 automatically
+                scene1 = Scene.objects.create(
+                    script=script,
+                    scene_number=1,
+                    heading='INT. HOUSE - NIGHT',
+                    summary='',
+                    order=0
+                )
+                # Seed initial elements
+                ScriptElement.objects.create(scene=scene1, element_type='scene_heading', content='INT. HOUSE - NIGHT', order=0)
+                ScriptElement.objects.create(scene=scene1, element_type='action', content='മഴ ശക്തമായി പെയ്യുന്നു.', order=1)
+
+                # Create initial version snapshot
+                create_version_snapshot(script, title='Initial Draft')
+
+            messages.success(request, f'Script "{script.title}" created successfully!')
+            return redirect('script_editor', script_id=script.id)
+    else:
+        initial = {}
+        if hasattr(request.user, 'profile') and request.user.profile.pen_name:
+            initial['author_name'] = request.user.profile.pen_name
+        form = ScriptForm(initial=initial)
+    
+    return render(request, 'scripts/script_create.html', {'form': form})
+
+
+@login_required
+def script_detail_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    scenes = script.get_ordered_scenes()
+    characters = script.characters.all()
+    notes = script.notes.all()[:5]
+    versions = script.versions.all()[:5]
+
+    return render(request, 'scripts/script_detail.html', {
+        'script': script,
+        'scenes': scenes,
+        'characters': characters,
+        'recent_notes': notes,
+        'recent_versions': versions,
+    })
+
+
+@login_required
+def script_edit_metadata_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    if request.method == 'POST':
+        form = ScriptForm(request.POST, instance=script)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Script "{script.title}" details updated.')
+            return redirect('script_detail', script_id=script.id)
+    else:
+        form = ScriptForm(instance=script)
+    return render(request, 'scripts/script_edit_metadata.html', {'form': form, 'script': script})
+
+
+@login_required
+def script_title_page_view(request, script_id):
+    """Manages dedicated title page configuration and production metadata for a script."""
+    script = get_user_script(request.user, script_id)
+    title_page, created = ScriptTitlePage.objects.get_or_create(
+        script=script,
+        defaults={
+            'title': '',
+            'author_name': script.author_name or (request.user.profile.pen_name if hasattr(request.user, 'profile') else (request.user.get_full_name() or request.user.username)),
+        }
+    )
+
+    if request.method == 'POST':
+        form = ScriptTitlePageForm(request.POST, instance=title_page)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Title Page & Production Metadata saved successfully!')
+            return redirect('script_title_page', script_id=script.id)
+        else:
+            messages.error(request, 'Please correct the errors in the form below.')
+    else:
+        form = ScriptTitlePageForm(instance=title_page)
+
+    return render(request, 'scripts/script_title_page.html', {
+        'script': script,
+        'title_page': title_page,
+        'form': form,
+    })
+
+
+@login_required
+def script_duplicate_view(request, script_id):
+    """Creates a complete and independent copy of an entire screenplay."""
+    original_script = get_user_script(request.user, script_id)
+    
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                duplicate_title = f"{original_script.title} (Copy)"
+                dup_script = Script.objects.create(
+                    user=request.user,
+                    title=duplicate_title,
+                    description=original_script.description,
+                    genre=original_script.genre,
+                    script_type=original_script.script_type,
+                    author_name=original_script.author_name,
+                    language=original_script.language,
+                )
+
+                # Duplicate Title Page metadata if present
+                if hasattr(original_script, 'title_page') and original_script.title_page:
+                    tp = original_script.title_page
+                    ScriptTitlePage.objects.create(
+                        script=dup_script,
+                        title=f"{tp.title} (Copy)" if tp.title else "",
+                        subtitle=tp.subtitle,
+                        author_name=tp.author_name,
+                        pen_name=tp.pen_name,
+                        adaptation_credits=tp.adaptation_credits,
+                        copyright_registration=tp.copyright_registration,
+                        draft_revision=tp.draft_revision,
+                        draft_date=tp.draft_date,
+                        contact_name=tp.contact_name,
+                        contact_email=tp.contact_email,
+                        contact_phone=tp.contact_phone,
+                    )
+
+                # Duplicate Main Scenes and Script Elements
+                scene_mapping = {}
+                main_scenes = original_script.scenes.filter(parent_scene__isnull=True).order_by('order', 'id')
+                for sc in main_scenes:
+                    dup_scene = Scene.objects.create(
+                        script=dup_script,
+                        parent_scene=None,
+                        scene_number=sc.scene_number,
+                        is_duplicate=sc.is_duplicate,
+                        duplicate_number=sc.duplicate_number,
+                        heading=sc.heading,
+                        summary=sc.summary,
+                        order=sc.order,
+                    )
+                    scene_mapping[sc.id] = dup_scene
+
+                    new_elements = [
+                        ScriptElement(
+                            scene=dup_scene,
+                            element_type=elem.element_type,
+                            content=elem.content,
+                            order=elem.order,
+                        )
+                        for elem in sc.elements.all().order_by('order')
+                    ]
+                    if new_elements:
+                        ScriptElement.objects.bulk_create(new_elements)
+
+                    # Duplicate Sub-scenes
+                    for sub in sc.sub_scenes.all().order_by('order', 'id'):
+                        dup_sub = Scene.objects.create(
+                            script=dup_script,
+                            parent_scene=dup_scene,
+                            scene_number=sub.scene_number,
+                            is_duplicate=sub.is_duplicate,
+                            duplicate_number=sub.duplicate_number,
+                            heading=sub.heading,
+                            summary=sub.summary,
+                            order=sub.order,
+                        )
+                        sub_elements = [
+                            ScriptElement(
+                                scene=dup_sub,
+                                element_type=elem.element_type,
+                                content=elem.content,
+                                order=elem.order,
+                            )
+                            for elem in sub.elements.all().order_by('order')
+                        ]
+                        if sub_elements:
+                            ScriptElement.objects.bulk_create(sub_elements)
+
+                # Duplicate Characters
+                for char in original_script.characters.all():
+                    Character.objects.create(
+                        script=dup_script,
+                        name=char.name,
+                        age=char.age,
+                        gender=char.gender,
+                        description=char.description,
+                        notes=char.notes,
+                    )
+
+                # Duplicate Notes
+                for note in original_script.notes.all():
+                    ScriptNote.objects.create(
+                        script=dup_script,
+                        title=note.title,
+                        category=note.category,
+                        content=note.content,
+                    )
+
+                # Initial version snapshot for the duplicate
+                create_version_snapshot(dup_script, title='Initial Duplication Snapshot')
+
+            messages.success(request, f'Script "{original_script.title}" duplicated successfully as "{dup_script.title}".')
+            return redirect('script_detail', script_id=dup_script.id)
+        except Exception as e:
+            messages.error(request, f'Failed to duplicate script: {str(e)}')
+            return redirect('script_detail', script_id=original_script.id)
+
+    return redirect('script_detail', script_id=original_script.id)
+
+
+
+@login_required
+def script_delete_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    if request.method == 'POST':
+        title = script.title
+        with transaction.atomic():
+            script.delete()
+        messages.success(request, f'Script "{title}" has been permanently deleted.')
+        return redirect('script_list')
+    return render(request, 'scripts/script_confirm_delete.html', {'script': script})
+
+
+@login_required
+def script_editor_view(request, script_id):
+    """The dedicated writing platform for screenwriters."""
+    script = get_user_script(request.user, script_id)
+    scenes = script.get_ordered_scenes()
+
+    # If no scenes exist, create one
+    if not scenes:
+        sc = Scene.objects.create(script=script, scene_number=1, heading='INT. HOUSE - NIGHT', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='scene_heading', content='INT. HOUSE - NIGHT', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='action', content='', order=1)
+        scenes = script.get_ordered_scenes()
+
+    target_scene_id = request.GET.get('scene')
+    current_scene = None
+    if target_scene_id:
+        try:
+            target_id_int = int(target_scene_id)
+            current_scene = next((s for s in scenes if s.id == target_id_int), None)
+        except (ValueError, TypeError):
+            current_scene = None
+    if not current_scene:
+        current_scene = scenes[0]
+
+    characters = list(script.characters.values_list('name', flat=True))
+
+    return render(request, 'scripts/editor.html', {
+        'script': script,
+        'scenes': scenes,
+        'current_scene': current_scene,
+        'characters': characters,
+    })
+
+
+@login_required
+def scenes_management_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    scenes = script.get_ordered_scenes()
+    form = SceneForm()
+
+    if request.method == 'POST':
+        form = SceneForm(request.POST)
+        if form.is_valid():
+            new_sc = form.save(commit=False)
+            new_sc.script = script
+            last_sc = script.scenes.filter(parent_scene__isnull=True).order_by('-order').first()
+            new_sc.order = (last_sc.order + 1) if last_sc else 0
+            new_sc.scene_number = (last_sc.scene_number + 1) if last_sc else 1
+            new_sc.save()
+            # Seed elements
+            ScriptElement.objects.create(scene=new_sc, element_type='scene_heading', content=new_sc.heading, order=0)
+            ScriptElement.objects.create(scene=new_sc, element_type='action', content='', order=1)
+            messages.success(request, f'Scene {new_sc.display_number} created.')
+            return redirect('scenes_management', script_id=script.id)
+
+    return render(request, 'scripts/scenes.html', {
+        'script': script,
+        'scenes': scenes,
+        'form': form,
+    })
+
+
+@login_required
+def character_management_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    characters = script.characters.all()
+    form = CharacterForm()
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'delete':
+            char_id = request.POST.get('character_id')
+            char = get_object_or_404(Character, id=char_id, script=script)
+            char.delete()
+            messages.success(request, f'Character "{char.name}" removed.')
+            return redirect('character_management', script_id=script.id)
+        else:
+            form = CharacterForm(request.POST)
+            if form.is_valid():
+                ch = form.save(commit=False)
+                ch.script = script
+                ch.name = ch.name.strip().upper()
+                ch.save()
+                messages.success(request, f'Character "{ch.name}" added successfully.')
+                return redirect('character_management', script_id=script.id)
+            else:
+                messages.error(request, 'Please fix the errors below.')
+
+    return render(request, 'scripts/characters.html', {
+        'script': script,
+        'characters': characters,
+        'form': form,
+    })
+
+
+@login_required
+def notes_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    notes = script.notes.all()
+    form = ScriptNoteForm()
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'delete':
+            note_id = request.POST.get('note_id')
+            note = get_object_or_404(ScriptNote, id=note_id, script=script)
+            note.delete()
+            messages.success(request, 'Note deleted.')
+            return redirect('notes', script_id=script.id)
+        else:
+            form = ScriptNoteForm(request.POST)
+            if form.is_valid():
+                note = form.save(commit=False)
+                note.script = script
+                note.save()
+                messages.success(request, 'Note saved.')
+                return redirect('notes', script_id=script.id)
+
+    return render(request, 'scripts/notes.html', {
+        'script': script,
+        'notes': notes,
+        'form': form,
+    })
+
+
+@login_required
+def versions_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    versions = script.versions.all()
+    form = ScriptVersionForm()
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'restore':
+            ver_id = request.POST.get('version_id')
+            restore_version_snapshot(script, int(ver_id))
+            messages.success(request, 'Script successfully restored from version!')
+            return redirect('script_editor', script_id=script.id)
+        else:
+            form = ScriptVersionForm(request.POST)
+            if form.is_valid():
+                title = form.cleaned_data['title']
+                desc = form.cleaned_data['description']
+                create_version_snapshot(script, title=title, description=desc)
+                messages.success(request, 'Version snapshot saved.')
+                return redirect('versions', script_id=script.id)
+
+    return render(request, 'scripts/versions.html', {
+        'script': script,
+        'versions': versions,
+        'form': form,
+    })
+
+
+@login_required
+def export_pdf_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    include_notes = request.GET.get('notes') == '1'
+    pdf_content = generate_screenplay_pdf(script, include_notes=include_notes)
+    
+    filename = f"{slugify(script.title) or 'script'}_screenplay.pdf"
+    response = HttpResponse(pdf_content, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def export_docx_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    include_notes = request.GET.get('notes') == '1'
+    docx_content = generate_screenplay_docx(script, include_notes=include_notes)
+    
+    filename = f"{slugify(script.title) or 'script'}_screenplay.docx"
+    response = HttpResponse(docx_content, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def export_txt_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    include_notes = request.GET.get('notes') == '1'
+    txt_content = generate_screenplay_txt(script, include_notes=include_notes)
+    
+    filename = f"{slugify(script.title) or 'script'}_screenplay.txt"
+    response = HttpResponse(txt_content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def print_preview_view(request, script_id):
+    script = get_user_script(request.user, script_id)
+    scenes = script.get_ordered_scenes()
+    return render(request, 'scripts/print_preview.html', {
+        'script': script,
+        'scenes': scenes,
+    })
+

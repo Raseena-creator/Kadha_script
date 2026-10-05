@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Edit Details — {{ script.title }}{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 680px;">
+    <div class="mb-4">
+        <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted small">
+            <i class="bi bi-arrow-left me-1"></i> Back to Overview
+        </a>
+        <h2 class="fw-bold mt-2 mb-1">Edit Script Details</h2>
+        <p class="text-muted small">Update title, format, genre, and logline.</p>
+        <div class="alert alert-light border py-2 px-3 small d-flex align-items-center justify-content-between">
+            <span><i class="bi bi-file-earmark-richtext text-primary me-1"></i> Looking for cover page, credits, draft, copyright, or contact info?</span>
+            <a href="{% url 'script_title_page' script.id %}" class="btn btn-sm btn-outline-ks py-0 px-2">Title Page Settings &rarr;</a>
+        </div>
+    </div>
+
+    <div class="ks-card p-4 bg-white">
+        {% if form.errors %}
+        <div class="alert alert-danger py-2 mb-3 small" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i> Please correct the errors below.
+        </div>
+        {% endif %}
+
+        <form method="POST" class="prevent-double-submit">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold text-dark">Script Title <span class="text-danger">*</span></label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                <div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Script Format</label>
+                    {{ form.script_type }}
+                    {% if form.script_type.errors %}
+                    <div class="text-danger small mt-1">{{ form.script_type.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Genre</label>
+                    {{ form.genre }}
+                    {% if form.genre.errors %}
+                    <div class="text-danger small mt-1">{{ form.genre.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Author Name</label>
+                    {{ form.author_name }}
+                    {% if form.author_name.errors %}
+                    <div class="text-danger small mt-1">{{ form.author_name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold text-dark">Language</label>
+                    {{ form.language }}
+                    {% if form.language.errors %}
+                    <div class="text-danger small mt-1">{{ form.language.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold text-dark">Description / Logline</label>
+                {{ form.description }}
+                {% if form.description.errors %}
+                <div class="text-danger small mt-1">{{ form.description.errors.0 }}</div>
+                {% endif %}
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                <a href="{% url 'script_detail' script.id %}" class="btn btn-outline-ks">Cancel</a>
+                <button type="submit" class="btn-primary-ks px-4 submit-btn">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

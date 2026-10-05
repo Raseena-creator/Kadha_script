@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}My Scripts — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div>
+            <h2 class="fw-bold mb-1">My Screenplays</h2>
+            <p class="text-muted small mb-0">Browse and manage all your Malayalam scripts and drafts.</p>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <a href="{% url 'script_create' %}" class="btn-primary-ks">
+                <i class="bi bi-plus-lg"></i> New Script
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters & Search Toolbar -->
+    <div class="ks-card p-3 mb-4 bg-white">
+        <form method="GET" action="{% url 'script_list' %}" class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                    <input type="search" name="q" class="form-control border-start-0 ps-0" placeholder="Search by title, character or logline..." value="{{ query }}">
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <select name="genre" class="form-select">
+                    <option value="">All Genres</option>
+                    {% for g_val, g_label in genres %}
+                    <option value="{{ g_val }}" {% if genre == g_val %}selected{% endif %}>{{ g_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <select name="type" class="form-select">
+                    <option value="">All Formats</option>
+                    {% for t_val, t_label in script_types %}
+                    <option value="{{ t_val }}" {% if script_type == t_val %}selected{% endif %}>{{ t_label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-outline-ks w-100 px-2" title="Filter">
+                    <i class="bi bi-funnel"></i>
+                </button>
+                {% if query or genre or script_type %}
+                <a href="{% url 'script_list' %}" class="btn btn-light border px-2" title="Reset">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    {% if scripts %}
+    <div class="row g-4">
+        {% for script in scripts %}
+        <div class="col-md-6 col-xl-4">
+            <div class="ks-card h-100 d-flex flex-column">
+                <div class="ks-card-header d-flex justify-content-between align-items-start pb-2">
+                    <div>
+                        <span class="badge-ks badge-format me-1">{{ script.script_type }}</span>
+                        <span class="badge-ks badge-genre">{{ script.genre }}</span>
+                    </div>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
+                            <li><a class="dropdown-item" href="{% url 'script_detail' script.id %}"><i class="bi bi-eye me-2"></i>Overview</a></li>
+                            <li><a class="dropdown-item" href="{% url 'script_edit_metadata' script.id %}"><i class="bi bi-pencil me-2"></i>Edit Details</a></li>
+                            <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i class="bi bi-layout-sidebar me-2"></i>Scenes ({{ script.scene_count }})</a></li>
+                            <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i class="bi bi-people me-2"></i>Characters</a></li>
+                            <li>
+                                <form action="{% url 'script_duplicate' script.id %}" method="POST" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="dropdown-item border-0 bg-transparent" onclick="return confirm('Duplicate &quot;{{ script.title|escapejs }}&quot;?');">
+                                        <i class="bi bi-copy me-2 text-secondary"></i>Duplicate Script
+                                    </button>
+                                </form>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF</a></li>
+                            <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i class="bi bi-file-earmark-word me-2 text-primary"></i>Export DOCX</a></li>
+                            <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Export TXT</a></li>
+                            <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i class="bi bi-printer me-2"></i>Print Preview</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{% url 'script_delete' script.id %}"><i class="bi bi-trash me-2"></i>Delete Script</a></li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="ks-card-body flex-grow-1 pt-2 pb-3">
+                    <h5 class="fw-bold mb-1">
+                        <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-dark hover-accent">
+                            {{ script.title }}
+                        </a>
+                    </h5>
+                    <p class="text-muted small mb-3" style="min-height: 38px;">
+                        {{ script.description|default:"No description provided."|truncatechars:90 }}
+                    </p>
+
+                    <div class="row g-2 text-muted small bg-light p-2 rounded mb-3">
+                        <div class="col-4">
+                            <strong class="d-block text-dark">{{ script.scene_count }}</strong>
+                            <span>Scenes</span>
+                        </div>
+                        <div class="col-4">
+                            <strong class="d-block text-dark">{{ script.word_count }}</strong>
+                            <span>Words</span>
+                        </div>
+                        <div class="col-4">
+                            <strong class="d-block text-dark">~{{ script.estimated_pages }}</strong>
+                            <span>Pages</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-3 py-2 border-top bg-light d-flex justify-content-between align-items-center rounded-bottom">
+                    <small class="text-muted">
+                        Edited {{ script.updated_at|timesince }} ago
+                    </small>
+                    <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks py-1 px-3">
+                        <i class="bi bi-pen"></i> Editor
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-center py-5 ks-card bg-white p-5">
+        <i class="bi bi-journal-text fs-1 text-muted d-block mb-3"></i>
+        <h4 class="fw-bold">No scripts found</h4>
+        <p class="text-muted small mb-4">You have no screenplays matching the given criteria.</p>
+        <a href="{% url 'script_create' %}" class="btn-primary-ks">Create New Script</a>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

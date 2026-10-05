@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Script — {{ script.title }}{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width: 540px;">
+    <div class="ks-card p-4 bg-white text-center shadow-sm">
+        <div class="ks-stat-icon mx-auto mb-3" style="background-color: #fdeded; color: #d32f2f; width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.75rem;">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+        </div>
+        <h4 class="fw-bold mb-2">Permanently Delete Screenplay?</h4>
+        <p class="text-muted small mb-3">
+            You are about to permanently delete <strong class="text-dark">"{{ script.title }}"</strong>.
+        </p>
+
+        <div class="bg-light p-3 rounded text-start small mb-4">
+            <div class="fw-semibold text-danger mb-2"><i class="bi bi-info-circle me-1"></i> The following data will be permanently deleted:</div>
+            <ul class="list-unstyled mb-0 text-muted ps-2">
+                <li>• <strong>{{ script.scene_count }}</strong> Scene{{ script.scene_count|pluralize }} and all dialogue/action blocks</li>
+                <li>• <strong>{{ script.characters.count }}</strong> Character profiles</li>
+                <li>• <strong>{{ script.notes.count }}</strong> Private notes and scratchpad ideas</li>
+                <li>• <strong>{{ script.versions.count }}</strong> Version snapshots and draft backups</li>
+            </ul>
+        </div>
+
+        <form method="POST" action="{% url 'script_delete' script.id %}">
+            {% csrf_token %}
+            <div class="d-flex justify-content-center gap-3">
+                <a href="{% url 'script_detail' script.id %}" class="btn btn-outline-ks px-4">
+                    <i class="bi bi-x-lg me-1"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-danger px-4 fw-semibold">
+                    <i class="bi bi-trash me-1"></i> Yes, Permanently Delete
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

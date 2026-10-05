@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}404 — Page Not Found · KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-sm-10 col-md-8 col-lg-6 text-center">
+
+            <!-- Error Illustration -->
+            <div class="mb-4">
+                <div class="mx-auto d-flex align-items-center justify-content-center rounded-circle mb-4"
+                     style="width:96px;height:96px;background:var(--ks-accent-light);border:2px solid var(--ks-accent-border);">
+                    <i class="bi bi-file-earmark-x" style="font-size:2.6rem;color:var(--ks-accent);"></i>
+                </div>
+                <div style="font-size:4.5rem;font-weight:800;color:var(--ks-accent);line-height:1;letter-spacing:-2px;opacity:0.15;">
+                    404
+                </div>
+            </div>
+
+            <!-- Message -->
+            <h1 class="fw-bold mb-2" style="font-size:1.8rem;color:var(--ks-text);">Page Not Found</h1>
+            <p class="text-muted mb-4" style="max-width:420px;margin:0 auto;line-height:1.7;">
+                The page you're looking for doesn't exist or may have been moved.
+                Check the URL and try again, or return to your dashboard.
+            </p>
+
+            <!-- Actions -->
+            <div class="d-flex gap-3 justify-content-center flex-wrap">
+                {% if user.is_authenticated %}
+                <a href="{% url 'dashboard' %}" class="btn-primary-ks">
+                    <i class="bi bi-grid-1x2 me-1"></i> Go to Dashboard
+                </a>
+                <a href="{% url 'script_list' %}" class="btn-outline-ks">
+                    <i class="bi bi-collection-play me-1"></i> My Scripts
+                </a>
+                {% else %}
+                <a href="{% url 'landing' %}" class="btn-primary-ks">
+                    <i class="bi bi-house me-1"></i> Go to Home
+                </a>
+                <a href="{% url 'login' %}" class="btn-outline-ks">
+                    <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
+                </a>
+                {% endif %}
+            </div>
+
+            <!-- Divider hint -->
+            <p class="text-muted mt-5 mb-0" style="font-size:0.8rem;">
+                Error 404 &mdash; The requested resource could not be found on this server.
+            </p>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,663 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ script.title }} — KadhaScript Screenplay Editor{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/editor.css' %}?v={% now 'U' %}">
+<style>
+    /* Compact navbar for editor focus */
+    .ks-navbar {
+        padding: 0.35rem 1.25rem;
+    }
+
+    footer.ks-footer {
+        display: none !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-layout">
+
+    <!-- Left Scene Sidebar (Visible on Desktop >= 992px) -->
+    <aside class="editor-sidebar d-none d-lg-flex" id="editorSidebar">
+        <div class="sidebar-header">
+            <h6 class="sidebar-title">
+                <i class="bi bi-collection-play me-1"></i> Scenes (<span id="sidebarSceneCount">{{ scenes|length }}</span>)
+            </h6>
+            <div class="d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-outline-ks py-0 px-2" id="btnAddScene" title="Append Scene">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-light border py-0 px-2 dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" title="More Scene Actions">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small" id="sidebarHeaderDropdown">
+                        <li><button type="button" class="dropdown-item" id="btnSidebarInsertScene"><i
+                                    class="bi bi-plus-circle me-2 text-primary"></i>{% if current_scene.is_sub_scene %}Insert Sub Scene{% else %}Insert Scene{% endif %}</button></li>
+                        <li id="sidebarAddSubSceneItem" {% if current_scene.is_sub_scene %}style="display: none;"{% endif %}><button type="button" class="dropdown-item" id="btnSidebarSubScene"><i
+                                    class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
+                                    class="bi bi-gear me-2"></i>Manage Scenes</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="scene-search-box">
+            <input type="text" id="sceneSearchInput" class="scene-search-input" placeholder="Filter scenes...">
+        </div>
+
+        <ul class="scenes-list" id="scenesList">
+            {% for sc in scenes %}
+            <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-4{% endif %}"
+                data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
+                <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
+                    {% if sc.is_sub_scene %}
+                    <span class="sub-scene-indicator text-muted me-1">↳</span>
+                    {% endif %}
+                    <span class="scene-heading-text font-screenplay">{{ sc.full_display_heading }}</span>
+                </div>
+                <div class="scene-item-actions dropdown">
+                    <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button"
+                        data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                        {% if sc.is_sub_scene %}
+                        <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
+                                data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Sub Scene Before</button>
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
+                                data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub Scene After</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
+                                    class="bi bi-arrow-up me-2"></i>Move Up</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
+                                    class="bi bi-arrow-down me-2"></i>Move Down</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
+                                    class="bi bi-copy me-2"></i>Duplicate</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item text-danger btn-action-delete"
+                                data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true"
+                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
+                        </li>
+                        {% else %}
+                        <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
+                                data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Scene Before</button>
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
+                                data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Scene After</button>
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.id }}"
+                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub Scene</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
+                                    class="bi bi-arrow-up me-2"></i>Move Up</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
+                                    class="bi bi-arrow-down me-2"></i>Move Down</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
+                                    class="bi bi-copy me-2"></i>Duplicate</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item text-danger btn-action-delete"
+                                data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false"
+                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <!-- Sidebar footer shortcuts -->
+        <div class="p-2 border-top bg-light text-center small text-muted">
+            <a href="{% url 'scenes_management' script.id %}" class="text-decoration-none text-muted me-2">
+                <i class="bi bi-gear me-1"></i> Manage Scenes
+            </a>
+            |
+            <a href="{% url 'character_management' script.id %}" class="text-decoration-none text-muted ms-2">
+                <i class="bi bi-people me-1"></i> Characters
+            </a>
+        </div>
+    </aside>
+
+    <!-- Offcanvas Scenes Drawer for Mobile / Small Screens -->
+    <div class="offcanvas offcanvas-start scenes-offcanvas" tabindex="-1" id="scenesOffcanvas"
+        aria-labelledby="scenesOffcanvasLabel">
+        <div class="offcanvas-header border-bottom py-2 px-3">
+            <h6 class="offcanvas-title fw-bold" id="scenesOffcanvasLabel">
+                <i class="bi bi-collection-play me-1 text-primary"></i> Scenes (<span id="offcanvasSceneCount">{{ scenes|length }}</span>)
+            </h6>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="p-2 border-bottom bg-light d-flex gap-2">
+            <button class="btn btn-sm btn-primary-ks flex-grow-1" id="btnOffcanvasAddScene">
+                <i class="bi bi-plus-lg me-1"></i> Add Scene
+            </button>
+            <button class="btn btn-sm btn-outline-ks" id="btnOffcanvasInsertScene"
+                title="{% if current_scene.is_sub_scene %}Insert Sub Scene{% else %}Insert Scene{% endif %}">
+                <i class="bi bi-plus-circle me-1"></i> Insert
+            </button>
+            <button class="btn btn-sm btn-outline-info" id="btnOffcanvasSubScene" title="Add Sub-Scene" {% if current_scene.is_sub_scene %}style="display: none;"{% endif %}>
+                <i class="bi bi-diagram-3 me-1"></i> Sub-Scene
+            </button>
+        </div>
+        <div class="p-2 border-bottom">
+            <input type="text" id="offcanvasSceneSearchInput" class="form-control form-control-sm"
+                placeholder="Search scenes in screenplay...">
+        </div>
+        <div class="offcanvas-body p-2">
+            <ul class="scenes-list" id="offcanvasScenesList">
+                <!-- Dynamically updated by KadhaEditor JS -->
+            </ul>
+        </div>
+        <div class="p-2 border-top bg-light text-center small">
+            <a href="{% url 'scenes_management' script.id %}" class="text-decoration-none text-muted me-2">
+                <i class="bi bi-gear me-1"></i> Manage All
+            </a>
+            |
+            <a href="{% url 'character_management' script.id %}" class="text-decoration-none text-muted ms-2">
+                <i class="bi bi-people me-1"></i> Characters
+            </a>
+        </div>
+    </div>
+
+    <!-- Main Writing Column -->
+    <section class="editor-main">
+
+        <!-- TOPMOST TOOLBAR: Scene Management (Topmost) -->
+        <div class="editor-toolbar editor-scene-toolbar">
+            <div class="editor-scene-toolbar-left">
+                <div class="editor-nav-group">
+                    <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2"
+                        title="Back to Script Overview">
+                        <i class="bi bi-arrow-left"></i>
+                    </a>
+
+                    <!-- Mobile Drawer Toggle for Scenes -->
+                    <button type="button" class="btn btn-sm btn-light border py-1 px-2 d-lg-none"
+                        data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" title="Open Scenes List">
+                        <i class="bi bi-collection-play text-primary"></i>
+                    </button>
+                </div>
+
+                <!-- Dedicated Scene Management Controls -->
+                <div class="editor-scene-buttons-group">
+                    <button type="button"
+                        class="btn btn-sm btn-primary-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                        id="btnTopAddScene" title="Scene (Alt + S)">
+                        <span>Scene</span>
+                    </button>
+
+                    <button type="button"
+                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                        id="btnTopAddSubScene" title="Sub-Scene (Alt + U)">
+                        <span>Sub-Scene</span>
+                    </button>
+
+                    <button type="button"
+                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                        id="btnTopAddSubScene2" title="Sub-Scene From (Alt + R)">
+                        <span>Sub-Scene From</span>
+                    </button>
+
+                    <button type="button"
+                        class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control"
+                        id="btnTopAddIntercut" title="CutBack To (Alt + B)">
+                        <span>CutBack To</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: More tools dropdown -->
+            <div class="dropdown editor-scene-toolbar-right">
+                <button class="btn btn-sm btn-light border py-1 px-2 dropdown-toggle" type="button"
+                    data-bs-toggle="dropdown" title="More Tools">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#findReplaceModal"><i
+                                class="bi bi-search me-2"></i>Find & Replace</button></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#shortcutsModal"><i
+                                class="bi bi-keyboard me-2"></i>Shortcuts</button></li>
+                    <li><button class="dropdown-item" id="btnToggleFullscreen"><i
+                                class="bi bi-arrows-fullscreen me-2"></i>Fullscreen</button></li>
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    <li class="dropdown-header small text-muted">Exports & Preview</li>
+                    <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i
+                                class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF</a></li>
+                    <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i
+                                class="bi bi-file-earmark-word me-2 text-primary"></i>Export Word (.docx)</a></li>
+                    <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i
+                                class="bi bi-file-earmark-text me-2 text-secondary"></i>Export Plain Text</a></li>
+                    <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i
+                                class="bi bi-printer me-2"></i>Print Preview</a></li>
+                    <li>
+                        <hr class="dropdown-divider">
+                    </li>
+                    <li><a class="dropdown-item" href="{% url 'script_title_page' script.id %}"><i
+                                class="bi bi-file-earmark-richtext me-2 text-primary"></i>Title Page & Metadata</a></li>
+                    <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
+                                class="bi bi-grid-3x3-gap me-2"></i>Scene Management</a></li>
+                    <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i
+                                class="bi bi-people me-2"></i>Characters</a></li>
+                    <li><a class="dropdown-item" href="{% url 'notes' script.id %}"><i
+                                class="bi bi-sticky me-2"></i>Notes</a></li>
+                    <li><a class="dropdown-item" href="{% url 'versions' script.id %}"><i
+                                class="bi bi-clock-history me-2"></i>Version Snapshots</a></li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- SECOND TOOLBAR: Screenplay Element Controls (Directly Below Scene Toolbar) -->
+        <div class="editor-element-bar">
+            <div class="toolbar-elements-group">
+                <button type="button" class="btn-element" data-type="scene_heading" title="Heading (Ctrl + 1)">
+                    Heading
+                </button>
+                <button type="button" class="btn-element active" data-type="action" title="Action (Ctrl + 2)">
+                    Action
+                </button>
+                <button type="button" class="btn-element" data-type="character" title="Character (Ctrl + 3)">
+                    Character
+                </button>
+                <button type="button" class="btn-element" data-type="dialogue" title="Dialogue (Ctrl + 4)">
+                    Dialogue
+                </button>
+                <button type="button" class="btn-element" data-type="parenthetical" title="Parenthetical (Ctrl + 5)">
+                    Parenthetical
+                </button>
+                <button type="button" class="btn-element" data-type="transition" title="Transition (Ctrl + 6)">
+                    Transition
+                </button>
+                <button type="button" class="btn-element" data-type="note" title="Note (Ctrl + 7)">
+                    Note
+                </button>
+            </div>
+        </div>
+
+        <!-- Canvas Container -->
+        <div class="editor-canvas-container" id="editorCanvasContainer">
+            <!-- Simulated Standard Screenplay Page (8.5in x 11in ratio) -->
+            <div class="screenplay-page" id="screenplayPage">
+                <!-- Script Element Blocks dynamically populated by editor.js -->
+            </div>
+        </div>
+
+        <!-- Character Autocomplete Dropdown -->
+        <div class="character-autocomplete-dropdown" id="characterAutocomplete"></div>
+
+        <!-- Bottom Stats & Status Bar -->
+        <footer class="editor-stats-bar">
+            <div class="stats-group">
+                <span class="stats-item">
+                    <i class="bi bi-fonts"></i> Words: <strong id="statWordCount">{{ script.word_count }}</strong>
+                </span>
+                <span class="stats-divider text-muted opacity-50">|</span>
+                <span class="stats-item">
+                    <i class="bi bi-card-text"></i> Characters: <strong id="statCharCount">{{ script.char_count }}</strong>
+                </span>
+                <span class="stats-divider text-muted opacity-50 d-none d-sm-inline">|</span>
+                <span class="stats-item d-none d-sm-inline">
+                    <i class="bi bi-file-earmark"></i> Pages: <strong id="statPageCount">~{{ script.estimated_pages }} pgs</strong>
+                </span>
+                <span class="stats-divider text-muted opacity-50 d-none d-md-inline">|</span>
+                <span class="stats-item d-none d-md-inline">
+                    <i class="bi bi-camera-reels"></i> Scenes: <strong id="statSceneCount">{{ scenes|length }}</strong>
+                </span>
+            </div>
+
+            <div class="d-flex align-items-center gap-3">
+                <!-- Save Status Indicator in Bottom Bar -->
+                <div id="saveStatusBadge" class="save-status-badge saved"
+                    title="Auto-saves automatically. Click to save now.">
+                    Saved ✓
+                </div>
+                <span class="stats-item text-muted d-none d-lg-inline">
+                    Type: <strong id="statCurrentType" class="text-dark">Action</strong>
+                </span>
+            </div>
+        </footer>
+
+    </section>
+
+</div>
+
+<!-- Insert Scene Modal -->
+<div class="modal fade" id="editorInsertModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="editorInsertModalTitle"><i
+                        class="bi bi-plus-circle me-1 text-primary"></i> Insert Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <form id="editorInsertForm">
+                    <input type="hidden" id="editorInsertRefId" value="">
+                    <input type="hidden" id="editorInsertPos" value="after">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Scene Heading</label>
+                        <div class="d-flex gap-2">
+                            <select id="editorInsertIntext" class="form-select form-select-sm" style="width: 120px;"
+                                title="Interior / Exterior">
+                                <option value="INT.">Interior</option>
+                                <option value="EXT.">Exterior</option>
+                            </select>
+                            <input type="text" id="editorInsertLocation"
+                                class="form-control form-control-sm font-screenplay font-malayalam"
+                                placeholder="Enter location..." required>
+                            <select id="editorInsertTime" class="form-select form-select-sm" style="width: 110px;"
+                                title="Time of Day">
+                                <option value="DAY">Day</option>
+                                <option value="NIGHT">Night</option>
+                                <option value="DUSK">Dusk</option>
+                                <option value="DAWN">Dawn</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Scene Summary (Optional)</label>
+                        <textarea id="editorInsertSummary" class="form-control font-malayalam" rows="2"
+                            placeholder="Brief note about the scene..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn-primary-ks btn-sm" id="btnEditorSubmitInsert">Insert
+                            Scene</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Sub-Scene Modal -->
+<div class="modal fade" id="editorSubSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="editorSubSceneModalTitle"><i
+                        class="bi bi-diagram-3 me-1 text-info"></i> Add Sub-Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <form id="editorSubSceneForm">
+                    <input type="hidden" id="editorSubSceneParentId" value="">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Sub-Scene Heading</label>
+                        <div class="d-flex gap-2">
+                            <select id="editorSubSceneIntext" class="form-select form-select-sm" style="width: 120px;"
+                                title="Interior / Exterior">
+                                <option value="INT.">Interior</option>
+                                <option value="EXT.">Exterior</option>
+                            </select>
+                            <input type="text" id="editorSubSceneLocation"
+                                class="form-control form-control-sm font-screenplay font-malayalam"
+                                placeholder="Enter location..." required>
+                            <select id="editorSubSceneTime" class="form-select form-select-sm" style="width: 110px;"
+                                title="Time of Day">
+                                <option value="DAY">Day</option>
+                                <option value="NIGHT">Night</option>
+                                <option value="DUSK">Dusk</option>
+                                <option value="DAWN">Dawn</option>
+                            </select>
+                        </div>
+                        <div class="form-text small">Sub-scenes (e.g. 1.A, 1.B) remain attached to their parent scene.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Summary (Optional)</label>
+                        <textarea id="editorSubSceneSummary" class="form-control font-malayalam" rows="2"
+                            placeholder="Sub-scene notes..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn-primary-ks btn-sm" id="btnEditorSubmitSubScene">Create
+                            Sub-Scene</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Scene Confirmation Modal -->
+<div class="modal fade" id="editorDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="editorDeleteModalTitle"><i class="bi bi-trash me-1 text-danger"></i>
+                    Delete Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <p class="mb-3 text-dark">Are you sure you want to delete this scene?</p>
+
+                <div class="p-2 mb-3 bg-light rounded border d-flex align-items-center gap-2">
+                    <span class="badge bg-danger-subtle text-danger font-screenplay fs-6 px-2 py-1 flex-shrink-0"
+                        id="editorDeleteBadge">Scene 7</span>
+                    <span class="fw-semibold text-truncate font-screenplay text-dark" id="editorDeleteHeading">INT.
+                        LOCATION - DAY</span>
+                </div>
+
+                <div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-exclamation-triangle-fill text-warning flex-shrink-0"></i>
+                    <span id="editorDeleteWarning">This will permanently delete this scene and all of its sub-scenes.
+                        This action cannot be undone.</span>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-danger" id="btnEditorSubmitDelete">
+                        <span id="btnEditorSubmitDeleteText">Delete Scene</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Find & Replace Modal -->
+<div class="modal fade" id="findReplaceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2">
+                <h6 class="modal-title fw-bold"><i class="bi bi-search me-1"></i> Find & Replace in Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Find Text (Malayalam / English)</label>
+                    <input type="text" id="findInput" class="form-control font-malayalam"
+                        placeholder="e.g. അനു or RAJEEV">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold text-muted">Replace With</label>
+                    <input type="text" id="replaceInput" class="form-control font-malayalam"
+                        placeholder="Replacement text...">
+                </div>
+                <div class="d-flex justify-content-between">
+                    <button type="button" class="btn btn-outline-ks btn-sm" id="btnFindNext">Find Next</button>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-ks btn-sm" id="btnReplace">Replace</button>
+                        <button type="button" class="btn-primary-ks btn-sm" id="btnReplaceAll">Replace All</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Keyboard Shortcuts Modal -->
+<div class="modal fade" id="shortcutsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2">
+                <h6 class="modal-title fw-bold"><i class="bi bi-keyboard me-2"></i>Screenplay Editor Shortcuts</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3 small">
+                <h6 class="fw-bold mb-2">Screenplay Elements</h6>
+                <div class="row g-2 mb-3">
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 1</kbd></div>
+                    <div class="col-6 text-muted">Heading</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 2</kbd></div>
+                    <div class="col-6 text-muted">Action</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 3</kbd></div>
+                    <div class="col-6 text-muted">Character</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 4</kbd></div>
+                    <div class="col-6 text-muted">Dialogue</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 5</kbd></div>
+                    <div class="col-6 text-muted">Parenthetical</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 6</kbd></div>
+                    <div class="col-6 text-muted">Transition</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + 7</kbd></div>
+                    <div class="col-6 text-muted">Note</div>
+                </div>
+
+                <h6 class="fw-bold mb-2">Scene Controls</h6>
+                <div class="row g-2 mb-3">
+                    <div class="col-6 fw-semibold text-dark"><kbd>Alt + S</kbd></div>
+                    <div class="col-6 text-muted">New Scene</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Alt + U</kbd></div>
+                    <div class="col-6 text-muted">New Sub-Scene</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Alt + R</kbd></div>
+                    <div class="col-6 text-muted">Sub-Scene From...</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Alt + B</kbd></div>
+                    <div class="col-6 text-muted">CutBack To...</div>
+                </div>
+
+                <h6 class="fw-bold mb-2">Editor Navigation & Actions</h6>
+                <div class="row g-2">
+                    <div class="col-6 fw-semibold text-dark"><kbd>Enter</kbd></div>
+                    <div class="col-6 text-muted">Next standard element</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Tab</kbd> / <kbd>Shift + Tab</kbd></div>
+                    <div class="col-6 text-muted">Cycle element type</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Backspace</kbd> (empty)</div>
+                    <div class="col-6 text-muted">Delete element & jump to previous</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + S</kbd></div>
+                    <div class="col-6 text-muted">Save scene</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>Ctrl + F</kbd></div>
+                    <div class="col-6 text-muted">Find & Replace dialog</div>
+
+                    <div class="col-6 fw-semibold text-dark"><kbd>↑ / ↓</kbd></div>
+                    <div class="col-6 text-muted">Navigate between elements</div>
+                </div>
+                <hr class="my-3">
+                <h6 class="fw-bold mb-2">Smart Enter Flow</h6>
+                <ul class="text-muted ps-3 mb-0">
+                    <li><strong>Scene Heading</strong> &rarr; Action</li>
+                    <li><strong>Character</strong> &rarr; Dialogue</li>
+                    <li><strong>Dialogue</strong> &rarr; Character (for back-and-forth dialogue)</li>
+                    <li><strong>Dialogue (empty Enter)</strong> &rarr; Action</li>
+                    <li><strong>Transition</strong> &rarr; Scene Heading</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Scene Selection Modal for Sub-Scene 2 & Intercut -->
+<div class="modal fade" id="editorSceneSelectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content ks-card border shadow-lg">
+            <div class="modal-header border-bottom py-2 bg-light">
+                <div>
+                    <h6 class="modal-title fw-bold text-dark mb-0" id="editorSceneSelectModalTitle">
+                        <i class="bi bi-collection-play me-2 text-primary"></i>Select Scene
+                    </h6>
+                    <small class="text-muted" id="editorSceneSelectModalSubtitle">Choose a previously written scene to
+                        reference</small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="mb-3">
+                    <input type="text" class="form-control form-control-sm" id="editorSceneSelectSearch"
+                        placeholder="Filter previous scenes..." autocomplete="off">
+                </div>
+                <div class="list-group list-group-flush border rounded-3 overflow-auto" id="editorSceneSelectList"
+                    style="max-height: 360px;">
+                    <!-- Rendered dynamically -->
+                </div>
+            </div>
+            <div class="modal-footer py-2 bg-light border-top d-flex justify-content-between">
+                <span class="text-muted small" id="editorSceneSelectCount"></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ characters|json_script:"editorCharactersData" }}
+<div id="editorConfig" data-script-id="{{ script.id }}" data-current-scene-id="{{ current_scene.id|default:'' }}"
+    data-csrf-token="{{ csrf_token }}" style="display:none;"></div>
+<script src="{% static 'js/editor.js' %}?v={% now 'U' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const configEl = document.getElementById('editorConfig');
+        const scriptId = configEl ? parseInt(configEl.dataset.scriptId, 10) : null;
+        const currentSceneIdRaw = configEl ? configEl.dataset.currentSceneId : '';
+        const currentSceneId = currentSceneIdRaw ? parseInt(currentSceneIdRaw, 10) : null;
+        const csrfToken = configEl ? (configEl.dataset.csrfToken || '') : '';
+
+        let characters = [];
+        const charEl = document.getElementById('editorCharactersData');
+        if (charEl && charEl.textContent) {
+            try {
+                characters = JSON.parse(charEl.textContent);
+            } catch (e) {
+                characters = [];
+            }
+        }
+
+        const editor = new KadhaEditor({
+            scriptId: scriptId,
+            currentSceneId: currentSceneId,
+            csrfToken: csrfToken,
+            characters: characters
+        });
+    });
+</script>
+{% endblock %}

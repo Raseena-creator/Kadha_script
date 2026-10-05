@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Version History — {{ script.title }} — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <!-- Page Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <nav aria-label="breadcrumb" class="mb-1">
+                <ol class="breadcrumb mb-0 small">
+                    <li class="breadcrumb-item"><a href="{% url 'script_list' %}" class="text-decoration-none text-muted">My Scripts</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted">{{ script.title|truncatechars:30 }}</a></li>
+                    <li class="breadcrumb-item active text-muted">Version History</li>
+                </ol>
+            </nav>
+            <h2 class="fw-bold mb-1">
+                <i class="bi bi-clock-history me-2" style="color:var(--ks-accent);"></i>Version History
+            </h2>
+            <p class="text-muted small mb-0">
+                Saved snapshots for <strong class="font-malayalam">{{ script.title }}</strong> &nbsp;·&nbsp;
+                {{ versions.count }} snapshot{{ versions.count|pluralize }}
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks btn-sm">
+                <i class="bi bi-pen-fill me-1"></i> Back to Editor
+            </a>
+            <a href="{% url 'script_detail' script.id %}" class="btn-outline-ks btn-sm">
+                <i class="bi bi-arrow-left me-1"></i> Script Overview
+            </a>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible d-flex align-items-center gap-2 mb-4" role="alert">
+            {% if message.tags == 'success' %}
+                <i class="bi bi-check-circle-fill text-success flex-shrink-0"></i>
+            {% elif message.tags == 'error' or message.tags == 'danger' %}
+                <i class="bi bi-exclamation-triangle-fill text-danger flex-shrink-0"></i>
+            {% else %}
+                <i class="bi bi-info-circle-fill text-info flex-shrink-0"></i>
+            {% endif %}
+            <div>{{ message }}</div>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+
+        <!-- Left: Versions List -->
+        <div class="col-lg-8">
+            <div class="ks-card p-4">
+
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h5 class="fw-bold mb-0">
+                        <i class="bi bi-layers me-2 text-muted"></i>Saved Snapshots
+                    </h5>
+                    {% if versions %}
+                    <span class="badge bg-light text-muted border small">{{ versions.count }} total</span>
+                    {% endif %}
+                </div>
+
+                {% if versions %}
+                <div class="list-group list-group-flush">
+                    {% for ver in versions %}
+                    <div class="list-group-item px-0 py-3 {% if not forloop.last %}border-bottom{% endif %}"
+                         style="border-color: var(--ks-border) !important;">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+                            <!-- Version Info -->
+                            <div class="flex-grow-1">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="badge-ks badge-format" style="font-size:0.75rem;">
+                                        v{{ ver.version_number }}
+                                    </span>
+                                    <strong class="text-dark">{{ ver.title }}</strong>
+                                </div>
+                                {% if ver.description %}
+                                <p class="text-muted small mb-1" style="line-height:1.5;">
+                                    {{ ver.description|truncatechars:140 }}
+                                </p>
+                                {% endif %}
+                                <div class="text-muted" style="font-size:0.78rem;">
+                                    <i class="bi bi-calendar3 me-1"></i>{{ ver.created_at|date:"M d, Y" }}
+                                    &nbsp;·&nbsp;
+                                    <i class="bi bi-clock me-1"></i>{{ ver.created_at|time:"H:i" }}
+                                    &nbsp;·&nbsp;
+                                    <span>{{ ver.created_at|timesince }} ago</span>
+                                </div>
+                            </div>
+
+                            <!-- Restore Action -->
+                            <div class="flex-shrink-0">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-ks"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#restoreModal{{ ver.id }}"
+                                        title="Restore script to this version">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Snapshot summary (from stored data) -->
+                        {% if ver.snapshot_data %}
+                        <div class="mt-2 p-2 rounded" style="background:var(--ks-surface-subtle);font-size:0.78rem;">
+                            <span class="text-muted me-3">
+                                <i class="bi bi-camera-reels me-1"></i>
+                                {{ ver.snapshot_data.scenes|length }} scene{{ ver.snapshot_data.scenes|length|pluralize }}
+                            </span>
+                            {% if ver.snapshot_data.title %}
+                            <span class="text-muted me-3">
+                                <i class="bi bi-file-earmark-text me-1"></i>
+                                {{ ver.snapshot_data.title }}
+                            </span>
+                            {% endif %}
+                            {% if ver.snapshot_data.characters %}
+                            <span class="text-muted">
+                                <i class="bi bi-people me-1"></i>
+                                {{ ver.snapshot_data.characters|length }} character{{ ver.snapshot_data.characters|length|pluralize }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
+                    </div>
+
+                    <!-- Restore Confirmation Modal -->
+                    <div class="modal fade" id="restoreModal{{ ver.id }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content ks-card border">
+                                <div class="modal-header border-bottom py-2">
+                                    <h6 class="modal-title fw-bold">
+                                        <i class="bi bi-arrow-counterclockwise me-1 text-warning"></i>
+                                        Restore to Version {{ ver.version_number }}
+                                    </h6>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                </div>
+                                <div class="modal-body py-3">
+                                    <p class="mb-2">
+                                        You are about to restore the script to:
+                                        <strong>v{{ ver.version_number }} — {{ ver.title }}</strong>
+                                    </p>
+                                    <div class="alert alert-warning d-flex align-items-start gap-2 mb-0 py-2">
+                                        <i class="bi bi-shield-check flex-shrink-0 mt-1 text-warning"></i>
+                                        <div class="small">
+                                            <strong>Your current work is safe.</strong> Before restoring,
+                                            the system automatically saves an auto-backup of your current state.
+                                            You can restore from that backup if needed.
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="modal-footer border-top py-2 gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-ks" data-bs-dismiss="modal">Cancel</button>
+                                    <form method="POST" action="{% url 'versions' script.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="restore">
+                                        <input type="hidden" name="version_id" value="{{ ver.id }}">
+                                        <button type="submit" class="btn-primary-ks btn-sm">
+                                            <i class="bi bi-arrow-counterclockwise me-1"></i> Yes, Restore
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% endfor %}
+                </div>
+
+                {% else %}
+                <!-- Empty State -->
+                <div class="text-center py-5">
+                    <div class="mx-auto d-flex align-items-center justify-content-center rounded-circle mb-3"
+                         style="width:72px;height:72px;background:var(--ks-accent-light);border:2px solid var(--ks-accent-border);">
+                        <i class="bi bi-clock-history" style="font-size:1.8rem;color:var(--ks-accent);"></i>
+                    </div>
+                    <h6 class="fw-bold mb-2">No snapshots saved yet</h6>
+                    <p class="text-muted small mb-3" style="max-width:340px;margin:0 auto;">
+                        Snapshots let you save named checkpoints of your screenplay.
+                        Save a snapshot now to protect your current draft before making big changes.
+                    </p>
+                    <p class="text-muted small mb-0">
+                        Use the form on the right to create your first version snapshot.
+                    </p>
+                </div>
+                {% endif %}
+
+            </div>
+        </div>
+
+        <!-- Right: Save New Snapshot -->
+        <div class="col-lg-4">
+            <div class="ks-card p-4 mb-4">
+                <h6 class="fw-bold mb-1">
+                    <i class="bi bi-cloud-arrow-up me-2" style="color:var(--ks-accent);"></i>Save New Snapshot
+                </h6>
+                <p class="text-muted small mb-3">
+                    Creates a named checkpoint of all scenes and elements in the script right now.
+                </p>
+
+                <form method="POST" action="{% url 'versions' script.id %}" novalidate>
+                    {% csrf_token %}
+
+                    <!-- Non-field errors -->
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger small py-2 mb-3">
+                        {% for err in form.non_field_errors %}{{ err }}{% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label for="id_title" class="form-label small fw-semibold" style="color:var(--ks-text);">
+                            Snapshot Name <span class="text-danger">*</span>
+                        </label>
+                        {{ form.title }}
+                        {% if form.title.errors %}
+                        <div class="text-danger small mt-1">{% for e in form.title.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="id_description" class="form-label small fw-semibold" style="color:var(--ks-text);">
+                            Change Summary
+                        </label>
+                        {{ form.description }}
+                        {% if form.description.errors %}
+                        <div class="text-danger small mt-1">{% for e in form.description.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+
+                    <button type="submit" class="btn-primary-ks w-100 justify-content-center">
+                        <i class="bi bi-cloud-arrow-up me-1"></i> Save Snapshot
+                    </button>
+                </form>
+            </div>
+
+            <!-- Script Info Card -->
+            <div class="ks-card p-4">
+                <h6 class="fw-bold mb-3 pb-2 border-bottom" style="font-size:0.82rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--ks-text-muted);">Script Info</h6>
+                <dl class="mb-0" style="font-size:0.83rem;">
+                    <dt class="text-muted fw-normal">Title</dt>
+                    <dd class="fw-semibold font-malayalam mb-2">{{ script.title }}</dd>
+
+                    <dt class="text-muted fw-normal">Type</dt>
+                    <dd class="mb-2">{{ script.script_type }}</dd>
+
+                    <dt class="text-muted fw-normal">Scenes</dt>
+                    <dd class="mb-2">{{ script.scene_count }}</dd>
+
+                    <dt class="text-muted fw-normal">Words</dt>
+                    <dd class="mb-2">{{ script.word_count }}</dd>
+
+                    <dt class="text-muted fw-normal">Last Updated</dt>
+                    <dd class="mb-0">{{ script.updated_at|timesince }} ago</dd>
+                </dl>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

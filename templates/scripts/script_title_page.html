@@ -1,0 +1,478 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Title Page & Metadata — {{ script.title }} — KadhaScript{% endblock %}
+
+{% block extra_css %}
+<style>
+    .title-page-preview-card {
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        padding: 40px 32px;
+        min-height: 520px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        font-family: 'Courier New', Courier, monospace;
+        color: #1a1a1a;
+        position: sticky;
+        top: 80px;
+    }
+    .preview-header-tag {
+        font-family: var(--ks-font-sans, sans-serif);
+        font-size: 0.75rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #718096;
+    }
+    .preview-title {
+        font-size: 1.35rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        line-height: 1.3;
+        margin-bottom: 0.25rem;
+    }
+    .preview-subtitle {
+        font-size: 0.95rem;
+        color: #4a5568;
+        font-style: italic;
+        margin-bottom: 1.25rem;
+    }
+    .preview-by {
+        font-size: 0.85rem;
+        color: #718096;
+        margin-bottom: 0.25rem;
+    }
+    .preview-author {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+    }
+    .preview-credits {
+        font-size: 0.85rem;
+        color: #4a5568;
+        white-space: pre-line;
+        max-width: 90%;
+        margin: 0 auto;
+    }
+    .preview-copyright {
+        white-space: pre-line;
+    }
+    .preview-footer-left {
+        font-size: 0.78rem;
+        line-height: 1.45;
+        color: #2d3748;
+    }
+    .preview-footer-right {
+        font-size: 0.78rem;
+        line-height: 1.45;
+        text-align: right;
+        color: #2d3748;
+    }
+    .section-card {
+        background: #fff;
+        border: 1px solid #edf2f7;
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.25rem;
+        transition: box-shadow 0.2s ease;
+    }
+    .section-card:hover {
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+    }
+    .section-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #2d3748;
+        margin-bottom: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-bottom: 1px solid #f0f4f8;
+        padding-bottom: 0.5rem;
+    }
+    .form-text {
+        font-size: 0.8rem;
+        color: #718096;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <!-- Top Navigation Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+            <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted small d-inline-flex align-items-center mb-2">
+                <i class="bi bi-arrow-left me-1"></i> Back to {{ script.title }}
+            </a>
+            <h2 class="fw-bold mb-1">Title Page & Production Metadata</h2>
+            <p class="text-muted small mb-0">Configure standard screenplay cover sheet, copyright notices, revisions, and production contacts.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'print_preview' script.id %}" target="_blank" class="btn btn-outline-ks btn-sm" title="Print Friendly View">
+                <i class="bi bi-printer me-1"></i> Preview Print
+            </a>
+            <a href="{% url 'export_pdf' script.id %}" class="btn btn-outline-danger btn-sm" title="Download Screenplay PDF">
+                <i class="bi bi-file-earmark-pdf me-1"></i> Export PDF
+            </a>
+            <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks btn-sm">
+                <i class="bi bi-pen me-1"></i> Open Editor
+            </a>
+        </div>
+    </div>
+
+    {% if form.errors %}
+    <div class="alert alert-danger py-2 mb-4 small" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i> Please correct the form errors indicated below.
+    </div>
+    {% endif %}
+
+    <form method="POST" class="prevent-double-submit" id="titlePageForm">
+        {% csrf_token %}
+
+        <div class="row g-4">
+            <!-- Left Column: Form Fields -->
+            <div class="col-lg-7">
+
+                <!-- 1. Screenplay Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-file-earmark-text text-primary"></i> Screenplay
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small mb-1">Title</label>
+                        {{ form.title }}
+                        <div class="form-text">{{ form.title.help_text }} Default: <strong>{{ script.title }}</strong></div>
+                        {% if form.title.errors %}
+                        <div class="text-danger small mt-1">{{ form.title.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold text-dark small mb-1">Subtitle</label>
+                        {{ form.subtitle }}
+                        <div class="form-text">{{ form.subtitle.help_text }}</div>
+                        {% if form.subtitle.errors %}
+                        <div class="text-danger small mt-1">{{ form.subtitle.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 2. Author Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-person-fill text-success"></i> Author
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Author</label>
+                            {{ form.author_name }}
+                            <div class="form-text">{{ form.author_name.help_text }}</div>
+                            {% if form.author_name.errors %}
+                            <div class="text-danger small mt-1">{{ form.author_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Pen Name</label>
+                            {{ form.pen_name }}
+                            <div class="form-text">{{ form.pen_name.help_text }}</div>
+                            {% if form.pen_name.errors %}
+                            <div class="text-danger small mt-1">{{ form.pen_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Credits Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-card-text text-warning"></i> Credits
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold text-dark small mb-1">Adaptation / Credits</label>
+                        {{ form.adaptation_credits }}
+                        <div class="form-text">{{ form.adaptation_credits.help_text }}</div>
+                        {% if form.adaptation_credits.errors %}
+                        <div class="text-danger small mt-1">{{ form.adaptation_credits.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 4. Draft Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-clock-history text-info"></i> Draft
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Draft Revision</label>
+                            {{ form.draft_revision }}
+                            <div class="form-text">{{ form.draft_revision.help_text }}</div>
+                            {% if form.draft_revision.errors %}
+                            <div class="text-danger small mt-1">{{ form.draft_revision.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Draft Date</label>
+                            {{ form.draft_date }}
+                            <div class="form-text">{{ form.draft_date.help_text }}</div>
+                            {% if form.draft_date.errors %}
+                            <div class="text-danger small mt-1">{{ form.draft_date.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 5. Registration / Copyright Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-shield-check text-secondary"></i> Registration / Copyright
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold text-dark small mb-1">Registration / Copyright Notice</label>
+                        {{ form.copyright_registration }}
+                        <div class="form-text">{{ form.copyright_registration.help_text }}</div>
+                        {% if form.copyright_registration.errors %}
+                        <div class="text-danger small mt-1">{{ form.copyright_registration.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 6. Contact Section -->
+                <div class="section-card">
+                    <div class="section-title">
+                        <i class="bi bi-telephone-fill text-danger"></i> Contact
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-dark small mb-1">Contact Name</label>
+                        {{ form.contact_name }}
+                        <div class="form-text">{{ form.contact_name.help_text }}</div>
+                        {% if form.contact_name.errors %}
+                        <div class="text-danger small mt-1">{{ form.contact_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Contact Email</label>
+                            {{ form.contact_email }}
+                            <div class="form-text">{{ form.contact_email.help_text }}</div>
+                            {% if form.contact_email.errors %}
+                            <div class="text-danger small mt-1">{{ form.contact_email.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold text-dark small mb-1">Contact Phone</label>
+                            {{ form.contact_phone }}
+                            <div class="form-text">{{ form.contact_phone.help_text }}</div>
+                            {% if form.contact_phone.errors %}
+                            <div class="text-danger small mt-1">{{ form.contact_phone.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Bar -->
+                <div class="d-flex justify-content-between align-items-center pt-3 mt-2 border-top">
+                    <a href="{% url 'script_detail' script.id %}" class="btn btn-outline-ks">Cancel</a>
+                    <button type="submit" class="btn-primary-ks px-4 py-2 submit-btn">
+                        <i class="bi bi-check-lg me-1"></i> Save Title Page
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Live Title Page Preview -->
+            <div class="col-lg-5">
+                <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+                    <span class="preview-header-tag">Live Cover Page Preview</span>
+                    <span class="badge bg-light text-muted border small">Industry Standard</span>
+                </div>
+
+                <div class="title-page-preview-card" id="titlePagePreview"
+                     data-default-title="{{ script.title }}"
+                     data-default-author="{{ script.author_name|default:user.username }}">
+                    <!-- Top / Center Cover Block -->
+                    <div class="text-center my-auto py-4">
+                        <div class="preview-title" id="previewTitle">
+                            {{ title_page.get_effective_title|upper }}
+                        </div>
+                        <div class="preview-subtitle" id="previewSubtitle" {% if not title_page.subtitle %}style="display: none;"{% endif %}>
+                            {{ title_page.subtitle }}
+                        </div>
+
+                        <div class="preview-by mt-3">എഴുതിയത് / Written by</div>
+                        <div class="preview-author" id="previewAuthor">
+                            {{ title_page.get_effective_author }}
+                        </div>
+
+                        <div class="preview-credits" id="previewCredits" {% if not title_page.adaptation_credits %}style="display: none;"{% endif %}>
+                            {{ title_page.adaptation_credits }}
+                        </div>
+                    </div>
+
+                    <!-- Bottom Production Footer (Two Columns) -->
+                    <div class="row pt-4 mt-auto border-top border-light-subtle">
+                        <!-- Bottom Left: Draft & Legal -->
+                        <div class="col-6 preview-footer-left">
+                            <div id="previewDraft" class="fw-semibold mb-1" {% if not title_page.draft_revision and not title_page.draft_date %}style="display: none;"{% endif %}>
+                                <span id="previewDraftRev">{{ title_page.draft_revision }}</span>
+                                {% if title_page.draft_revision and title_page.draft_date %}<br>{% endif %}
+                                <span id="previewDraftDate" class="text-muted">{{ title_page.draft_date }}</span>
+                            </div>
+                            <div id="previewCopyright" class="preview-copyright text-muted small" {% if not title_page.copyright_registration %}style="display: none;"{% endif %}>
+                                {{ title_page.copyright_registration }}
+                            </div>
+                        </div>
+
+                        <!-- Bottom Right: Contact Information -->
+                        <div class="col-6 preview-footer-right">
+                            <div id="previewContact" {% if not title_page.contact_name and not title_page.contact_email and not title_page.contact_phone %}style="display: none;"{% endif %}>
+                                <div id="previewContactName" class="fw-semibold">{{ title_page.contact_name }}</div>
+                                <div id="previewContactEmail" class="text-muted small">{{ title_page.contact_email }}</div>
+                                <div id="previewContactPhone" class="text-muted small">{{ title_page.contact_phone }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Shortcuts underneath preview -->
+                <div class="p-3 bg-light rounded-3 border mt-3 text-center">
+                    <div class="text-muted small mb-2">This cover page will be automatically included at the start of:</div>
+                    <div class="d-flex justify-content-center gap-2">
+                        <span class="badge bg-white text-dark border"><i class="bi bi-file-earmark-pdf text-danger me-1"></i> PDF Export</span>
+                        <span class="badge bg-white text-dark border"><i class="bi bi-file-earmark-word text-primary me-1"></i> Word (.docx)</span>
+                        <span class="badge bg-white text-dark border"><i class="bi bi-file-earmark-text text-secondary me-1"></i> Plain Text</span>
+                        <span class="badge bg-white text-dark border"><i class="bi bi-printer text-dark me-1"></i> Print Preview</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const previewCard = document.getElementById('titlePagePreview');
+    const defaultTitle = previewCard ? (previewCard.dataset.defaultTitle || '') : '';
+    const defaultAuthor = previewCard ? (previewCard.dataset.defaultAuthor || '') : '';
+
+    const titleInput = document.getElementById('id_title');
+    const subtitleInput = document.getElementById('id_subtitle');
+    const authorInput = document.getElementById('id_author_name');
+    const penNameInput = document.getElementById('id_pen_name');
+    const creditsInput = document.getElementById('id_adaptation_credits');
+    const draftRevInput = document.getElementById('id_draft_revision');
+    const draftDateInput = document.getElementById('id_draft_date');
+    const copyrightInput = document.getElementById('id_copyright_registration');
+    const contactNameInput = document.getElementById('id_contact_name');
+    const contactEmailInput = document.getElementById('id_contact_email');
+    const contactPhoneInput = document.getElementById('id_contact_phone');
+
+    const previewTitle = document.getElementById('previewTitle');
+    const previewSubtitle = document.getElementById('previewSubtitle');
+    const previewAuthor = document.getElementById('previewAuthor');
+    const previewCredits = document.getElementById('previewCredits');
+    const previewDraft = document.getElementById('previewDraft');
+    const previewDraftRev = document.getElementById('previewDraftRev');
+    const previewDraftDate = document.getElementById('previewDraftDate');
+    const previewCopyright = document.getElementById('previewCopyright');
+    const previewContact = document.getElementById('previewContact');
+    const previewContactName = document.getElementById('previewContactName');
+    const previewContactEmail = document.getElementById('previewContactEmail');
+    const previewContactPhone = document.getElementById('previewContactPhone');
+
+    function updatePreview() {
+        // Title
+        const customTitle = titleInput ? titleInput.value.trim() : '';
+        previewTitle.textContent = (customTitle || defaultTitle).toUpperCase();
+
+        // Subtitle
+        const subtitle = subtitleInput ? subtitleInput.value.trim() : '';
+        if (subtitle) {
+            previewSubtitle.textContent = subtitle;
+            previewSubtitle.style.display = 'block';
+        } else {
+            previewSubtitle.style.display = 'none';
+        }
+
+        // Author / Pen Name
+        const penName = penNameInput ? penNameInput.value.trim() : '';
+        const author = authorInput ? authorInput.value.trim() : '';
+        previewAuthor.textContent = penName || author || defaultAuthor;
+
+        // Credits
+        const credits = creditsInput ? creditsInput.value.trim() : '';
+        if (credits) {
+            previewCredits.textContent = credits;
+            previewCredits.style.display = 'block';
+        } else {
+            previewCredits.style.display = 'none';
+        }
+
+        // Draft
+        const draftRev = draftRevInput ? draftRevInput.value.trim() : '';
+        const draftDate = draftDateInput ? draftDateInput.value.trim() : '';
+        if (draftRev || draftDate) {
+            previewDraft.style.display = 'block';
+            previewDraftRev.textContent = draftRev;
+            previewDraftDate.textContent = draftDate;
+        } else {
+            previewDraft.style.display = 'none';
+        }
+
+        // Copyright / Registration
+        const copyright = copyrightInput ? copyrightInput.value.trim() : '';
+        if (copyright) {
+            previewCopyright.textContent = copyright;
+            previewCopyright.style.display = 'block';
+        } else {
+            previewCopyright.style.display = 'none';
+        }
+
+        // Contact
+        const cName = contactNameInput ? contactNameInput.value.trim() : '';
+        const cEmail = contactEmailInput ? contactEmailInput.value.trim() : '';
+        const cPhone = contactPhoneInput ? contactPhoneInput.value.trim() : '';
+        if (cName || cEmail || cPhone) {
+            previewContact.style.display = 'block';
+            previewContactName.textContent = cName;
+            previewContactEmail.textContent = cEmail;
+            previewContactPhone.textContent = cPhone;
+        } else {
+            previewContact.style.display = 'none';
+        }
+    }
+
+    // Attach event listeners for real-time live preview
+    const inputs = [
+        titleInput, subtitleInput, authorInput, penNameInput,
+        creditsInput, draftRevInput, draftDateInput, copyrightInput,
+        contactNameInput, contactEmailInput, contactPhoneInput
+    ];
+
+    inputs.forEach(input => {
+        if (input) {
+            input.addEventListener('input', updatePreview);
+        }
+    });
+
+    updatePreview();
+});
+</script>
+{% endblock %}

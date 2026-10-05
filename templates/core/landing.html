@@ -1,0 +1,258 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}KadhaScript — Write Your Story in Malayalam{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="py-5 text-center" style="background: radial-gradient(circle at 50% 20%, #ffffff 0%, #faf6ef 100%); border-bottom: 1px solid var(--ks-border);">
+    <div class="container py-4">
+        <div class="row justify-content-center">
+            <div class="col-lg-9">
+                <span class="badge-ks badge-format mb-3 d-inline-block px-3 py-1">
+                    <i class="bi bi-feather me-1"></i> Screenplay Writing for Malayalam Cinema & Theater
+                </span>
+                <h1 class="display-4 fw-bold text-dark mb-3" style="letter-spacing: -1px;">
+                    Write Your Story in <span style="color: var(--ks-accent);">Malayalam.</span>
+                </h1>
+                <p class="fs-5 text-muted mb-4 lead font-malayalam" style="max-width: 680px; margin: 0 auto;">
+                    മലയാളം തിരക്കഥകൾ ഡിജിറ്റലായി രൂപപ്പെടുത്താനും, സീനുകൾ ചിട്ടപ്പെടുത്താനും, കയറ്റുമതി ചെയ്യാനും അനുയോജ്യമായ പ്രൊഫഷണൽ വേദി.
+                    <br>
+                    <span class="fs-6 d-block mt-1 text-secondary">Create, organize and bring your Malayalam screenplay to life.</span>
+                </p>
+                <div class="d-flex justify-content-center gap-3 flex-wrap">
+                    <a href="{% url 'register' %}" class="btn-primary-ks px-4 py-2 fs-6">
+                        <i class="bi bi-pencil-square"></i> Start Writing
+                    </a>
+                    <a href="#features" class="btn-outline-ks px-4 py-2 fs-6">
+                        <i class="bi bi-compass"></i> Explore Features
+                    </a>
+                </div>
+
+                <!-- Preview Card -->
+                <div class="mt-5 ks-card text-start shadow-lg mx-auto" style="max-width: 760px; background-color: #ffffff; border: 1px solid #e2ddd3;">
+                    <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom bg-light">
+                        <div class="d-flex gap-1">
+                            <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #e07050;"></span>
+                            <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #e5be60;"></span>
+                            <span class="rounded-circle d-inline-block" style="width: 10px; height: 10px; background: #60c070;"></span>
+                        </div>
+                        <small class="text-muted font-screenplay">01 — INT. HOUSE - NIGHT</small>
+                        <span class="badge bg-success-subtle text-success small">Saved ✓</span>
+                    </div>
+                    <div class="p-4 font-screenplay fs-6 lh-lg" style="background-color: #ffffff;">
+                        <p class="fw-bold mb-2">1. INT. HOUSE - NIGHT</p>
+                        <p class="text-secondary mb-3">മഴ ശക്തമായി പെയ്യുന്നു. ജനലിലൂടെ പുറത്തേക്ക് നോക്കുന്ന അനു.</p>
+                        <p class="fw-bold text-center mb-0" style="width: 60%; margin: 0 auto;">ANU</p>
+                        <p class="text-center mb-3" style="width: 70%; margin: 0 auto;">നീ വരുമെന്ന് ഞാൻ കരുതി.</p>
+                        <p class="fw-bold text-center mb-0" style="width: 60%; margin: 0 auto;">RAJEEV</p>
+                        <p class="text-center mb-3" style="width: 70%; margin: 0 auto;">ഞാൻ വരാതിരിക്കുമെന്ന് നിനക്ക് തോന്നിയോ?</p>
+                        <p class="text-secondary mb-0">അനു അവനെ നോക്കി പുഞ്ചിരിക്കുന്നു.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Why KadhaScript Section -->
+<section id="features" class="py-5">
+    <div class="container py-4">
+        <div class="text-center mb-5">
+            <span class="text-uppercase fw-bold small text-muted letter-spacing-1">Why KadhaScript</span>
+            <h2 class="fw-bold mt-1">Built Exclusively for Screenwriters</h2>
+            <p class="text-muted">Not a generic word processor or note taking tool. Pure screenplay formatting engineered for Malayalam Unicode.</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-type"></i>
+                    </div>
+                    <h5 class="fw-bold">Native Malayalam Unicode</h5>
+                    <p class="text-muted small">Flawless rendering and typing in Malayalam chillu, koottaksharam, and conjuncts with tailored typography.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-film"></i>
+                    </div>
+                    <h5 class="fw-bold">Screenplay Element Engine</h5>
+                    <p class="text-muted small">Scene Headings, Action, Character cues, Dialogue, Parentheticals, Transitions, Shots and inline Notes.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-cloud-check"></i>
+                    </div>
+                    <h5 class="fw-bold">Realtime Auto-Save</h5>
+                    <p class="text-muted small">Never lose a single word of your creative flow. Real-time debounced saving with error resilience and offline protection.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-layout-sidebar"></i>
+                    </div>
+                    <h5 class="fw-bold">Scene Navigator</h5>
+                    <p class="text-muted small">Jump between scenes seamlessly with the scene sidebar. Re-order, duplicate, search, and manage script structure effortlessly.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-people"></i>
+                    </div>
+                    <h5 class="fw-bold">Character Database & Cues</h5>
+                    <p class="text-muted small">Maintain your cast with backstory and notes. Smart character auto-suggestions appear automatically as you write dialogues.</p>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="ks-card h-100 p-4">
+                    <div class="ks-stat-icon mb-3">
+                        <i class="bi bi-file-earmark-pdf"></i>
+                    </div>
+                    <h5 class="fw-bold">PDF, DOCX & Print Ready</h5>
+                    <p class="text-muted small">Export industry standard screenplay PDFs with proper margins, character indentations, and TrueType Malayalam font embedding.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Version History & Notes Section -->
+<section class="py-5" style="background-color: var(--ks-surface-subtle); border-top: 1px solid var(--ks-border); border-bottom: 1px solid var(--ks-border);">
+    <div class="container py-3">
+        <div class="row align-items-center g-5">
+            <div class="col-lg-6">
+                <span class="badge-ks mb-2">Version Control for Writers</span>
+                <h3 class="fw-bold mb-3">Draft Snapshots & Private Notes</h3>
+                <p class="text-muted mb-4">
+                    Never fear deleting a scene or rewriting an interval block. Take instant snapshots of your screenplay draft at any stage and restore past versions with one click.
+                </p>
+                <div class="d-flex flex-column gap-3">
+                    <div class="d-flex align-items-start gap-3">
+                        <i class="bi bi-clock-history text-danger fs-5" style="color: var(--ks-accent) !important;"></i>
+                        <div>
+                            <strong class="d-block">Meaningful Version Snapshots</strong>
+                            <small class="text-muted">Keep Draft 1, Interval Revision, and Final Shoot drafts safe and sound.</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start gap-3">
+                        <i class="bi bi-sticky text-danger fs-5" style="color: var(--ks-accent) !important;"></i>
+                        <div>
+                            <strong class="d-block">Private Script Scratchpad</strong>
+                            <small class="text-muted">Keep plot ideas, research links, and character backstories separate from exported scripts.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="ks-card p-4 bg-white">
+                    <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                        <h6 class="fw-bold mb-0">Version Snapshots</h6>
+                        <span class="badge bg-secondary-subtle text-secondary small">3 Snapshots</span>
+                    </div>
+                    <div class="list-group list-group-flush small">
+                        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong class="d-block text-dark">Version 3 — Final Draft</strong>
+                                <span class="text-muted">Polished climax dialogue and scene 14 timing</span>
+                            </div>
+                            <span class="badge bg-success-subtle text-success">Active</span>
+                        </div>
+                        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong class="d-block text-dark">Version 2 — Interval Block Rework</strong>
+                                <span class="text-muted">Rewrote street chase sequence</span>
+                            </div>
+                            <span class="text-muted small">2 days ago</span>
+                        </div>
+                        <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong class="d-block text-dark">Version 1 — Initial Screenplay</strong>
+                                <span class="text-muted">First full script draft</span>
+                            </div>
+                            <span class="text-muted small">1 week ago</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- FAQ Section -->
+<section class="py-5">
+    <div class="container py-4" style="max-width: 800px;">
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">Frequently Asked Questions</h2>
+            <p class="text-muted">Everything you need to know about KadhaScript</p>
+        </div>
+
+        <div class="accordion" id="faqAccordion">
+            <div class="accordion-item border mb-2 rounded overflow-hidden">
+                <h2 class="accordion-header" id="headingOne">
+                    <button class="accordion-button collapsed fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne">
+                        Does KadhaScript properly support Malayalam typing and fonts?
+                    </button>
+                </h2>
+                <div id="collapseOne" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="accordion-body text-muted small">
+                        Yes! KadhaScript is built with native UTF-8 Unicode support throughout. Whether you type using standard Malayalam Inscript keyboard, Google Input Tools, or phonetic keyboards, all characters, chillus, and conjuncts render smoothly with Malayalam typography.
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item border mb-2 rounded overflow-hidden">
+                <h2 class="accordion-header" id="headingTwo">
+                    <button class="accordion-button collapsed fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseTwo">
+                        How does the screenplay formatting work?
+                    </button>
+                </h2>
+                <div id="collapseTwo" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="accordion-body text-muted small">
+                        KadhaScript utilizes structured screenplay database objects. When you press <kbd>Enter</kbd> or <kbd>Tab</kbd>, the editor automatically follows screenwriting rules: Scene Headings flow into Action, Character cues flow into Dialogue, and Parentheticals stay centered.
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item border mb-2 rounded overflow-hidden">
+                <h2 class="accordion-header" id="headingThree">
+                    <button class="accordion-button collapsed fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseThree">
+                        Can I export my script to PDF and Word DOCX?
+                    </button>
+                </h2>
+                <div id="collapseThree" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="accordion-body text-muted small">
+                        Yes! You can download professional screenplay PDFs with embedded Malayalam TrueType fonts (ready for actors, producers, and crew), formatted Microsoft Word (.docx) files, or plain text (.txt).
+                    </div>
+                </div>
+            </div>
+
+            <div class="accordion-item border mb-2 rounded overflow-hidden">
+                <h2 class="accordion-header" id="headingFour">
+                    <button class="accordion-button collapsed fw-semibold" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFour">
+                        Are my scripts private and secure?
+                    </button>
+                </h2>
+                <div id="collapseFour" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                    <div class="accordion-body text-muted small">
+                        Yes. Each script is strictly protected by Django's authentication system and database ownership checks. No user can view or edit another user's scripts under any circumstance.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-5">
+            <h4 class="fw-bold mb-3">Ready to write your Malayalam screenplay?</h4>
+            <a href="{% url 'register' %}" class="btn-primary-ks px-4 py-2 fs-6">
+                Create Free Writer Account <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

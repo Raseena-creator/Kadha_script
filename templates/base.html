@@ -1,0 +1,131 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ml" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}KadhaScript — മലയാളം തിരക്കഥാ എഴുത്ത് വേദി{% endblock %}</title>
+    <meta name="description" content="Dedicated Malayalam Screenplay Writing and Management Platform. Write, format, organize and export Malayalam scripts.">
+    
+    <!-- Bootstrap 5 CSS & Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <!-- Custom Style System -->
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+    <!-- Navbar -->
+    <nav class="ks-navbar d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+            <a href="{% if user.is_authenticated %}{% url 'dashboard' %}{% else %}{% url 'landing' %}{% endif %}" class="ks-brand">
+                <i class="bi bi-pen-fill text-danger" style="color: var(--ks-accent) !important;"></i>
+                <span>കഥാസ്ക്രിപ്റ്റ്</span>
+                <span class="text-muted fw-normal fs-6">KadhaScript</span>
+                <span class="ks-brand-badge">Beta</span>
+            </a>
+
+            {% if user.is_authenticated %}
+            <div class="d-none d-md-flex align-items-center gap-1 ms-3">
+                <a href="{% url 'dashboard' %}" class="ks-nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                    <i class="bi bi-grid-1x2"></i> Dashboard
+                </a>
+                <a href="{% url 'script_list' %}" class="ks-nav-link {% if request.resolver_match.url_name == 'script_list' %}active{% endif %}">
+                    <i class="bi bi-collection-play"></i> My Scripts
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Right Side Nav -->
+        <div class="d-flex align-items-center gap-2">
+            {% if user.is_authenticated %}
+                <!-- Global Search Form -->
+                <form action="{% url 'global_search' %}" method="GET" class="d-none d-lg-flex position-relative me-2">
+                    <input type="search" name="q" class="form-control form-control-sm pe-4 font-malayalam" placeholder="Search scripts, dialogues... (/)" value="{{ request.GET.q|default:'' }}" style="width: 240px; border-radius: 20px;">
+                    <button type="submit" class="btn btn-sm position-absolute end-0 top-50 translate-middle-y text-muted border-0 bg-transparent">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </form>
+
+                <a href="{% url 'script_create' %}" class="btn-primary-ks btn-sm">
+                    <i class="bi bi-plus-lg"></i>
+                    <span class="d-none d-sm-inline">New Script</span>
+                </a>
+
+                <div class="dropdown ms-1">
+                    <button class="btn btn-sm btn-outline-ks dropdown-toggle d-flex align-items-center gap-1" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-person-circle"></i>
+                        <span class="d-none d-md-inline">{{ user.profile.pen_name|default:user.username }}</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                        <li>
+                            <div class="px-3 py-2 border-bottom">
+                                <strong class="d-block text-truncate">{{ user.profile.pen_name|default:user.username }}</strong>
+                                <small class="text-muted">{{ user.email }}</small>
+                            </div>
+                        </li>
+                        <li><a class="dropdown-item py-2" href="{% url 'profile' %}"><i class="bi bi-person me-2"></i>Writer Profile</a></li>
+                        <li><a class="dropdown-item py-2" href="{% url 'settings' %}"><i class="bi bi-gear me-2"></i>Preferences</a></li>
+                        <li><hr class="dropdown-divider my-1"></li>
+                        <li>
+                            <form action="{% url 'logout' %}" method="POST" class="d-inline w-100">
+                                {% csrf_token %}
+                                <button type="submit" class="dropdown-item text-danger py-2 border-0 bg-transparent w-100 text-start">
+                                    <i class="bi bi-box-arrow-right me-2"></i>Sign Out
+                                </button>
+                            </form>
+                        </li>
+                    </ul>
+                </div>
+            {% else %}
+                <a href="{% url 'login' %}" class="btn-outline-ks btn-sm">Sign In</a>
+                <a href="{% url 'register' %}" class="btn-primary-ks btn-sm">Get Started</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <!-- Global Messages / Alerts -->
+    {% if messages %}
+    <div class="container mt-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
+            {% if message.tags == 'success' %}<i class="bi bi-check-circle-fill text-success"></i>
+            {% elif message.tags == 'error' or message.tags == 'danger' %}<i class="bi bi-exclamation-triangle-fill text-danger"></i>
+            {% else %}<i class="bi bi-info-circle-fill text-info"></i>{% endif %}
+            <div class="flex-grow-1">{{ message }}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Main Content Area -->
+    <main class="flex-grow-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block footer %}
+    <!-- Footer -->
+    <footer class="ks-footer">
+        <div class="container text-center">
+            <div class="row align-items-center">
+                <div class="col-md-6 text-md-start mb-2 mb-md-0">
+                    <span class="fw-semibold text-dark">KadhaScript</span> — dedicated Malayalam screenplay writing platform.
+                </div>
+                <div class="col-md-6 text-md-end text-muted small">
+                    Built for Malayalam Screenwriters, Directors & Playwrights. UTF-8 Unicode Native.
+                </div>
+            </div>
+        </div>
+    </footer>
+    {% endblock %}
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

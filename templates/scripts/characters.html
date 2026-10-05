@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Characters — {{ script.title }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted small">
+                    <i class="bi bi-arrow-left me-1"></i> {{ script.title }}
+                </a>
+            </div>
+            <h2 class="fw-bold mb-1">Character Management</h2>
+            <p class="text-muted small mb-0">Cast profiles, backstories, and speaking roles. Automatically suggested in the editor.</p>
+        </div>
+        <div class="d-flex gap-2 mt-2 mt-md-0">
+            <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks">
+                <i class="bi bi-pen me-1"></i> Open Editor
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Characters List -->
+        <div class="col-lg-7">
+            <div class="ks-card p-4 bg-white">
+                <h5 class="fw-bold mb-3 pb-2 border-bottom">
+                    <i class="bi bi-people me-2"></i> Script Characters ({{ characters.count }})
+                </h5>
+
+                <div class="row g-3">
+                    {% for char in characters %}
+                    <div class="col-12">
+                        <div class="p-3 border rounded bg-light d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <h6 class="fw-bold mb-0 font-screenplay text-dark">{{ char.name }}</h6>
+                                    {% if char.gender != 'Not Specified' %}
+                                    <span class="badge-ks small">{{ char.gender }}</span>
+                                    {% endif %}
+                                    {% if char.age %}
+                                    <span class="badge bg-white text-muted border small">{{ char.age }}</span>
+                                    {% endif %}
+                                </div>
+
+                                {% if char.description %}
+                                <p class="text-dark small mb-1 font-malayalam">{{ char.description }}</p>
+                                {% endif %}
+
+                                {% if char.notes %}
+                                <p class="text-muted small mb-0 fst-italic font-malayalam">Note: {{ char.notes }}</p>
+                                {% endif %}
+                                
+                                <div class="text-muted small mt-2">
+                                    <i class="bi bi-chat-quote me-1"></i> {{ char.dialogue_count }} dialogue cues in screenplay
+                                </div>
+                            </div>
+
+                            <form method="POST" onsubmit="return confirm('Remove character {{ char.name }}?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="character_id" value="{{ char.id }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger py-1 px-2" title="Delete character">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="col-12 text-center py-4 text-muted">
+                        No characters added yet. Add characters here to populate autocomplete suggestions in the editor!
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Character Form -->
+        <div class="col-lg-5">
+            <div class="ks-card p-4 bg-white">
+                <h5 class="fw-bold mb-3 pb-2 border-bottom">
+                    <i class="bi bi-person-plus me-2"></i> Add Character
+                </h5>
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-dark">Character Name <span class="text-danger">*</span></label>
+                        {{ form.name }}
+                        <div class="form-text small">e.g. ANU, RAJEEV, AMMA, അല്ലെങ്കിൽ മലയാളത്തിൽ അനു, രാജീവ്</div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-dark">Age</label>
+                            {{ form.age }}
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold text-dark">Gender</label>
+                            {{ form.gender }}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-dark">Description</label>
+                        {{ form.description }}
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label small fw-semibold text-dark">Character Notes / Traits</label>
+                        {{ form.notes }}
+                    </div>
+                    <button type="submit" class="btn-primary-ks w-100 justify-content-center">
+                        <i class="bi bi-check-lg me-1"></i> Save Character
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

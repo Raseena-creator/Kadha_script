@@ -1,0 +1,605 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Scene Management — {{ script.title }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted small">
+                    <i class="bi bi-arrow-left me-1"></i> {{ script.title }}
+                </a>
+            </div>
+            <h2 class="fw-bold mb-1">Scene Management</h2>
+            <p class="text-muted small mb-0">Organize, reorder, insert, create sub-scenes, and structure beats in your screenplay.</p>
+        </div>
+        <div class="d-flex gap-2 mt-2 mt-md-0">
+            <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks">
+                <i class="bi bi-pen me-1"></i> Open Editor
+            </a>
+        </div>
+    </div>
+
+    <!-- Alert container for dynamic AJAX alerts -->
+    <div id="sceneActionAlerts"></div>
+
+    <div class="row g-4">
+        <!-- Scenes List & Management -->
+        <div class="col-lg-8">
+            <div class="ks-card p-4 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h5 class="fw-bold mb-0">
+                        <i class="bi bi-list-ol me-2"></i> Screenplay Scenes ({{ scenes|length }})
+                    </h5>
+                    <small class="text-muted">Main scenes and sub-scenes update numbering automatically.</small>
+                </div>
+
+                <div class="list-group list-group-flush" id="sceneManagementList">
+                    {% for sc in scenes %}
+                    <div class="list-group-item px-0 py-3 d-flex flex-wrap justify-content-between align-items-center border-bottom scene-mgmt-row {% if sc.is_sub_scene %}ps-4 bg-light-subtle{% endif %}" data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
+                        <div class="d-flex align-items-center gap-3">
+                            {% if sc.is_sub_scene %}
+                            <span class="text-muted fs-5">↳</span>
+                            {% endif %}
+                            <div>
+                                <a href="{% url 'script_editor' script.id %}?scene={{ sc.id }}" class="fw-bold text-dark text-decoration-none hover-accent font-screenplay scene-heading-link">
+                                    {{ sc.full_display_heading }}
+                                </a>
+                                {% if sc.is_sub_scene %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-2 small">Sub-Scene</span>
+                                {% endif %}
+                                {% if sc.summary %}
+                                <div class="text-muted small mt-1 font-malayalam">{{ sc.summary }}</div>
+                                {% endif %}
+                                <div class="text-muted small mt-1">
+                                    <i class="bi bi-fonts"></i> {{ sc.word_count }} words &nbsp;|&nbsp;
+                                    <i class="bi bi-clock"></i> ~{% widthratio sc.word_count 220 1 %} min
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="d-flex align-items-center gap-2 mt-2 mt-md-0 flex-wrap">
+                            <a href="{% url 'script_editor' script.id %}?scene={{ sc.id }}" class="btn btn-sm btn-outline-ks py-1 px-2" title="Edit in Studio">
+                                <i class="bi bi-pen"></i> Edit
+                            </a>
+
+                            <!-- Options Dropdown -->
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-light border py-1 px-2 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                                    <i class="bi bi-three-dots"></i> Options
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                                    {% if sc.is_sub_scene %}
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="before" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-arrow-up-circle me-2 text-primary"></i> Insert Sub Scene Before
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="after" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-arrow-down-circle me-2 text-success"></i> Insert Sub Scene After
+                                        </button>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="up">
+                                            <i class="bi bi-arrow-up me-2 text-muted"></i> Move Up
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="down">
+                                            <i class="bi bi-arrow-down me-2 text-muted"></i> Move Down
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-dup-scene" data-id="{{ sc.id }}">
+                                            <i class="bi bi-copy me-2 text-muted"></i> Duplicate
+                                        </button>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item text-danger btn-del-scene" data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-trash me-2"></i> Delete
+                                        </button>
+                                    </li>
+                                    {% else %}
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="before" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-arrow-up-circle me-2 text-primary"></i> Insert Scene Before
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-open-insert" data-id="{{ sc.id }}" data-pos="after" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-arrow-down-circle me-2 text-success"></i> Insert Scene After
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-open-subscene" data-id="{{ sc.id }}" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-diagram-3 me-2 text-info"></i> Add Sub Scene
+                                        </button>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="up">
+                                            <i class="bi bi-arrow-up me-2 text-muted"></i> Move Up
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-move-scene" data-id="{{ sc.id }}" data-dir="down">
+                                            <i class="bi bi-arrow-down me-2 text-muted"></i> Move Down
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <button type="button" class="dropdown-item btn-dup-scene" data-id="{{ sc.id }}">
+                                            <i class="bi bi-copy me-2 text-muted"></i> Duplicate
+                                        </button>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button type="button" class="dropdown-item text-danger btn-del-scene" data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false" data-heading="{{ sc.heading|escape }}">
+                                            <i class="bi bi-trash me-2"></i> Delete
+                                        </button>
+                                    </li>
+                                    {% endif %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-4 text-muted">
+                        No scenes created yet.
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Add New Scene Card -->
+        <div class="col-lg-4">
+            <div class="ks-card p-4 bg-white">
+                <h5 class="fw-bold mb-3 pb-2 border-bottom">
+                    <i class="bi bi-plus-circle me-1"></i> Add New Main Scene
+                </h5>
+                <form method="POST">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-dark">Scene Heading (Slugline)</label>
+                        {{ form.heading }}
+                        <div class="form-text small">Standard format: INT./EXT. LOCATION - DAY/NIGHT</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-dark">Scene Beat / Summary (Optional)</label>
+                        {{ form.summary }}
+                    </div>
+                    <button type="submit" class="btn-primary-ks w-100 justify-content-center">
+                        <i class="bi bi-plus-lg"></i> Append Scene to End
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Insert Scene Modal -->
+<div class="modal fade" id="insertSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="insertModalTitle"><i class="bi bi-plus-circle me-1 text-primary"></i> Insert Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <form id="insertSceneForm">
+                    <input type="hidden" id="insertRefId" value="">
+                    <input type="hidden" id="insertPosition" value="after">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Scene Heading (Slugline)</label>
+                        <input type="text" id="insertHeading" class="form-control font-screenplay font-malayalam" placeholder="INT. LOCATION - DAY" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Scene Summary (Optional)</label>
+                        <textarea id="insertSummary" class="form-control font-malayalam" rows="2" placeholder="Brief note about the scene beat..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn-primary-ks btn-sm" id="btnSubmitInsert">
+                            <span id="btnSubmitInsertText">Insert Scene</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Sub-Scene Modal -->
+<div class="modal fade" id="subSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="subSceneModalTitle"><i class="bi bi-diagram-3 me-1 text-info"></i> Add Sub-Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <form id="subSceneForm">
+                    <input type="hidden" id="subSceneParentId" value="">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Sub-Scene Heading</label>
+                        <input type="text" id="subSceneHeading" class="form-control font-screenplay font-malayalam" placeholder="INT. SUB LOCATION - CONTINUOUS" required>
+                        <div class="form-text small">Sub-scenes (e.g. 3A, 3B) remain attached to their parent scene.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Summary (Optional)</label>
+                        <textarea id="subSceneSummary" class="form-control font-malayalam" rows="2" placeholder="Sub-scene notes..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn-primary-ks btn-sm" id="btnSubmitSubScene">
+                            <span id="btnSubmitSubSceneText">Create Sub-Scene</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Scene Confirmation Modal -->
+<div class="modal fade" id="deleteSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold" id="deleteSceneModalTitle"><i class="bi bi-trash me-1 text-danger"></i> Delete Scene</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <p class="mb-3 text-dark">Are you sure you want to delete this scene?</p>
+
+                <div class="p-2 mb-3 bg-light rounded border d-flex align-items-center gap-2">
+                    <span class="badge bg-danger-subtle text-danger font-screenplay fs-6 px-2 py-1 flex-shrink-0" id="deleteSceneBadge">Scene 7</span>
+                    <span class="fw-semibold text-truncate font-screenplay text-dark" id="deleteSceneHeading">INT. LOCATION - DAY</span>
+                </div>
+
+                <div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+                    <i class="bi bi-exclamation-triangle-fill text-warning flex-shrink-0"></i>
+                    <span id="deleteSceneWarning">This will permanently delete this scene and all of its sub-scenes. This action cannot be undone.</span>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-sm btn-danger" id="btnConfirmDeleteScene">
+                        <span id="btnConfirmDeleteSceneText">Delete Scene</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<div id="scenesConfig"
+     data-script-id="{{ script.id }}"
+     data-csrf-token="{{ csrf_token }}"
+     style="display:none;"></div>
+<script>
+    function initScenes() {
+        const configEl = document.getElementById('scenesConfig');
+        const csrfToken = configEl ? (configEl.dataset.csrfToken || '') : '';
+        const scriptId = configEl ? parseInt(configEl.dataset.scriptId, 10) : null;
+        const alertContainer = document.getElementById('sceneActionAlerts');
+
+        function showAlert(message, type = 'danger') {
+            if (!alertContainer) {
+                alert(message);
+                return;
+            }
+            alertContainer.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show d-flex align-items-center gap-2" role="alert">
+                    <i class="bi ${type === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'}"></i>
+                    <div>${message}</div>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Global Event Delegation for scene action dropdown buttons
+        document.addEventListener('click', async (e) => {
+            // 1. Insert Scene Before / After button clicked
+            const insertBtn = e.target.closest('.btn-open-insert');
+            if (insertBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const refId = insertBtn.dataset.id;
+                const pos = insertBtn.dataset.pos || 'after';
+                let heading = insertBtn.dataset.heading;
+                if (!heading) {
+                    const row = insertBtn.closest('.scene-mgmt-row');
+                    heading = row ? row.querySelector('.scene-heading-link')?.textContent?.trim() : '';
+                }
+
+                const isSub = insertBtn.dataset.isSub === 'true';
+                document.getElementById('insertRefId').value = refId;
+                document.getElementById('insertPosition').value = pos;
+                document.getElementById('insertHeading').value = isSub ? 'INT. SUB LOCATION - CONTINUOUS' : 'INT. LOCATION - DAY';
+                document.getElementById('insertSummary').value = '';
+                document.getElementById('insertModalTitle').innerHTML = `<i class="bi bi-plus-circle me-1 text-primary"></i> Insert ${isSub ? 'Sub Scene' : 'Scene'} (${pos.toUpperCase()})`;
+                const btnSubmitText = document.getElementById('btnSubmitInsertText');
+                if (btnSubmitText) btnSubmitText.innerText = `Insert ${isSub ? 'Sub Scene' : 'Scene'}`;
+                
+                const insertModalEl = document.getElementById('insertSceneModal');
+                const insertModal = bootstrap.Modal.getOrCreateInstance(insertModalEl);
+                insertModal.show();
+                return;
+            }
+
+            // 2. Add Sub-Scene button clicked
+            const subBtn = e.target.closest('.btn-open-subscene');
+            if (subBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const parentId = subBtn.dataset.id;
+                let parentHeading = subBtn.dataset.heading;
+                if (!parentHeading) {
+                    const row = subBtn.closest('.scene-mgmt-row');
+                    parentHeading = row ? row.querySelector('.scene-heading-link')?.textContent?.trim() : '';
+                }
+
+                document.getElementById('subSceneParentId').value = parentId;
+                document.getElementById('subSceneHeading').value = parentHeading ? `${parentHeading} - CONTINUOUS` : 'INT. SUB LOCATION - CONTINUOUS';
+                document.getElementById('subSceneSummary').value = '';
+                
+                const subModalEl = document.getElementById('subSceneModal');
+                const subSceneModal = bootstrap.Modal.getOrCreateInstance(subModalEl);
+                subSceneModal.show();
+                return;
+            }
+
+            // 3. Move Scene Up / Down button clicked
+            const moveBtn = e.target.closest('.btn-move-scene');
+            if (moveBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const scId = moveBtn.dataset.id;
+                const dir = moveBtn.dataset.dir;
+                const origHtml = moveBtn.innerHTML;
+                moveBtn.disabled = true;
+                moveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Moving...`;
+
+                try {
+                    const res = await fetch(`/scripts/api/${scriptId}/scenes/${scId}/move/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        },
+                        body: JSON.stringify({ direction: dir })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status !== 'error') {
+                        window.location.reload();
+                    } else {
+                        showAlert(data.message || 'Cannot move scene');
+                        moveBtn.disabled = false;
+                        moveBtn.innerHTML = origHtml;
+                    }
+                } catch (err) {
+                    showAlert('Network error while moving scene');
+                    moveBtn.disabled = false;
+                    moveBtn.innerHTML = origHtml;
+                }
+                return;
+            }
+
+            // 4. Duplicate Scene button clicked
+            const dupBtn = e.target.closest('.btn-dup-scene');
+            if (dupBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const scId = dupBtn.dataset.id;
+                const origHtml = dupBtn.innerHTML;
+                dupBtn.disabled = true;
+                dupBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> Duplicating...`;
+
+                try {
+                    const res = await fetch(`/scripts/api/${scriptId}/scenes/${scId}/duplicate/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        }
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status === 'ok') {
+                        window.location.reload();
+                    } else {
+                        showAlert(data.message || 'Error duplicating scene');
+                        dupBtn.disabled = false;
+                        dupBtn.innerHTML = origHtml;
+                    }
+                } catch (err) {
+                    showAlert('Network error while duplicating scene');
+                    dupBtn.disabled = false;
+                    dupBtn.innerHTML = origHtml;
+                }
+                return;
+            }
+
+            // 5. Delete Scene button clicked
+            const delBtn = e.target.closest('.btn-del-scene');
+            if (delBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const scId = delBtn.dataset.id;
+                const isSub = delBtn.dataset.isSub === 'true';
+                let heading = delBtn.dataset.heading;
+                if (!heading) {
+                    const row = delBtn.closest('.scene-mgmt-row');
+                    heading = row ? row.querySelector('.scene-heading-link')?.textContent?.trim() : '';
+                }
+                const rawBadge = delBtn.dataset.badge || (isSub ? 'Sub-Scene' : 'Scene');
+                const badgeText = rawBadge.startsWith('Scene ') ? rawBadge : `Scene ${rawBadge}`;
+
+                pendingDeleteSceneId = scId;
+                const badgeEl = document.getElementById('deleteSceneBadge');
+                if (badgeEl) badgeEl.innerText = badgeText;
+                
+                const headingEl = document.getElementById('deleteSceneHeading');
+                if (headingEl) headingEl.innerText = heading || 'UNTITLED SCENE';
+
+                const warningEl = document.getElementById('deleteSceneWarning');
+                if (warningEl) {
+                    warningEl.innerText = isSub
+                        ? 'This will permanently delete this sub-scene. Other scenes will not be affected.'
+                        : 'This will permanently delete this scene and all of its sub-scenes. This action cannot be undone.';
+                }
+
+                const deleteModalEl = document.getElementById('deleteSceneModal');
+                const deleteModal = bootstrap.Modal.getOrCreateInstance(deleteModalEl);
+                deleteModal.show();
+                return;
+            }
+        });
+
+        // Delete Confirmation Submit Handler
+        let pendingDeleteSceneId = null;
+        const btnConfirmDelete = document.getElementById('btnConfirmDeleteScene');
+        if (btnConfirmDelete) {
+            btnConfirmDelete.addEventListener('click', async () => {
+                if (!pendingDeleteSceneId) return;
+                const btnText = document.getElementById('btnConfirmDeleteSceneText');
+                btnConfirmDelete.disabled = true;
+                if (btnText) btnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
+
+                try {
+                    const res = await fetch(`/scripts/api/${scriptId}/scenes/${pendingDeleteSceneId}/delete/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        }
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status === 'ok') {
+                        const deleteModalEl = document.getElementById('deleteSceneModal');
+                        const deleteModal = bootstrap.Modal.getOrCreateInstance(deleteModalEl);
+                        deleteModal.hide();
+                        window.location.reload();
+                    } else {
+                        showAlert(data.message || 'Cannot delete scene');
+                        btnConfirmDelete.disabled = false;
+                        if (btnText) btnText.innerText = 'Delete Scene';
+                    }
+                } catch (err) {
+                    showAlert('Network error while deleting scene');
+                    btnConfirmDelete.disabled = false;
+                    if (btnText) btnText.innerText = 'Delete Scene';
+                }
+            });
+        }
+
+        // Insert Form Submit Handler
+        const insertForm = document.getElementById('insertSceneForm');
+        if (insertForm) {
+            insertForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const refId = parseInt(document.getElementById('insertRefId').value);
+                const pos = document.getElementById('insertPosition').value;
+                const heading = document.getElementById('insertHeading').value.trim();
+                const summary = document.getElementById('insertSummary').value.trim();
+                const submitBtn = document.getElementById('btnSubmitInsert');
+                const submitBtnText = document.getElementById('btnSubmitInsertText');
+
+                if (submitBtn) submitBtn.disabled = true;
+                if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Inserting...';
+
+                try {
+                    const res = await fetch(`/scripts/api/${scriptId}/scenes/insert/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        },
+                        body: JSON.stringify({
+                            reference_scene_id: refId,
+                            position: pos,
+                            heading: heading,
+                            summary: summary
+                        })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status === 'ok') {
+                        const insertModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('insertSceneModal'));
+                        insertModal.hide();
+                        window.location.reload();
+                    } else {
+                        showAlert(data.message || 'Error inserting scene');
+                        if (submitBtn) submitBtn.disabled = false;
+                        if (submitBtnText) submitBtnText.innerText = 'Insert Scene';
+                    }
+                } catch (err) {
+                    showAlert('Network error while inserting scene');
+                    if (submitBtn) submitBtn.disabled = false;
+                    if (submitBtnText) submitBtnText.innerText = 'Insert Scene';
+                }
+            });
+        }
+
+        // Sub Scene Form Submit Handler
+        const subSceneForm = document.getElementById('subSceneForm');
+        if (subSceneForm) {
+            subSceneForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const parentId = parseInt(document.getElementById('subSceneParentId').value);
+                const heading = document.getElementById('subSceneHeading').value.trim();
+                const summary = document.getElementById('subSceneSummary').value.trim();
+                const submitBtn = document.getElementById('btnSubmitSubScene');
+                const submitBtnText = document.getElementById('btnSubmitSubSceneText');
+
+                if (submitBtn) submitBtn.disabled = true;
+                if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Creating...';
+
+                try {
+                    const res = await fetch(`/scripts/api/${scriptId}/scenes/${parentId}/subscene/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        },
+                        body: JSON.stringify({
+                            heading: heading,
+                            summary: summary
+                        })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.status === 'ok') {
+                        const subSceneModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('subSceneModal'));
+                        subSceneModal.hide();
+                        window.location.reload();
+                    } else {
+                        showAlert(data.message || 'Error creating sub-scene');
+                        if (submitBtn) submitBtn.disabled = false;
+                        if (submitBtnText) submitBtnText.innerText = 'Create Sub-Scene';
+                    }
+                } catch (err) {
+                    showAlert('Network error while creating sub-scene');
+                    if (submitBtn) submitBtn.disabled = false;
+                    if (submitBtnText) submitBtnText.innerText = 'Create Sub-Scene';
+                }
+            });
+        }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initScenes);
+    } else {
+        initScenes();
+    }
+</script>
+{% endblock %}

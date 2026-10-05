@@ -1,0 +1,263 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create Account — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-12 col-sm-11 col-md-8 col-lg-6 col-xl-5">
+
+            <!-- Brand Header -->
+            <div class="text-center mb-4">
+                <div class="mb-3">
+                    <i class="bi bi-pen-fill" style="font-size: 2.2rem; color: var(--ks-accent);"></i>
+                </div>
+                <h1 class="fw-bold fs-3 mb-1" style="color: var(--ks-text);">Start writing today</h1>
+                <p class="text-muted small mb-0">Create your KadhaScript screenwriting account</p>
+            </div>
+
+            <!-- Register Card -->
+            <div class="ks-card p-4">
+
+                <!-- Django Messages -->
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible d-flex align-items-center gap-2 mb-3" role="alert">
+                        {% if message.tags == 'error' or message.tags == 'danger' %}
+                            <i class="bi bi-exclamation-triangle-fill text-danger flex-shrink-0"></i>
+                        {% else %}
+                            <i class="bi bi-info-circle-fill text-info flex-shrink-0"></i>
+                        {% endif %}
+                        <div>{{ message }}</div>
+                        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Non-field form errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger d-flex align-items-start gap-2 mb-3">
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                    <ul class="mb-0 ps-2 small">
+                        {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{% url 'register' %}" novalidate>
+                    {% csrf_token %}
+
+                    <!-- Username -->
+                    <div class="mb-3">
+                        <label for="id_username" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-person me-1 text-muted"></i>Username <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            id="id_username"
+                            name="username"
+                            class="form-control {% if form.username.errors %}is-invalid{% endif %}"
+                            placeholder="Choose a username"
+                            value="{{ form.username.value|default:'' }}"
+                            autocomplete="username"
+                            autofocus
+                            required
+                            maxlength="150"
+                        >
+                        {% if form.username.errors %}
+                        <div class="invalid-feedback">
+                            {% for error in form.username.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="form-text text-muted" style="font-size: 0.8rem;">Letters, digits and @/./+/-/_ only.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Name Row -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label for="id_first_name" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                                First Name
+                            </label>
+                            <input
+                                type="text"
+                                id="id_first_name"
+                                name="first_name"
+                                class="form-control {% if form.first_name.errors %}is-invalid{% endif %}"
+                                placeholder="First"
+                                value="{{ form.first_name.value|default:'' }}"
+                                autocomplete="given-name"
+                            >
+                            {% if form.first_name.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.first_name.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-6">
+                            <label for="id_last_name" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                                Last Name
+                            </label>
+                            <input
+                                type="text"
+                                id="id_last_name"
+                                name="last_name"
+                                class="form-control {% if form.last_name.errors %}is-invalid{% endif %}"
+                                placeholder="Last"
+                                value="{{ form.last_name.value|default:'' }}"
+                                autocomplete="family-name"
+                            >
+                            {% if form.last_name.errors %}
+                            <div class="invalid-feedback">
+                                {% for error in form.last_name.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="mb-3">
+                        <label for="id_email" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-envelope me-1 text-muted"></i>Email Address <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="email"
+                            id="id_email"
+                            name="email"
+                            class="form-control {% if form.email.errors %}is-invalid{% endif %}"
+                            placeholder="you@example.com"
+                            value="{{ form.email.value|default:'' }}"
+                            autocomplete="email"
+                            required
+                        >
+                        {% if form.email.errors %}
+                        <div class="invalid-feedback">
+                            {% for error in form.email.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Pen Name -->
+                    <div class="mb-3">
+                        <label for="id_pen_name" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-feather me-1 text-muted"></i>Pen Name / Screenwriter Name
+                        </label>
+                        <input
+                            type="text"
+                            id="id_pen_name"
+                            name="pen_name"
+                            class="form-control {% if form.pen_name.errors %}is-invalid{% endif %}"
+                            placeholder="How you'll appear on your scripts (optional)"
+                            value="{{ form.pen_name.value|default:'' }}"
+                            maxlength="150"
+                        >
+                        {% if form.pen_name.errors %}
+                        <div class="invalid-feedback">
+                            {% for error in form.pen_name.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="form-text text-muted" style="font-size: 0.8rem;">Shown on your screenplay title pages. Can be changed later.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Divider -->
+                    <hr class="my-3" style="border-color: var(--ks-border);">
+                    <p class="small fw-semibold mb-3" style="color: var(--ks-text-muted);">
+                        <i class="bi bi-shield-lock me-1"></i>Set Password
+                    </p>
+
+                    <!-- Password -->
+                    <div class="mb-3">
+                        <label for="id_password1" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="position-relative">
+                            <input
+                                type="password"
+                                id="id_password1"
+                                name="password1"
+                                class="form-control {% if form.password1.errors %}is-invalid{% endif %}"
+                                placeholder="Create a strong password"
+                                autocomplete="new-password"
+                                required
+                            >
+                            <button type="button" class="btn btn-sm border-0 bg-transparent position-absolute end-0 top-50 translate-middle-y pe-2 text-muted" id="togglePass1" tabindex="-1" title="Show/Hide">
+                                <i class="bi bi-eye" id="togglePass1Icon"></i>
+                            </button>
+                        </div>
+                        {% if form.password1.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.password1.errors %}{{ error }}<br>{% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="form-text text-muted" style="font-size: 0.8rem;">Minimum 6 characters. Cannot be entirely numeric.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Confirm Password -->
+                    <div class="mb-4">
+                        <label for="id_password2" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            Confirm Password <span class="text-danger">*</span>
+                        </label>
+                        <div class="position-relative">
+                            <input
+                                type="password"
+                                id="id_password2"
+                                name="password2"
+                                class="form-control {% if form.password2.errors %}is-invalid{% endif %}"
+                                placeholder="Repeat your password"
+                                autocomplete="new-password"
+                                required
+                            >
+                            <button type="button" class="btn btn-sm border-0 bg-transparent position-absolute end-0 top-50 translate-middle-y pe-2 text-muted" id="togglePass2" tabindex="-1" title="Show/Hide">
+                                <i class="bi bi-eye" id="togglePass2Icon"></i>
+                            </button>
+                        </div>
+                        {% if form.password2.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.password2.errors %}{{ error }}<br>{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Submit -->
+                    <button type="submit" class="btn-primary-ks w-100 justify-content-center" style="font-size: 0.95rem;">
+                        <i class="bi bi-person-plus me-1"></i> Create Account
+                    </button>
+                </form>
+            </div>
+
+            <!-- Login Link -->
+            <p class="text-center text-muted small mt-3 mb-0">
+                Already have an account?
+                <a href="{% url 'login' %}" class="fw-semibold text-decoration-none" style="color: var(--ks-accent);">
+                    Sign in
+                </a>
+            </p>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function makeToggle(btnId, iconId, inputId) {
+    const btn = document.getElementById(btnId);
+    const icon = document.getElementById(iconId);
+    const input = document.getElementById(inputId);
+    if (btn && input) {
+        btn.addEventListener('click', () => {
+            const isPass = input.type === 'password';
+            input.type = isPass ? 'text' : 'password';
+            icon.className = isPass ? 'bi bi-eye-slash' : 'bi bi-eye';
+        });
+    }
+}
+makeToggle('togglePass1', 'togglePass1Icon', 'id_password1');
+makeToggle('togglePass2', 'togglePass2Icon', 'id_password2');
+</script>
+{% endblock %}

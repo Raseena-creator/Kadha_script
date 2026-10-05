@@ -1,0 +1,278 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Writer Profile — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <!-- Page Header -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div>
+            <h2 class="fw-bold mb-1">Writer Profile</h2>
+            <p class="text-muted small mb-0">Manage your screenwriter account and personal details.</p>
+        </div>
+        <div class="d-flex gap-2 mt-2 mt-md-0">
+            <a href="{% url 'change_password' %}" class="btn-outline-ks btn-sm">
+                <i class="bi bi-shield-lock me-1"></i> Change Password
+            </a>
+            <a href="{% url 'dashboard' %}" class="btn-primary-ks btn-sm">
+                <i class="bi bi-grid-1x2 me-1"></i> Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible d-flex align-items-center gap-2 mb-4" role="alert">
+            {% if message.tags == 'success' %}
+                <i class="bi bi-check-circle-fill text-success flex-shrink-0"></i>
+            {% elif message.tags == 'error' or message.tags == 'danger' %}
+                <i class="bi bi-exclamation-triangle-fill text-danger flex-shrink-0"></i>
+            {% else %}
+                <i class="bi bi-info-circle-fill text-info flex-shrink-0"></i>
+            {% endif %}
+            <div>{{ message }}</div>
+            <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="row g-4">
+
+        <!-- Left: Profile Summary Card -->
+        <div class="col-lg-4">
+            <div class="ks-card p-4 text-center mb-3">
+                <!-- Avatar placeholder -->
+                <div class="mb-3">
+                    <div class="mx-auto d-flex align-items-center justify-content-center rounded-circle" style="width:80px;height:80px;background:var(--ks-accent-light);border:2px solid var(--ks-accent-border);">
+                        <i class="bi bi-person-fill" style="font-size:2.2rem;color:var(--ks-accent);"></i>
+                    </div>
+                </div>
+
+                <h5 class="fw-bold mb-1">
+                    {{ user.profile.pen_name|default:user.get_full_name|default:user.username }}
+                </h5>
+                {% if user.profile.pen_name %}
+                <p class="text-muted small mb-1">@{{ user.username }}</p>
+                {% endif %}
+                <span class="badge-ks badge-format">
+                    <i class="bi bi-globe2 me-1"></i>{{ user.profile.preferred_language|default:"Malayalam" }}
+                </span>
+
+                <hr class="my-3" style="border-color: var(--ks-border);">
+
+                <!-- Quick Stats -->
+                <div class="row g-2 text-center">
+                    <div class="col-6">
+                        <div class="p-2 rounded" style="background:var(--ks-surface-subtle);">
+                            <div class="fw-bold" style="color:var(--ks-accent);">{{ user.scripts.count }}</div>
+                            <div class="text-muted" style="font-size:0.75rem;">Scripts</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 rounded" style="background:var(--ks-surface-subtle);">
+                            <div class="fw-bold" style="color:var(--ks-accent);">
+                                {{ user.profile.created_at|date:"Y" }}
+                            </div>
+                            <div class="text-muted" style="font-size:0.75rem;">Member Since</div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if user.profile.bio %}
+                <hr class="my-3" style="border-color: var(--ks-border);">
+                <p class="text-muted small text-start mb-0" style="line-height:1.6;">
+                    <i class="bi bi-quote me-1" style="color:var(--ks-accent);"></i>{{ user.profile.bio }}
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- Account Info Card -->
+            <div class="ks-card p-4">
+                <h6 class="fw-semibold mb-3 pb-2 border-bottom" style="font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--ks-text-muted);">Account Info</h6>
+                <div class="d-flex flex-column gap-2">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-person text-muted mt-1 flex-shrink-0"></i>
+                        <div>
+                            <div style="font-size:0.78rem;color:var(--ks-text-muted);">Username</div>
+                            <div class="fw-semibold small">{{ user.username }}</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-envelope text-muted mt-1 flex-shrink-0"></i>
+                        <div>
+                            <div style="font-size:0.78rem;color:var(--ks-text-muted);">Email</div>
+                            <div class="fw-semibold small">{{ user.email|default:"—" }}</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-calendar3 text-muted mt-1 flex-shrink-0"></i>
+                        <div>
+                            <div style="font-size:0.78rem;color:var(--ks-text-muted);">Account Created</div>
+                            <div class="fw-semibold small">{{ user.profile.created_at|date:"M d, Y" }}</div>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="bi bi-clock text-muted mt-1 flex-shrink-0"></i>
+                        <div>
+                            <div style="font-size:0.78rem;color:var(--ks-text-muted);">Last Updated</div>
+                            <div class="fw-semibold small">{{ user.profile.updated_at|date:"M d, Y" }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Edit Profile Form -->
+        <div class="col-lg-8">
+            <div class="ks-card p-4">
+                <h5 class="fw-bold mb-1">Edit Profile</h5>
+                <p class="text-muted small mb-4">Update your personal and screenwriting details.</p>
+
+                <!-- Form non-field errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger d-flex align-items-start gap-2 mb-3">
+                    <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1"></i>
+                    <ul class="mb-0 ps-2 small">
+                        {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{% url 'profile' %}" novalidate>
+                    {% csrf_token %}
+
+                    <!-- Name Row -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-sm-6">
+                            <label for="id_first_name" class="form-label small fw-semibold" style="color: var(--ks-text);">First Name</label>
+                            <input
+                                type="text"
+                                id="id_first_name"
+                                name="first_name"
+                                class="form-control {% if form.first_name.errors %}is-invalid{% endif %}"
+                                placeholder="First name"
+                                value="{{ form.first_name.value|default:'' }}"
+                                autocomplete="given-name"
+                            >
+                            {% if form.first_name.errors %}
+                            <div class="invalid-feedback">{% for e in form.first_name.errors %}{{ e }}{% endfor %}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-sm-6">
+                            <label for="id_last_name" class="form-label small fw-semibold" style="color: var(--ks-text);">Last Name</label>
+                            <input
+                                type="text"
+                                id="id_last_name"
+                                name="last_name"
+                                class="form-control {% if form.last_name.errors %}is-invalid{% endif %}"
+                                placeholder="Last name"
+                                value="{{ form.last_name.value|default:'' }}"
+                                autocomplete="family-name"
+                            >
+                            {% if form.last_name.errors %}
+                            <div class="invalid-feedback">{% for e in form.last_name.errors %}{{ e }}{% endfor %}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Email -->
+                    <div class="mb-3">
+                        <label for="id_email" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-envelope me-1 text-muted"></i>Email Address <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="email"
+                            id="id_email"
+                            name="email"
+                            class="form-control {% if form.email.errors %}is-invalid{% endif %}"
+                            placeholder="your@email.com"
+                            value="{{ form.email.value|default:'' }}"
+                            autocomplete="email"
+                            required
+                        >
+                        {% if form.email.errors %}
+                        <div class="invalid-feedback">{% for e in form.email.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+
+                    <hr class="my-3" style="border-color: var(--ks-border);">
+                    <p class="small fw-semibold mb-3" style="color:var(--ks-text-muted);">
+                        <i class="bi bi-feather me-1"></i>Screenwriter Details
+                    </p>
+
+                    <!-- Pen Name -->
+                    <div class="mb-3">
+                        <label for="id_pen_name" class="form-label small fw-semibold" style="color: var(--ks-text);">Pen Name / Screenwriter Name</label>
+                        <input
+                            type="text"
+                            id="id_pen_name"
+                            name="pen_name"
+                            class="form-control {% if form.pen_name.errors %}is-invalid{% endif %}"
+                            placeholder="Name to display on screenplay title pages"
+                            value="{{ form.pen_name.value|default:'' }}"
+                            maxlength="150"
+                        >
+                        {% if form.pen_name.errors %}
+                        <div class="invalid-feedback">{% for e in form.pen_name.errors %}{{ e }}{% endfor %}</div>
+                        {% else %}
+                        <div class="form-text text-muted" style="font-size:0.8rem;">Shown on PDF/DOCX exports. Leave empty to use your username.</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Preferred Language -->
+                    <div class="mb-3">
+                        <label for="id_preferred_language" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-globe2 me-1 text-muted"></i>Preferred Scripting Language
+                        </label>
+                        <input
+                            type="text"
+                            id="id_preferred_language"
+                            name="preferred_language"
+                            class="form-control {% if form.preferred_language.errors %}is-invalid{% endif %}"
+                            placeholder="e.g. Malayalam"
+                            value="{{ form.preferred_language.value|default:'Malayalam' }}"
+                            maxlength="50"
+                        >
+                        {% if form.preferred_language.errors %}
+                        <div class="invalid-feedback">{% for e in form.preferred_language.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Bio -->
+                    <div class="mb-4">
+                        <label for="id_bio" class="form-label small fw-semibold" style="color: var(--ks-text);">
+                            <i class="bi bi-card-text me-1 text-muted"></i>Short Bio
+                        </label>
+                        <textarea
+                            id="id_bio"
+                            name="bio"
+                            class="form-control {% if form.bio.errors %}is-invalid{% endif %}"
+                            rows="4"
+                            placeholder="A short note about your writing journey, influences, or style..."
+                        >{{ form.bio.value|default:'' }}</textarea>
+                        {% if form.bio.errors %}
+                        <div class="invalid-feedback">{% for e in form.bio.errors %}{{ e }}{% endfor %}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn-primary-ks">
+                            <i class="bi bi-check-lg me-1"></i> Save Changes
+                        </button>
+                        <a href="{% url 'dashboard' %}" class="btn-outline-ks">
+                            <i class="bi bi-x me-1"></i> Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

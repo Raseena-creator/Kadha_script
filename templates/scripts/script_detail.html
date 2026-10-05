@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ script.title }} — Overview — KadhaScript{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    <!-- Header Section -->
+    <div class="ks-card p-4 bg-white mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="badge-ks badge-format">{{ script.script_type }}</span>
+                    <span class="badge-ks badge-genre">{{ script.genre }}</span>
+                    <span class="badge bg-light text-secondary border small">{{ script.language }}</span>
+                </div>
+                <h2 class="fw-bold mb-1">{{ script.title }}</h2>
+                <p class="text-muted small mb-2">
+                    Written by <strong>{{ script.author_name|default:user.username }}</strong> &nbsp;|&nbsp; 
+                    Created {{ script.created_at|date:"M d, Y" }} &nbsp;|&nbsp; 
+                    Last edited {{ script.updated_at|timesince }} ago
+                </p>
+                {% if script.description %}
+                <p class="text-dark small mb-0 font-malayalam" style="max-width: 750px;">
+                    {{ script.description }}
+                </p>
+                {% endif %}
+            </div>
+
+            <!-- Action Controls -->
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks">
+                    <i class="bi bi-pen-fill"></i> Open Editor
+                </a>
+                
+                <form action="{% url 'script_duplicate' script.id %}" method="POST" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-outline-ks" onclick="return confirm('Duplicate &quot;{{ script.title|escapejs }}&quot;?');" title="Duplicate Script">
+                        <i class="bi bi-copy"></i>
+                        <span class="d-none d-sm-inline ms-1">Duplicate</span>
+                    </button>
+                </form>
+
+                <div class="dropdown">
+                    <button class="btn btn-outline-ks dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-download"></i> Export
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
+                        <li><a class="dropdown-item" href="{% url 'export_pdf' script.id %}"><i class="bi bi-file-earmark-pdf me-2 text-danger"></i>Screenplay PDF</a></li>
+                        <li><a class="dropdown-item" href="{% url 'export_docx' script.id %}"><i class="bi bi-file-earmark-word me-2 text-primary"></i>Word Document (.docx)</a></li>
+                        <li><a class="dropdown-item" href="{% url 'export_txt' script.id %}"><i class="bi bi-file-earmark-text me-2 text-secondary"></i>Plain Text (.txt)</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{% url 'print_preview' script.id %}" target="_blank"><i class="bi bi-printer me-2"></i>Print Friendly View</a></li>
+                    </ul>
+                </div>
+
+                <a href="{% url 'script_title_page' script.id %}" class="btn btn-outline-ks" title="Title Page & Production Metadata">
+                    <i class="bi bi-file-earmark-richtext"></i>
+                    <span class="d-none d-sm-inline ms-1">Title Page</span>
+                </a>
+
+                <a href="{% url 'script_edit_metadata' script.id %}" class="btn btn-outline-ks" title="Edit Metadata">
+                    <i class="bi bi-gear"></i>
+                    <span class="d-none d-sm-inline ms-1">Settings</span>
+                </a>
+
+                <a href="{% url 'script_delete' script.id %}" class="btn btn-outline-danger" title="Delete Script">
+                    <i class="bi bi-trash"></i>
+                </a>
+            </div>
+        </div>
+
+        <hr class="my-3">
+
+        <!-- Quick Stats -->
+        <div class="row g-3 text-center">
+            <div class="col-sm-3 col-6">
+                <span class="fs-4 fw-bold text-dark d-block">{{ script.scene_count }}</span>
+                <span class="text-muted small text-uppercase">Scenes</span>
+            </div>
+            <div class="col-sm-3 col-6">
+                <span class="fs-4 fw-bold text-dark d-block">{{ script.word_count }}</span>
+                <span class="text-muted small text-uppercase">Words</span>
+            </div>
+            <div class="col-sm-3 col-6">
+                <span class="fs-4 fw-bold text-dark d-block">~{{ script.estimated_pages }}</span>
+                <span class="text-muted small text-uppercase">Estimated Pages (Min)</span>
+            </div>
+            <div class="col-sm-3 col-6">
+                <span class="fs-4 fw-bold text-dark d-block">{{ characters.count }}</span>
+                <span class="text-muted small text-uppercase">Characters</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Pills for Sections -->
+    <div class="row g-4">
+        <!-- Left Column: Scenes List -->
+        <div class="col-lg-8">
+            <div class="ks-card p-4 bg-white mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h5 class="fw-bold mb-0">
+                        <i class="bi bi-layout-sidebar me-2"></i> Scenes ({{ scenes.count }})
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'scenes_management' script.id %}" class="btn btn-sm btn-outline-ks">
+                            <i class="bi bi-list-check"></i> Reorder / Manage
+                        </a>
+                        <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks">
+                            <i class="bi bi-plus-lg"></i> Add Scene
+                        </a>
+                    </div>
+                </div>
+
+                <div class="list-group list-group-flush">
+                    {% for sc in scenes %}
+                    <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center {% if sc.is_sub_scene %}ps-4 bg-light-subtle{% endif %}">
+                        <div class="d-flex align-items-center gap-2 text-truncate">
+                            {% if sc.is_sub_scene %}
+                            <span class="text-muted small">↳</span>
+                            {% endif %}
+                            <a href="{% url 'script_editor' script.id %}?scene={{ sc.id }}" class="fw-semibold text-dark text-decoration-none hover-accent font-screenplay font-malayalam text-truncate">
+                                {{ sc.full_display_heading }}
+                            </a>
+                            {% if sc.is_sub_scene %}
+                            <span class="badge bg-info-subtle text-info-emphasis small" style="font-size: 0.72rem;">Sub-Scene</span>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex align-items-center gap-3 text-muted small flex-shrink-0 ms-2">
+                            <span>{{ sc.word_count }} words</span>
+                            <a href="{% url 'script_editor' script.id %}?scene={{ sc.id }}" class="text-muted hover-accent" title="Edit in Studio">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-4 text-muted">
+                        No scenes in this script yet. Open the editor to create your first scene!
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Notes Scratchpad -->
+            <div class="ks-card p-4 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h5 class="fw-bold mb-0">
+                        <i class="bi bi-sticky me-2"></i> Private Notes ({{ script.notes.count }})
+                    </h5>
+                    <a href="{% url 'notes' script.id %}" class="btn btn-sm btn-outline-ks">
+                        View All Notes
+                    </a>
+                </div>
+
+                {% if recent_notes %}
+                <div class="list-group list-group-flush">
+                    {% for note in recent_notes %}
+                    <div class="list-group-item px-0 py-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-dark">{{ note.title }}</strong>
+                            <span class="badge bg-light text-secondary border small">{{ note.category }}</span>
+                        </div>
+                        <p class="text-muted small mb-0 font-malayalam">{{ note.content|truncatechars:120 }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No private notes yet. Use notes to track plot ideas, dialogue bits, and research.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Right Column: Title Page, Characters & Versions -->
+        <div class="col-lg-4">
+            
+            <!-- Title Page & Production Info Widget -->
+            <div class="ks-card p-4 bg-white mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0">
+                        <i class="bi bi-file-earmark-richtext me-2 text-primary"></i> Title Page & Credits
+                    </h6>
+                    <a href="{% url 'script_title_page' script.id %}" class="btn btn-sm btn-outline-ks py-0 px-2 small">
+                        Configure
+                    </a>
+                </div>
+
+                <div class="small">
+                    <div class="mb-2">
+                        <span class="text-muted d-block">Cover Title</span>
+                        <strong class="text-dark">
+                            {% if script.title_page and script.title_page.title %}
+                                {{ script.title_page.title }}
+                            {% else %}
+                                {{ script.title }}
+                            {% endif %}
+                        </strong>
+                        {% if script.title_page.subtitle %}
+                        <span class="text-muted d-block italic">{{ script.title_page.subtitle }}</span>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-2">
+                        <span class="text-muted d-block">Author / Pen Name</span>
+                        <span class="text-dark">
+                            {% if script.title_page %}
+                                {{ script.title_page.get_effective_author }}
+                            {% else %}
+                                {{ script.author_name|default:user.username }}
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    {% if script.title_page.draft_revision or script.title_page.draft_date %}
+                    <div class="mb-2">
+                        <span class="text-muted d-block">Draft Info</span>
+                        <span class="text-dark font-screenplay">
+                            {{ script.title_page.draft_revision }}
+                            {% if script.title_page.draft_date %}({{ script.title_page.draft_date }}){% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if script.title_page.copyright_registration %}
+                    <div class="mb-2">
+                        <span class="text-muted d-block">Registration / Copyright</span>
+                        <span class="text-dark small">{{ script.title_page.copyright_registration|truncatechars:60 }}</span>
+                    </div>
+                    {% endif %}
+
+                    {% if script.title_page.contact_name or script.title_page.contact_email or script.title_page.contact_phone %}
+                    <div class="mb-0">
+                        <span class="text-muted d-block">Contact</span>
+                        <span class="text-muted small">
+                            {{ script.title_page.contact_name|default:'' }}
+                            {% if script.title_page.contact_email %}&lt;{{ script.title_page.contact_email }}&gt;{% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Characters Widget -->
+            <div class="ks-card p-4 bg-white mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0">
+                        <i class="bi bi-people me-2"></i> Characters ({{ characters.count }})
+                    </h6>
+                    <a href="{% url 'character_management' script.id %}" class="btn btn-sm btn-outline-ks py-0 px-2 small">
+                        Manage
+                    </a>
+                </div>
+
+                {% if characters %}
+                <div class="list-group list-group-flush small">
+                    {% for char in characters %}
+                    <div class="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong class="d-block font-screenplay text-dark">{{ char.name }}</strong>
+                            {% if char.gender != 'Not Specified' or char.age %}
+                            <span class="text-muted small">{{ char.age }} {{ char.gender }}</span>
+                            {% endif %}
+                        </div>
+                        <span class="badge bg-light text-muted border">{{ char.dialogue_count }} cues</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No characters added yet. Adding characters allows autocomplete while typing dialogues.</p>
+                {% endif %}
+            </div>
+
+            <!-- Version History Widget -->
+            <div class="ks-card p-4 bg-white">
+                <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                    <h6 class="fw-bold mb-0">
+                        <i class="bi bi-clock-history me-2"></i> Version History
+                    </h6>
+                    <a href="{% url 'versions' script.id %}" class="btn btn-sm btn-outline-ks py-0 px-2 small">
+                        All
+                    </a>
+                </div>
+
+                {% if recent_versions %}
+                <div class="list-group list-group-flush small">
+                    {% for ver in recent_versions %}
+                    <div class="list-group-item px-0 py-2">
+                        <div class="d-flex justify-content-between">
+                            <strong class="text-dark">v{{ ver.version_number }} — {{ ver.title }}</strong>
+                            <small class="text-muted">{{ ver.created_at|date:"M d" }}</small>
+                        </div>
+                        {% if ver.description %}
+                        <span class="text-muted d-block small">{{ ver.description|truncatechars:60 }}</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No snapshots saved yet. Snapshots let you save drafts and restore past versions anytime.</p>
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
