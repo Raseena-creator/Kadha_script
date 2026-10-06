@@ -1355,8 +1355,8 @@ body.editor-edit-mode #btnExitEditMode {
    CONTEXTUAL ELEMENT SUGGESTION POPUP
    ========================================================================== */
 .element-suggestion-popup {
-    position: absolute;
-    z-index: 1040;
+    position: fixed;
+    z-index: 1050;
     display: none;
     background: #ffffff;
     border: 1px solid #d9d2c5;
@@ -1367,6 +1367,7 @@ body.editor-edit-mode #btnExitEditMode {
     align-items: center;
     max-width: calc(100vw - 32px);
     transition: opacity 0.15s ease, transform 0.15s ease;
+    touch-action: manipulation;
 }
 
 .element-suggestion-popup button.suggestion-chip {
@@ -1678,8 +1679,8 @@ body.editor-edit-mode #btnExitEditMode {
    CONTEXTUAL ELEMENT SUGGESTION POPUP
    ========================================================================== */
 .element-suggestion-popup {
-    position: absolute;
-    z-index: 1040;
+    position: fixed;
+    z-index: 1050;
     display: none;
     background: #ffffff;
     border: 1px solid #d9d2c5;
@@ -1690,6 +1691,7 @@ body.editor-edit-mode #btnExitEditMode {
     align-items: center;
     max-width: calc(100vw - 32px);
     transition: opacity 0.15s ease, transform 0.15s ease;
+    touch-action: manipulation;
 }
 
 .element-suggestion-popup button.suggestion-chip {

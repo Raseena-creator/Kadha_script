@@ -89,6 +89,7 @@ class KadhaEditor {
         this.bindModeToggleEvents();
         this.setEditorMode('read', false);
         this.setupReadModeScrollObserver();
+        this.bindSuggestionPopupEvents();
     }
 
     // CSRF & Headers helper
@@ -2881,6 +2882,180 @@ class KadhaEditor {
     // ----------------------------------------------------
     // CONTEXTUAL ELEMENT SUGGESTION POPUP
     // ----------------------------------------------------
+    bindSuggestionPopupEvents() {
+        const updateIfVisible = () => {
+            if (this.suggestionPopup && this.suggestionPopup.style.display !== 'none' && this.activeSuggestionBlock) {
+                this.positionContextualPopup(this.activeSuggestionBlock);
+            }
+        };
+
+        window.addEventListener('resize', updateIfVisible, { passive: true });
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateIfVisible, { passive: true });
+            window.visualViewport.addEventListener('scroll', updateIfVisible, { passive: true });
+        }
+
+        const canvasContainer = document.getElementById('editorCanvasContainer');
+        if (canvasContainer) {
+            canvasContainer.addEventListener('scroll', updateIfVisible, { passive: true });
+        }
+        window.addEventListener('scroll', updateIfVisible, { passive: true });
+    }
+
+    getVisibleViewport() {
+        if (window.visualViewport) {
+            const vv = window.visualViewport;
+            return {
+                top: vv.offsetTop,
+                bottom: vv.offsetTop + vv.height,
+                height: vv.height,
+                left: vv.offsetLeft,
+                right: vv.offsetLeft + vv.width,
+                width: vv.width
+            };
+        }
+        return {
+            top: 0,
+            bottom: window.innerHeight,
+            height: window.innerHeight,
+            left: 0,
+            right: window.innerWidth,
+            width: window.innerWidth
+        };
+    }
+
+    getCaretRect(targetBlock) {
+        // 1. Try Selection Range rect
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+            try {
+                const range = sel.getRangeAt(0);
+                if (targetBlock && targetBlock.contains(range.startContainer)) {
+                    const rect = range.getBoundingClientRect();
+                    if (rect && (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.bottom !== 0)) {
+                        return rect;
+                    }
+                    const rects = range.getClientRects();
+                    if (rects && rects.length > 0) {
+                        return rects[0];
+                    }
+                }
+            } catch (e) {
+                // Ignore range selection errors
+            }
+        }
+
+        // 2. Active editable element rect
+        if (targetBlock) {
+            const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+            if (ed) {
+                const edRect = ed.getBoundingClientRect();
+                if (edRect && (edRect.width > 0 || edRect.height > 0 || edRect.top !== 0 || edRect.bottom !== 0)) {
+                    return edRect;
+                }
+            }
+            // 3. Target block rect
+            const bRect = targetBlock.getBoundingClientRect();
+            if (bRect && (bRect.width > 0 || bRect.height > 0 || bRect.top !== 0 || bRect.bottom !== 0)) {
+                return bRect;
+            }
+        }
+
+        return null;
+    }
+
+    ensureBlockVisible(block) {
+        if (!block) return false;
+        const rect = block.getBoundingClientRect();
+        const vv = this.getVisibleViewport();
+
+        const toolbars = document.getElementById('editorTopToolbarsPinned');
+        const toolbarsBottom = (toolbars && toolbars.style.display !== 'none')
+            ? toolbars.getBoundingClientRect().bottom
+            : 0;
+
+        const statsBar = document.querySelector('.editor-stats-bar');
+        const statsBarTop = statsBar ? statsBar.getBoundingClientRect().top : vv.bottom;
+
+        const safeTop = Math.max(vv.top, toolbarsBottom) + 20;
+        const safeBottom = Math.min(vv.bottom, statsBarTop) - 48;
+
+        if (rect.top < safeTop || rect.bottom > safeBottom) {
+            block.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'nearest'
+            });
+            return true;
+        }
+        return false;
+    }
+
+    positionContextualPopup(targetBlock = this.activeSuggestionBlock) {
+        if (!this.suggestionPopup || !targetBlock || this.suggestionPopup.style.display === 'none') return;
+
+        const caretRect = this.getCaretRect(targetBlock);
+        if (!caretRect) return;
+
+        const vv = this.getVisibleViewport();
+
+        const toolbars = document.getElementById('editorTopToolbarsPinned');
+        const toolbarsBottom = (toolbars && toolbars.style.display !== 'none')
+            ? toolbars.getBoundingClientRect().bottom
+            : 0;
+
+        const statsBar = document.querySelector('.editor-stats-bar');
+        const statsBarTop = statsBar ? statsBar.getBoundingClientRect().top : vv.bottom;
+
+        const safeTop = Math.max(vv.top, toolbarsBottom) + 8;
+        const safeBottom = Math.min(vv.bottom, statsBarTop) - 8;
+
+        const popupRect = this.suggestionPopup.getBoundingClientRect();
+        const popupHeight = popupRect.height || 34;
+        const popupWidth = popupRect.width || 180;
+
+        const GAP = 6;
+        const spaceBelow = safeBottom - (caretRect.bottom + GAP);
+        const spaceAbove = (caretRect.top - GAP) - safeTop;
+
+        let topPos;
+        // Prefer placing below caret if sufficient space exists, otherwise flip above
+        if (spaceBelow >= popupHeight) {
+            topPos = caretRect.bottom + GAP;
+        } else if (spaceAbove >= popupHeight) {
+            topPos = caretRect.top - popupHeight - GAP;
+        } else if (spaceBelow >= spaceAbove) {
+            topPos = caretRect.bottom + GAP;
+        } else {
+            topPos = caretRect.top - popupHeight - GAP;
+        }
+
+        // Hard bounds guarantee: popup must never extend into the virtual keyboard
+        // or underneath the bottom stats bar, and must never go above pinned toolbars
+        if (topPos + popupHeight > safeBottom) {
+            topPos = safeBottom - popupHeight;
+        }
+        if (topPos < safeTop) {
+            topPos = safeTop;
+        }
+
+        // Horizontal positioning: align near left of caret/block, clamped to visible viewport
+        const MARGIN_X = 12;
+        let leftPos = caretRect.left;
+        const minLeft = (vv.left || 0) + MARGIN_X;
+        const maxLeft = Math.max(minLeft, (vv.right || window.innerWidth) - popupWidth - MARGIN_X);
+        leftPos = Math.max(minLeft, Math.min(leftPos, maxLeft));
+
+        this.suggestionPopup.style.position = 'fixed';
+        this.suggestionPopup.style.top = `${Math.round(topPos)}px`;
+        this.suggestionPopup.style.left = `${Math.round(leftPos)}px`;
+    }
+
+    positionSuggestionPopup(targetBlock) {
+        this.positionContextualPopup(targetBlock);
+    }
+
     showSuggestionPopup(targetBlock, suggestions) {
         if (!this.suggestionPopup || !suggestions || !suggestions.length) return;
         this.activeSuggestionBlock = targetBlock;
@@ -2904,22 +3079,25 @@ class KadhaEditor {
             this.suggestionPopup.appendChild(btn);
         });
 
-        this.positionSuggestionPopup(targetBlock);
+        this.suggestionPopup.style.position = 'fixed';
         this.suggestionPopup.style.display = 'inline-flex';
-    }
 
-    positionSuggestionPopup(targetBlock) {
-        if (!this.suggestionPopup || !targetBlock) return;
-        const blockRect = targetBlock.getBoundingClientRect();
-        const canvasContainer = document.getElementById('editorCanvasContainer');
-        const containerRect = canvasContainer ? canvasContainer.getBoundingClientRect() : { top: 0, left: 0 };
+        const didScroll = this.ensureBlockVisible(targetBlock);
 
-        const scrollTop = canvasContainer ? canvasContainer.scrollTop : window.pageYOffset;
-        const topPos = (blockRect.top - containerRect.top + scrollTop) + blockRect.height + 6;
-        const leftPos = Math.max(16, (blockRect.left - containerRect.left) + 20);
+        this.positionContextualPopup(targetBlock);
 
-        this.suggestionPopup.style.top = `${topPos}px`;
-        this.suggestionPopup.style.left = `${leftPos}px`;
+        requestAnimationFrame(() => {
+            this.positionContextualPopup(targetBlock);
+            requestAnimationFrame(() => {
+                this.positionContextualPopup(targetBlock);
+            });
+        });
+
+        if (didScroll) {
+            setTimeout(() => {
+                this.positionContextualPopup(targetBlock);
+            }, 180);
+        }
     }
 
     hideSuggestionPopup() {
