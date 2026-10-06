@@ -238,7 +238,7 @@
                             </div>
                             <div class="ks-card-body flex-grow-1 pt-2 pb-3">
                                 <h5 class="fw-bold mb-1 font-malayalam">
-                                    <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-dark hover-accent">
+                                    <a href="{% url 'script_editor' script.id %}" class="text-decoration-none text-dark hover-accent">
                                         {{ script.title }}
                                     </a>
                                 </h5>
@@ -261,12 +261,9 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="p-3 pt-0 mt-auto border-top bg-transparent d-flex justify-content-between gap-2">
-                                <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks flex-grow-1">
-                                    <i class="bi bi-eye me-1"></i> Details
-                                </a>
-                                <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks flex-grow-1">
-                                    <i class="bi bi-pen me-1"></i> Editor
+                            <div class="p-3 pt-0 mt-auto border-top bg-transparent">
+                                <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks w-100">
+                                    <i class="bi bi-pen me-1"></i> Open in Editor
                                 </a>
                             </div>
                         </div>
@@ -292,7 +289,7 @@
                         <div class="ks-card p-3 bg-white h-100 d-flex flex-column">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <div>
-                                    <a href="{% url 'script_detail' scene.script.id %}" class="text-decoration-none text-muted small">
+                                    <a href="{% url 'script_editor' scene.script.id %}" class="text-decoration-none text-muted small">
                                         <i class="bi bi-journal-text me-1"></i> {{ scene.script.title }}
                                     </a>
                                 </div>
@@ -310,11 +307,8 @@
                             {% endif %}
                             <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-auto">
                                 <span class="text-muted small"><i class="bi bi-fonts me-1"></i>{{ scene.word_count }} words</span>
-                                <div class="d-flex gap-2">
-                                    <a href="{% url 'scenes_management' scene.script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2">
-                                        <i class="bi bi-list-ol me-1"></i> Scenes List
-                                    </a>
-                                    <a href="{% url 'script_editor' scene.script.id %}" class="btn btn-sm btn-primary-ks py-1 px-2">
+                                <div>
+                                    <a href="{% url 'script_editor' scene.script.id %}?scene={{ scene.id }}" class="btn btn-sm btn-primary-ks py-1 px-3">
                                         <i class="bi bi-pen me-1"></i> Open in Editor
                                     </a>
                                 </div>
@@ -349,7 +343,7 @@
                                 </span>
                             </div>
                             <div class="small text-muted mb-2 text-truncate">
-                                <a href="{% url 'script_detail' elem.scene.script.id %}" class="text-decoration-none text-muted">
+                                <a href="{% url 'script_editor' elem.scene.script.id %}" class="text-decoration-none text-muted">
                                     <i class="bi bi-journal-text me-1"></i> {{ elem.scene.script.title }}
                                 </a>
                                 <span class="mx-1">•</span>
@@ -389,7 +383,7 @@
                                     <h6 class="fw-bold mb-0 text-dark font-malayalam">
                                         <i class="bi bi-person-circle me-1 text-primary"></i> {{ char.name }}
                                     </h6>
-                                    <a href="{% url 'script_detail' char.script.id %}" class="text-decoration-none text-muted small">
+                                    <a href="{% url 'script_editor' char.script.id %}" class="text-decoration-none text-muted small">
                                         <i class="bi bi-journal-text me-1"></i> {{ char.script.title }}
                                     </a>
                                 </div>
@@ -436,7 +430,7 @@
                                         {{ note.category }}
                                     </span>
                                     <div class="mt-1">
-                                        <a href="{% url 'script_detail' note.script.id %}" class="text-decoration-none text-muted small">
+                                        <a href="{% url 'script_editor' note.script.id %}" class="text-decoration-none text-muted small">
                                             <i class="bi bi-journal-text me-1"></i> {{ note.script.title }}
                                         </a>
                                     </div>
@@ -479,7 +473,7 @@
                         </div>
                         <div class="ks-card-body flex-grow-1 pt-2 pb-3">
                             <h5 class="fw-bold mb-1 font-malayalam">
-                                <a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-dark hover-accent">
+                                <a href="{% url 'script_editor' script.id %}" class="text-decoration-none text-dark hover-accent">
                                     {{ script.title }}
                                 </a>
                             </h5>
@@ -502,12 +496,9 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="p-3 pt-0 mt-auto border-top bg-transparent d-flex justify-content-between gap-2">
-                            <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks flex-grow-1">
-                                <i class="bi bi-eye me-1"></i> Details
-                            </a>
-                            <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks flex-grow-1">
-                                <i class="bi bi-pen me-1"></i> Editor
+                        <div class="p-3 pt-0 mt-auto border-top bg-transparent">
+                            <a href="{% url 'script_editor' script.id %}" class="btn btn-sm btn-primary-ks w-100">
+                                <i class="bi bi-pen me-1"></i> Open in Editor
                             </a>
                         </div>
                     </div>
@@ -526,7 +517,7 @@
                     <div class="ks-card p-3 bg-white h-100 d-flex flex-column">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div>
-                                <a href="{% url 'script_detail' scene.script.id %}" class="text-decoration-none text-muted small">
+                                <a href="{% url 'script_editor' scene.script.id %}" class="text-decoration-none text-muted small">
                                     <i class="bi bi-journal-text me-1"></i> {{ scene.script.title }}
                                 </a>
                             </div>
@@ -544,11 +535,8 @@
                         {% endif %}
                         <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-auto">
                             <span class="text-muted small"><i class="bi bi-fonts me-1"></i>{{ scene.word_count }} words</span>
-                            <div class="d-flex gap-2">
-                                <a href="{% url 'scenes_management' scene.script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2">
-                                    <i class="bi bi-list-ol me-1"></i> Scenes List
-                                </a>
-                                <a href="{% url 'script_editor' scene.script.id %}" class="btn btn-sm btn-primary-ks py-1 px-2">
+                            <div>
+                                <a href="{% url 'script_editor' scene.script.id %}?scene={{ scene.id }}" class="btn btn-sm btn-primary-ks py-1 px-3">
                                     <i class="bi bi-pen me-1"></i> Open in Editor
                                 </a>
                             </div>
@@ -576,7 +564,7 @@
                             </span>
                         </div>
                         <div class="small text-muted mb-2 text-truncate">
-                            <a href="{% url 'script_detail' elem.scene.script.id %}" class="text-decoration-none text-muted">
+                            <a href="{% url 'script_editor' elem.scene.script.id %}" class="text-decoration-none text-muted">
                                 <i class="bi bi-journal-text me-1"></i> {{ elem.scene.script.title }}
                             </a>
                             <span class="mx-1">•</span>
@@ -609,7 +597,7 @@
                                 <h6 class="fw-bold mb-0 text-dark font-malayalam">
                                     <i class="bi bi-person-circle me-1 text-primary"></i> {{ char.name }}
                                 </h6>
-                                <a href="{% url 'script_detail' char.script.id %}" class="text-decoration-none text-muted small">
+                                <a href="{% url 'script_editor' char.script.id %}" class="text-decoration-none text-muted small">
                                     <i class="bi bi-journal-text me-1"></i> {{ char.script.title }}
                                 </a>
                             </div>
@@ -649,7 +637,7 @@
                                     {{ note.category }}
                                 </span>
                                 <div class="mt-1">
-                                    <a href="{% url 'script_detail' note.script.id %}" class="text-decoration-none text-muted small">
+                                    <a href="{% url 'script_editor' note.script.id %}" class="text-decoration-none text-muted small">
                                         <i class="bi bi-journal-text me-1"></i> {{ note.script.title }}
                                     </a>
                                 </div>

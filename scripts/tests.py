@@ -244,10 +244,12 @@ class EditorUINavigationClientRequirementsTests(TestCase):
         self.assertIn('href="/dashboard/"', content)
         self.assertIn('bi-house-door-fill', content)
 
-        # Scenes button in main navbar with easy-to-tap styling
+        # Scenes button in main navbar toggles editor Scenes offcanvas directly (does NOT open Scene Management)
         self.assertIn('id="btnNavScenes"', content)
         self.assertIn('btn-nav-scenes', content)
-        self.assertIn(f'href="/scripts/{self.script.id}/scenes/"', content)
+        self.assertIn('data-bs-toggle="offcanvas"', content)
+        self.assertIn('data-bs-target="#scenesOffcanvas"', content)
+        self.assertNotIn(f'href="/scripts/{self.script.id}/scenes/"', content)
         self.assertIn('<span>Scenes</span>', content)
 
     def test_editor_toolbar_back_and_heading_buttons_removed(self):
@@ -286,8 +288,10 @@ class EditorUINavigationClientRequirementsTests(TestCase):
         self.assertNotIn('Version Snapshots</a>', content)
 
     def test_obsolete_pages_redirect_to_editor(self):
-        """4. Obsolete pages (characters, notes, versions) redirect cleanly to editor."""
+        """4. Obsolete pages (script overview, scene management, characters, notes, versions) redirect cleanly to editor."""
         for path in [
+            f'/scripts/{self.script.id}/',
+            f'/scripts/{self.script.id}/scenes/',
             f'/scripts/{self.script.id}/characters/',
             f'/scripts/{self.script.id}/notes/',
             f'/scripts/{self.script.id}/versions/',
@@ -312,3 +316,54 @@ class EditorUINavigationClientRequirementsTests(TestCase):
         # Obsolete navigation links removed from sidebar/offcanvas footers
         self.assertNotIn('Manage Scenes</span>', content)
         self.assertNotIn('sidebar-footer', content)
+
+    def test_dashboard_and_my_scripts_links_point_directly_to_editor(self):
+        """6. Screenplay cards/titles in Dashboard and My Scripts point directly to script_editor (Req #1, #2)."""
+        expected_editor_url = f'/scripts/{self.script.id}/editor/'
+
+        # Dashboard
+        dash_res = self.client.get('/dashboard/')
+        self.assertEqual(dash_res.status_code, 200)
+        dash_content = dash_res.content.decode('utf-8')
+        self.assertIn(f'href="{expected_editor_url}"', dash_content)
+        self.assertNotIn(f'href="/scripts/{self.script.id}/"', dash_content)
+
+        # My Scripts
+        scripts_res = self.client.get('/scripts/')
+        self.assertEqual(scripts_res.status_code, 200)
+        scripts_content = scripts_res.content.decode('utf-8')
+        self.assertIn(f'href="{expected_editor_url}"', scripts_content)
+        self.assertNotIn(f'href="/scripts/{self.script.id}/"', scripts_content)
+        self.assertNotIn(f'href="/scripts/{self.script.id}/scenes/"', scripts_content)
+
+    def test_editor_scenes_section_displays_scenes_and_subscenes(self):
+        """7. Editor Scenes section/sidebar renders scenes (Scene 1, Scene 2) and sub-scenes (2.A, 2.B) correctly."""
+        sc1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. LIVING ROOM - DAY', order=0)
+        sc2 = Scene.objects.create(script=self.script, scene_number=2, heading='EXT. STREET - NIGHT', order=1)
+        sub2a = Scene.objects.create(script=self.script, scene_number=2, parent_scene=sc2, heading='ALLEYWAY', order=2)
+        sub2b = Scene.objects.create(script=self.script, scene_number=2, parent_scene=sc2, heading='ROOFTOP', order=3)
+
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Verified in offcanvasScenesList
+        self.assertIn('id="scenesOffcanvas"', content)
+        self.assertIn('id="offcanvasScenesList"', content)
+        self.assertIn('INT. LIVING ROOM - DAY', content)
+        self.assertIn('EXT. STREET - NIGHT', content)
+        self.assertIn('ALLEYWAY', content)
+        self.assertIn('ROOFTOP', content)
+        self.assertIn('2.A', content)
+        self.assertIn('2.B', content)
+
+    def test_mobile_swipe_behavior_preserved(self):
+        """8. Existing mobile swipe behavior scripts and handlers for Scenes offcanvas are preserved."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Verified mobile offcanvas and swipe container structure
+        self.assertIn('id="scenesOffcanvas"', content)
+        self.assertIn('class="offcanvas offcanvas-start', content)
+        self.assertIn('editor.js', content)

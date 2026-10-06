@@ -88,19 +88,9 @@ def script_create_view(request):
 
 @login_required
 def script_detail_view(request, script_id):
+    """Compatibility redirect: Script Overview is removed from user flow; redirect directly to editor."""
     script = get_user_script(request.user, script_id)
-    scenes = script.get_ordered_scenes()
-    characters = script.characters.all()
-    notes = script.notes.all()[:5]
-    versions = script.versions.all()[:5]
-
-    return render(request, 'scripts/script_detail.html', {
-        'script': script,
-        'scenes': scenes,
-        'characters': characters,
-        'recent_notes': notes,
-        'recent_versions': versions,
-    })
+    return redirect('script_editor', script_id=script.id)
 
 
 @login_required
@@ -111,7 +101,7 @@ def script_edit_metadata_view(request, script_id):
         if form.is_valid():
             form.save()
             messages.success(request, f'Script "{script.title}" details updated.')
-            return redirect('script_detail', script_id=script.id)
+            return redirect('script_editor', script_id=script.id)
     else:
         form = ScriptForm(instance=script)
     return render(request, 'scripts/script_edit_metadata.html', {'form': form, 'script': script})
@@ -260,12 +250,12 @@ def script_duplicate_view(request, script_id):
                 create_version_snapshot(dup_script, title='Initial Duplication Snapshot')
 
             messages.success(request, f'Script "{original_script.title}" duplicated successfully as "{dup_script.title}".')
-            return redirect('script_detail', script_id=dup_script.id)
+            return redirect('script_editor', script_id=dup_script.id)
         except Exception as e:
             messages.error(request, f'Failed to duplicate script: {str(e)}')
-            return redirect('script_detail', script_id=original_script.id)
+            return redirect('script_editor', script_id=original_script.id)
 
-    return redirect('script_detail', script_id=original_script.id)
+    return redirect('script_editor', script_id=original_script.id)
 
 
 
@@ -317,30 +307,8 @@ def script_editor_view(request, script_id):
 
 @login_required
 def scenes_management_view(request, script_id):
-    script = get_user_script(request.user, script_id)
-    scenes = script.get_ordered_scenes()
-    form = SceneForm()
-
-    if request.method == 'POST':
-        form = SceneForm(request.POST)
-        if form.is_valid():
-            new_sc = form.save(commit=False)
-            new_sc.script = script
-            last_sc = script.scenes.filter(parent_scene__isnull=True).order_by('-order').first()
-            new_sc.order = (last_sc.order + 1) if last_sc else 0
-            new_sc.scene_number = (last_sc.scene_number + 1) if last_sc else 1
-            new_sc.save()
-            # Seed elements
-            ScriptElement.objects.create(scene=new_sc, element_type='scene_heading', content=new_sc.heading, order=0)
-            ScriptElement.objects.create(scene=new_sc, element_type='action', content='', order=1)
-            messages.success(request, f'Scene {new_sc.display_number} created.')
-            return redirect('scenes_management', script_id=script.id)
-
-    return render(request, 'scripts/scenes.html', {
-        'script': script,
-        'scenes': scenes,
-        'form': form,
-    })
+    """Compatibility redirect: Standalone Scene Management is removed from user flow; redirect directly to editor."""
+    return redirect('script_editor', script_id=script_id)
 
 
 @login_required

@@ -12,7 +12,7 @@
             <nav aria-label="breadcrumb" class="mb-1">
                 <ol class="breadcrumb mb-0 small">
                     <li class="breadcrumb-item"><a href="{% url 'script_list' %}" class="text-decoration-none text-muted">My Scripts</a></li>
-                    <li class="breadcrumb-item"><a href="{% url 'script_detail' script.id %}" class="text-decoration-none text-muted">{{ script.title|truncatechars:30 }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'script_editor' script.id %}" class="text-decoration-none text-muted">{{ script.title|truncatechars:30 }}</a></li>
                     <li class="breadcrumb-item active text-muted">Version History</li>
                 </ol>
             </nav>
@@ -27,9 +27,6 @@
         <div class="d-flex gap-2 flex-wrap">
             <a href="{% url 'script_editor' script.id %}" class="btn-primary-ks btn-sm">
                 <i class="bi bi-pen-fill me-1"></i> Back to Editor
-            </a>
-            <a href="{% url 'script_detail' script.id %}" class="btn-outline-ks btn-sm">
-                <i class="bi bi-arrow-left me-1"></i> Script Overview
             </a>
         </div>
     </div>

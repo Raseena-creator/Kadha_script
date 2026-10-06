@@ -526,28 +526,23 @@ class SceneManagementAndMobileTests(TestCase):
         self.assertNotEqual(cloned_sub.elements.first().id, sub_1a.elements.first().id)
 
     def test_31_subscene_actions_ui_rendering(self):
-        """Verify scenes.html has no creation/insert/sub-scene buttons (Req #6), while reordering/duplicate/delete remain, and editor retains sub-scene actions"""
+        """Verify scenes_management redirects to editor, and editor retains scenes section without standalone Scene Management page."""
         s7 = Scene.objects.create(script=self.script_a, scene_number=7, heading='SCENE 7', order=0)
         sub_7a = create_sub_scene(self.script_a, parent_scene_id=s7.id, heading='SUB 7A')
 
-        # Test scenes.html page - verify scene creation actions are absent (Req #6)
+        # scenes_management URL safely redirects to editor (Req #4)
         res = self.client_a.get(reverse('scenes_management', args=[self.script_a.id]))
-        content = res.content.decode('utf-8')
-        self.assertNotIn('Add New Main Scene', content)
-        self.assertNotIn('Append Scene to End', content)
-        self.assertNotIn('Insert Scene Before', content)
-        self.assertNotIn('Insert Scene After', content)
-        self.assertNotIn('Insert Sub Scene Before', content)
-        self.assertNotIn('Insert Sub Scene After', content)
-        self.assertNotIn('Add Sub Scene', content)
+        self.assertEqual(res.status_code, 302)
+        self.assertRedirects(res, reverse('script_editor', args=[self.script_a.id]))
 
-        # Verify management, reordering, duplicate, delete, and editor navigation remain on scenes.html
-        self.assertIn('Move Up', content)
-        self.assertIn('Move Down', content)
-        self.assertIn('Duplicate', content)
-        self.assertIn('Delete', content)
-        self.assertIn('Open Editor', content)
-        self.assertIn('Edit', content)
+        # Editor renders scenes and subscenes in offcanvasScenesList
+        editor_res = self.client_a.get(reverse('script_editor', args=[self.script_a.id]))
+        self.assertEqual(editor_res.status_code, 200)
+        content = editor_res.content.decode('utf-8')
+        self.assertIn('SCENE 7', content)
+        self.assertIn('SUB 7A', content)
+        self.assertIn('id="btnNavScenes"', content)
+        self.assertIn('data-bs-target="#scenesOffcanvas"', content)
 
         # Test editor.html page - scene creation/insertion remains fully functional in editor
         res_ed = self.client_a.get(f"{reverse('script_editor', args=[self.script_a.id])}?scene={sub_7a.id}")
@@ -709,24 +704,19 @@ class SceneManagementAndMobileTests(TestCase):
         actual_headings = [sc.full_display_heading for sc in ordered]
         self.assertEqual(actual_headings, expected_headings)
 
-        # Verify page rendering (script_detail.html)
+        # Verify script_detail and scenes_management compatibility redirects to editor (Req #2, #3, #4)
         detail_res = self.client_a.get(reverse('script_detail', args=[self.script_a.id]))
-        self.assertEqual(detail_res.status_code, 200)
-        import html
-        detail_content = html.unescape(detail_res.content.decode('utf-8'))
-        for expected in expected_headings:
-            self.assertIn(expected, detail_content)
+        self.assertEqual(detail_res.status_code, 302)
+        self.assertRedirects(detail_res, reverse('script_editor', args=[self.script_a.id]))
 
-        # Verify scenes management page (scenes.html)
         scenes_res = self.client_a.get(reverse('scenes_management', args=[self.script_a.id]))
-        self.assertEqual(scenes_res.status_code, 200)
-        scenes_content = html.unescape(scenes_res.content.decode('utf-8'))
-        for expected in expected_headings:
-            self.assertIn(expected, scenes_content)
+        self.assertEqual(scenes_res.status_code, 302)
+        self.assertRedirects(scenes_res, reverse('script_editor', args=[self.script_a.id]))
 
-        # Verify editor page (editor.html)
+        # Verify editor page (editor.html) contains all scenes and sub-scenes
         editor_res = self.client_a.get(reverse('script_editor', args=[self.script_a.id]))
         self.assertEqual(editor_res.status_code, 200)
+        import html
         editor_content = html.unescape(editor_res.content.decode('utf-8'))
         for expected in expected_headings:
             self.assertIn(expected, editor_content)

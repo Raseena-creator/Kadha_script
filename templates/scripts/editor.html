@@ -46,11 +46,11 @@
         {{ script.title }}
     </span>
 
-    <!-- Scenes Button moved into Main Navbar -->
-    <a href="{% url 'scenes_management' script.id %}" class="btn btn-primary-ks btn-nav-scenes" id="btnNavScenes" title="Scene Order (Manage / Reorder Scenes)">
+    <!-- Scenes Button in Main Navbar (opens existing editor Scenes UI directly) -->
+    <button type="button" class="btn btn-primary-ks btn-nav-scenes" id="btnNavScenes" title="Scenes List & Order" data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" aria-controls="scenesOffcanvas">
         <i class="bi bi-list-ol fs-5"></i>
         <span>Scenes</span>
-    </a>
+    </button>
 </div>
 {% endblock navbar_left %}
 
@@ -189,7 +189,77 @@
         </div>
         <div class="offcanvas-body p-2">
             <ul class="scenes-list" id="offcanvasScenesList">
-                <!-- Dynamically updated by KadhaEditor JS -->
+                {% for sc in scenes %}
+                <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-4{% endif %}"
+                    data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
+                    <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
+                        {% if sc.is_sub_scene %}
+                        <span class="sub-scene-indicator text-muted me-1">↳</span>
+                        {% endif %}
+                        <span class="scene-heading-text font-screenplay">{{ sc.full_display_heading }}</span>
+                    </div>
+                    <div class="scene-item-actions dropdown">
+                        <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button"
+                            data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                            {% if sc.is_sub_scene %}
+                            <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
+                                    data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Sub Scene Before</button>
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
+                                    data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub Scene After</button></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
+                                        class="bi bi-arrow-up me-2"></i>Move Up</button></li>
+                            <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
+                                        class="bi bi-arrow-down me-2"></i>Move Down</button></li>
+                            <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
+                                        class="bi bi-copy me-2"></i>Duplicate</button></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item text-danger btn-action-delete"
+                                    data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true"
+                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
+                            </li>
+                            {% else %}
+                            <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
+                                    data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Scene Before</button>
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
+                                    data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Scene After</button>
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.id }}"
+                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub Scene</button></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
+                                        class="bi bi-arrow-up me-2"></i>Move Up</button></li>
+                            <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
+                                        class="bi bi-arrow-down me-2"></i>Move Down</button></li>
+                            <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
+                                        class="bi bi-copy me-2"></i>Duplicate</button></li>
+                            <li>
+                                <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item text-danger btn-action-delete"
+                                    data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false"
+                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </li>
+                {% endfor %}
             </ul>
         </div>
     </div>
