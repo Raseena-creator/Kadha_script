@@ -187,15 +187,15 @@ class ExportPaginationTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
         content = response.content.decode('utf-8')
-        # Shot button removed
+        # Shot and Heading buttons removed
         self.assertNotIn('data-type="shot"', content)
+        self.assertNotIn('data-type="scene_heading"', content)
 
         # Shortcuts present in toolbar button titles
         self.assertIn('title="Scene (Alt + S)"', content)
         self.assertIn('title="Sub-Scene (Alt + U)"', content)
         self.assertIn('title="Sub-Scene From (Alt + R)"', content)
         self.assertIn('title="CutBack To (Alt + B)"', content)
-        self.assertIn('title="Heading (Ctrl + 1)"', content)
         self.assertIn('title="Action (Ctrl + 2)"', content)
         self.assertIn('title="Character (Ctrl + 3)"', content)
         self.assertIn('title="Dialogue (Ctrl + 4)"', content)

@@ -214,3 +214,101 @@ class EditorTransitionAndParentheticalTests(TestCase):
         # Parent scene elements should remain clean without forced transition
         parent_transitions = ScriptElement.objects.filter(scene=sc2, element_type='transition')
         self.assertEqual(parent_transitions.count(), 0)
+
+
+class EditorUINavigationClientRequirementsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='filmmaker', password='Password123!')
+        self.script = Script.objects.create(
+            user=self.user,
+            title='My Malayalam Screenplay',
+            genre='Drama',
+            script_type='Feature Film',
+            language='Malayalam'
+        )
+        self.client = Client()
+        self.client.login(username='filmmaker', password='Password123!')
+
+    def test_editor_navbar_shows_screenplay_name_home_and_scenes_button(self):
+        """1. Navbar displays current screenplay name, Home button to dashboard, and prominent Scenes button."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Screenplay name displayed exactly as stored
+        self.assertIn('My Malayalam Screenplay', content)
+        self.assertIn('class="navbar-screenplay-title text-truncate font-screenplay"', content)
+
+        # Home button replaces pen icon and links to dashboard
+        self.assertIn('id="btnEditorHome"', content)
+        self.assertIn('href="/dashboard/"', content)
+        self.assertIn('bi-house-door-fill', content)
+
+        # Scenes button in main navbar with easy-to-tap styling
+        self.assertIn('id="btnNavScenes"', content)
+        self.assertIn('btn-nav-scenes', content)
+        self.assertIn(f'href="/scripts/{self.script.id}/scenes/"', content)
+        self.assertIn('<span>Scenes</span>', content)
+
+    def test_editor_toolbar_back_and_heading_buttons_removed(self):
+        """2. Back button removed from toolbar and Heading button removed from element toolbar."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Back button removed from toolbar below navbar
+        self.assertNotIn('id="btnBackToScript"', content)
+        self.assertNotIn('Back to Overview', content)
+
+        # Heading button removed from element toolbar
+        self.assertNotIn('data-type="scene_heading"', content)
+
+        # Required remaining buttons present
+        self.assertIn('data-type="action"', content)
+        self.assertIn('data-type="character"', content)
+        self.assertIn('data-type="dialogue"', content)
+        self.assertIn('data-type="parenthetical"', content)
+
+    def test_export_dropdown_only_export_related(self):
+        """3. Export dropdown retains exports/previews and removes obsolete navigation."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Exports and previews retained
+        self.assertIn('Export PDF', content)
+        self.assertIn('Export Word (.docx)', content)
+        self.assertIn('Export Plain Text', content)
+        self.assertIn('Print Preview', content)
+
+        # Obsolete navigation items removed from More Tools dropdown
+        self.assertNotIn('Scene Management</a>', content)
+        self.assertNotIn('Version Snapshots</a>', content)
+
+    def test_obsolete_pages_redirect_to_editor(self):
+        """4. Obsolete pages (characters, notes, versions) redirect cleanly to editor."""
+        for path in [
+            f'/scripts/{self.script.id}/characters/',
+            f'/scripts/{self.script.id}/notes/',
+            f'/scripts/{self.script.id}/versions/',
+        ]:
+            res = self.client.get(path)
+            self.assertEqual(res.status_code, 302)
+            self.assertEqual(res.url, f'/scripts/{self.script.id}/editor/')
+
+    def test_bottom_bar_status_preserved_and_navigation_removed(self):
+        """5. Editor bottom stats bar preserves counts/saved status, obsolete nav links removed."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Status counts and indicators present
+        self.assertIn('id="statWordCount"', content)
+        self.assertIn('id="statCharCount"', content)
+        self.assertIn('id="statPageCount"', content)
+        self.assertIn('id="statSceneCount"', content)
+        self.assertIn('id="saveStatusBadge"', content)
+
+        # Obsolete navigation links removed from sidebar/offcanvas footers
+        self.assertNotIn('Manage Scenes</span>', content)
+        self.assertNotIn('sidebar-footer', content)

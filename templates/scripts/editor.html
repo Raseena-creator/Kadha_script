@@ -34,6 +34,26 @@
 </style>
 {% endblock %}
 
+{% block navbar_left %}
+<div class="d-flex align-items-center gap-2 flex-nowrap overflow-hidden">
+    <!-- Home Button (replaces Pen Icon, navigates to Dashboard/Home) -->
+    <a href="{% url 'dashboard' %}" class="btn btn-sm btn-outline-ks d-flex align-items-center justify-content-center p-0" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px;" title="Dashboard (Home)" id="btnEditorHome">
+        <i class="bi bi-house-door-fill fs-5"></i>
+    </a>
+
+    <!-- Screenplay Name (replaces KadhaScript Brand Text) -->
+    <span class="navbar-screenplay-title text-truncate font-screenplay" title="{{ script.title }}" style="max-width: clamp(130px, 30vw, 360px);">
+        {{ script.title }}
+    </span>
+
+    <!-- Scenes Button moved into Main Navbar -->
+    <a href="{% url 'scenes_management' script.id %}" class="btn btn-primary-ks btn-nav-scenes" id="btnNavScenes" title="Scene Order (Manage / Reorder Scenes)">
+        <i class="bi bi-list-ol fs-5"></i>
+        <span>Scenes</span>
+    </a>
+</div>
+{% endblock navbar_left %}
+
 {% block content %}
 <div class="editor-layout">
 
@@ -57,11 +77,6 @@
                                     class="bi bi-plus-circle me-2 text-primary"></i>{% if current_scene.is_sub_scene %}Insert Sub Scene{% else %}Insert Scene{% endif %}</button></li>
                         <li id="sidebarAddSubSceneItem" {% if current_scene.is_sub_scene %}style="display: none;"{% endif %}><button type="button" class="dropdown-item" id="btnSidebarSubScene"><i
                                     class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
-                                    class="bi bi-gear me-2"></i>Manage Scenes</a></li>
                     </ul>
                 </div>
             </div>
@@ -145,16 +160,6 @@
             {% endfor %}
         </ul>
 
-        <!-- Sidebar footer shortcuts -->
-        <div class="p-2 border-top bg-light text-center small text-muted">
-            <a href="{% url 'scenes_management' script.id %}" class="text-decoration-none text-muted me-2">
-                <i class="bi bi-gear me-1"></i> Manage Scenes
-            </a>
-            |
-            <a href="{% url 'character_management' script.id %}" class="text-decoration-none text-muted ms-2">
-                <i class="bi bi-people me-1"></i> Characters
-            </a>
-        </div>
     </aside>
 
     <!-- Offcanvas Scenes Drawer for Mobile / Small Screens -->
@@ -187,15 +192,6 @@
                 <!-- Dynamically updated by KadhaEditor JS -->
             </ul>
         </div>
-        <div class="p-2 border-top bg-light text-center small">
-            <a href="{% url 'scenes_management' script.id %}" class="text-decoration-none text-muted me-2">
-                <i class="bi bi-gear me-1"></i> Manage All
-            </a>
-            |
-            <a href="{% url 'character_management' script.id %}" class="text-decoration-none text-muted ms-2">
-                <i class="bi bi-people me-1"></i> Characters
-            </a>
-        </div>
     </div>
 
     <!-- Main Writing Column -->
@@ -206,19 +202,6 @@
             <!-- TOPMOST TOOLBAR: Scene Management (Row 1) -->
             <div class="editor-toolbar editor-scene-toolbar">
                 <div class="editor-scene-toolbar-left">
-                    <div class="editor-nav-group">
-                        <a href="{% url 'script_detail' script.id %}" class="btn btn-sm btn-outline-ks py-1 px-2"
-                            title="Back to Script Overview">
-                            <i class="bi bi-arrow-left"></i>
-                        </a>
-
-                        <!-- Mobile Drawer Toggle for Scenes -->
-                        <button type="button" class="btn btn-sm btn-light border py-1 px-2 d-lg-none"
-                            data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" title="Open Scenes List" id="btnMobileScenesToggle">
-                            <i class="bi bi-collection-play text-primary"></i>
-                        </button>
-                    </div>
-
                     <!-- Dedicated Scene Management Controls -->
                     <div class="editor-scene-buttons-group">
                         <button type="button"
@@ -277,14 +260,6 @@
                         </li>
                         <li><a class="dropdown-item" href="{% url 'script_title_page' script.id %}"><i
                                     class="bi bi-file-earmark-richtext me-2 text-primary"></i>Title Page & Metadata</a></li>
-                        <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i
-                                    class="bi bi-grid-3x3-gap me-2"></i>Scene Management</a></li>
-                        <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i
-                                    class="bi bi-people me-2"></i>Characters</a></li>
-                        <li><a class="dropdown-item" href="{% url 'notes' script.id %}"><i
-                                    class="bi bi-sticky me-2"></i>Notes</a></li>
-                        <li><a class="dropdown-item" href="{% url 'versions' script.id %}"><i
-                                    class="bi bi-clock-history me-2"></i>Version Snapshots</a></li>
                     </ul>
                 </div>
             </div>
@@ -292,9 +267,6 @@
             <!-- SECOND TOOLBAR: Screenplay Element Controls (Row 2) -->
             <div class="editor-element-bar" id="editorFormattingToolbar">
                 <div class="toolbar-elements-group">
-                    <button type="button" class="btn-element" data-type="scene_heading" title="Heading (Ctrl + 1)">
-                        Heading
-                    </button>
                     <button type="button" class="btn-element active" data-type="action" title="Action (Ctrl + 2)">
                         Action
                     </button>

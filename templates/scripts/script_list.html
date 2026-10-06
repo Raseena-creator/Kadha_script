@@ -74,7 +74,6 @@
                             <li><a class="dropdown-item" href="{% url 'script_detail' script.id %}"><i class="bi bi-eye me-2"></i>Overview</a></li>
                             <li><a class="dropdown-item" href="{% url 'script_edit_metadata' script.id %}"><i class="bi bi-pencil me-2"></i>Edit Details</a></li>
                             <li><a class="dropdown-item" href="{% url 'scenes_management' script.id %}"><i class="bi bi-layout-sidebar me-2"></i>Scenes ({{ script.scene_count }})</a></li>
-                            <li><a class="dropdown-item" href="{% url 'character_management' script.id %}"><i class="bi bi-people me-2"></i>Characters</a></li>
                             <li>
                                 <form action="{% url 'script_duplicate' script.id %}" method="POST" class="d-inline">
                                     {% csrf_token %}

@@ -1026,3 +1026,43 @@
         flex: 1 1 100%;
 }
 
+
+/* Navbar Scenes Button */
+.btn-nav-scenes {
+    padding: 0.38rem 0.95rem !important;
+    font-size: 0.92rem !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    flex-shrink: 0 !important;
+    min-height: 36px;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-nav-scenes:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.btn-nav-scenes:active {
+    transform: translateY(0);
+}
+
+.navbar-screenplay-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1a1918;
+    letter-spacing: -0.2px;
+}
+
+@media (max-width: 575.98px) {
+    .btn-nav-scenes {
+        padding: 0.3rem 0.7rem !important;
+        font-size: 0.85rem !important;
+        min-height: 34px;
+    }
+    .navbar-screenplay-title {
+        font-size: 0.92rem !important;
+    }
+}

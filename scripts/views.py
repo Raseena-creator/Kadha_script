@@ -345,94 +345,20 @@ def scenes_management_view(request, script_id):
 
 @login_required
 def character_management_view(request, script_id):
-    script = get_user_script(request.user, script_id)
-    characters = script.characters.all()
-    form = CharacterForm()
-
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'delete':
-            char_id = request.POST.get('character_id')
-            char = get_object_or_404(Character, id=char_id, script=script)
-            char.delete()
-            messages.success(request, f'Character "{char.name}" removed.')
-            return redirect('character_management', script_id=script.id)
-        else:
-            form = CharacterForm(request.POST)
-            if form.is_valid():
-                ch = form.save(commit=False)
-                ch.script = script
-                ch.name = ch.name.strip().upper()
-                ch.save()
-                messages.success(request, f'Character "{ch.name}" added successfully.')
-                return redirect('character_management', script_id=script.id)
-            else:
-                messages.error(request, 'Please fix the errors below.')
-
-    return render(request, 'scripts/characters.html', {
-        'script': script,
-        'characters': characters,
-        'form': form,
-    })
+    """Obsolete standalone character management page - redirect to editor."""
+    return redirect('script_editor', script_id=script_id)
 
 
 @login_required
 def notes_view(request, script_id):
-    script = get_user_script(request.user, script_id)
-    notes = script.notes.all()
-    form = ScriptNoteForm()
-
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'delete':
-            note_id = request.POST.get('note_id')
-            note = get_object_or_404(ScriptNote, id=note_id, script=script)
-            note.delete()
-            messages.success(request, 'Note deleted.')
-            return redirect('notes', script_id=script.id)
-        else:
-            form = ScriptNoteForm(request.POST)
-            if form.is_valid():
-                note = form.save(commit=False)
-                note.script = script
-                note.save()
-                messages.success(request, 'Note saved.')
-                return redirect('notes', script_id=script.id)
-
-    return render(request, 'scripts/notes.html', {
-        'script': script,
-        'notes': notes,
-        'form': form,
-    })
+    """Obsolete standalone notes page - redirect to editor."""
+    return redirect('script_editor', script_id=script_id)
 
 
 @login_required
 def versions_view(request, script_id):
-    script = get_user_script(request.user, script_id)
-    versions = script.versions.all()
-    form = ScriptVersionForm()
-
-    if request.method == 'POST':
-        action = request.POST.get('action')
-        if action == 'restore':
-            ver_id = request.POST.get('version_id')
-            restore_version_snapshot(script, int(ver_id))
-            messages.success(request, 'Script successfully restored from version!')
-            return redirect('script_editor', script_id=script.id)
-        else:
-            form = ScriptVersionForm(request.POST)
-            if form.is_valid():
-                title = form.cleaned_data['title']
-                desc = form.cleaned_data['description']
-                create_version_snapshot(script, title=title, description=desc)
-                messages.success(request, 'Version snapshot saved.')
-                return redirect('versions', script_id=script.id)
-
-    return render(request, 'scripts/versions.html', {
-        'script': script,
-        'versions': versions,
-        'form': form,
-    })
+    """Obsolete standalone versions page - redirect to editor."""
+    return redirect('script_editor', script_id=script_id)
 
 
 @login_required

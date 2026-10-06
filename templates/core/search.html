@@ -405,11 +405,8 @@
                                 {{ char.description|default:char.notes|default:"No character biography provided."|truncatechars:120 }}
                             </p>
                             <div class="d-flex gap-2 mt-auto pt-2 border-top">
-                                <a href="{% url 'character_management' char.script.id %}" class="btn btn-sm btn-outline-ks w-100">
-                                    <i class="bi bi-people me-1"></i> Characters
-                                </a>
                                 <a href="{% url 'script_editor' char.script.id %}" class="btn btn-sm btn-primary-ks w-100">
-                                    <i class="bi bi-pen me-1"></i> Editor
+                                    <i class="bi bi-pen me-1"></i> Open Editor
                                 </a>
                             </div>
                         </div>
@@ -453,8 +450,8 @@
                                 {{ note.content|truncatechars:140 }}
                             </p>
                             <div class="mt-auto pt-2 border-top text-end">
-                                <a href="{% url 'notes' note.script.id %}" class="btn btn-sm btn-outline-ks w-100">
-                                    <i class="bi bi-sticky me-1"></i> View All Notes
+                                <a href="{% url 'script_editor' note.script.id %}" class="btn btn-sm btn-primary-ks w-100">
+                                    <i class="bi bi-pen me-1"></i> Open Editor
                                 </a>
                             </div>
                         </div>
@@ -628,11 +625,8 @@
                             {{ char.description|default:char.notes|default:"No character biography provided."|truncatechars:120 }}
                         </p>
                         <div class="d-flex gap-2 mt-auto pt-2 border-top">
-                            <a href="{% url 'character_management' char.script.id %}" class="btn btn-sm btn-outline-ks w-100">
-                                <i class="bi bi-people me-1"></i> Characters
-                            </a>
                             <a href="{% url 'script_editor' char.script.id %}" class="btn btn-sm btn-primary-ks w-100">
-                                <i class="bi bi-pen me-1"></i> Editor
+                                <i class="bi bi-pen me-1"></i> Open Editor
                             </a>
                         </div>
                     </div>
@@ -669,8 +663,8 @@
                             {{ note.content|truncatechars:140 }}
                         </p>
                         <div class="mt-auto pt-2 border-top text-end">
-                            <a href="{% url 'notes' note.script.id %}" class="btn btn-sm btn-outline-ks w-100">
-                                <i class="bi bi-sticky me-1"></i> View All Notes
+                            <a href="{% url 'script_editor' note.script.id %}" class="btn btn-sm btn-primary-ks w-100">
+                                <i class="bi bi-pen me-1"></i> Open Editor
                             </a>
                         </div>
                     </div>
