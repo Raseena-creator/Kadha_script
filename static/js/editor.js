@@ -2367,73 +2367,160 @@ class KadhaEditor {
     bindSwipeNavigation() {
         if (!this.offcanvasEl) return;
 
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchStartTime = 0;
-        let isEligible = false;
+        const editorMain = document.querySelector('.editor-main') || this.editorLayout;
+        const offcanvasEl = this.offcanvasEl;
 
-        document.addEventListener('touchstart', (e) => {
-            if (e.touches.length !== 1) {
-                isEligible = false;
-                return;
-            }
-
-            const target = e.target;
-            const elem = target instanceof Element ? target : (target && target.parentElement);
-            // Ignore if touching any editable element, input, button, or modal
-            if (
-                !elem ||
-                elem.isContentEditable ||
-                (elem.closest && elem.closest('[contenteditable="true"], input, textarea, select, button, a, .modal'))
-            ) {
-                isEligible = false;
-                return;
-            }
-
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchStartTime = Date.now();
-            isEligible = true;
-        }, { passive: true });
-
-        document.addEventListener('touchend', (e) => {
-            if (!isEligible || !e.changedTouches || e.changedTouches.length !== 1) {
-                return;
-            }
-
-            const touch = e.changedTouches[0];
-            const deltaX = touch.clientX - touchStartX;
-            const deltaY = touch.clientY - touchStartY;
-            const elapsedTime = Date.now() - touchStartTime;
-
-            // Must be within 500ms and predominantly horizontal
-            if (elapsedTime > 500 || Math.abs(deltaY) > 50 || Math.abs(deltaY) >= Math.abs(deltaX)) {
-                return;
-            }
-
-            const isDrawerOpen = this.offcanvasEl.classList.contains('show');
-            const offcanvasInst = (typeof bootstrap !== 'undefined' && bootstrap.Offcanvas)
-                ? bootstrap.Offcanvas.getOrCreateInstance(this.offcanvasEl)
+        const getOffcanvasInstance = () => {
+            return (typeof bootstrap !== 'undefined' && bootstrap.Offcanvas)
+                ? bootstrap.Offcanvas.getOrCreateInstance(offcanvasEl)
                 : this.bsOffcanvas;
+        };
 
-            if (!isDrawerOpen) {
-                // Swipe RIGHT to OPEN:
-                // Start from the left side (avoiding extreme edge 0-20px for browser back gesture compatibility)
-                if (touchStartX >= 20 && touchStartX <= Math.max(window.innerWidth * 0.35, 120) && deltaX >= 60) {
-                    if (offcanvasInst) {
-                        offcanvasInst.show();
+        // --- 1. Swipe LEFT on Editor area -> Open Scene Order ---
+        if (editorMain) {
+            let editorStartX = 0;
+            let editorStartY = 0;
+            let editorStartTime = 0;
+            let isEditorEligible = false;
+
+            editorMain.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) {
+                    isEditorEligible = false;
+                    return;
+                }
+
+                // If drawer is already open, do not handle opening
+                if (offcanvasEl.classList.contains('show')) {
+                    isEditorEligible = false;
+                    return;
+                }
+
+                const target = e.target;
+                const elem = target instanceof Element ? target : (target && target.parentElement);
+                if (
+                    !elem ||
+                    elem.isContentEditable ||
+                    (elem.closest && elem.closest('[contenteditable="true"], input, textarea, select, button, a, .modal, .modal-dialog, .dropdown, .dropdown-menu, .btn'))
+                ) {
+                    isEditorEligible = false;
+                    return;
+                }
+
+                // Ignore if user has active text selection
+                const selection = window.getSelection();
+                if (selection && selection.toString().trim().length > 0) {
+                    isEditorEligible = false;
+                    return;
+                }
+
+                const touch = e.touches[0];
+                const startX = touch.clientX;
+
+                // Edge protection: ignore gestures beginning within 35px of screen edges
+                if (startX <= 35 || startX >= (window.innerWidth - 35)) {
+                    isEditorEligible = false;
+                    return;
+                }
+
+                editorStartX = startX;
+                editorStartY = touch.clientY;
+                editorStartTime = Date.now();
+                isEditorEligible = true;
+            }, { passive: true });
+
+            editorMain.addEventListener('touchend', (e) => {
+                if (!isEditorEligible || !e.changedTouches || e.changedTouches.length !== 1) {
+                    return;
+                }
+
+                const touch = e.changedTouches[0];
+                const deltaX = touch.clientX - editorStartX;
+                const deltaY = touch.clientY - editorStartY;
+                const elapsedTime = Date.now() - editorStartTime;
+
+                // Deliberate horizontal swipe within 550ms, dominant horizontal movement
+                if (
+                    elapsedTime <= 550 &&
+                    Math.abs(deltaY) < 60 &&
+                    deltaX <= -70 &&
+                    Math.abs(deltaX) >= Math.abs(deltaY) * 1.7
+                ) {
+                    const inst = getOffcanvasInstance();
+                    if (inst) {
+                        inst.show();
                     }
                 }
-            } else {
-                // Swipe LEFT to CLOSE:
-                if (deltaX <= -50) {
-                    if (offcanvasInst) {
-                        offcanvasInst.hide();
+            }, { passive: true });
+        }
+
+        // --- 2. Swipe RIGHT on Scene Order panel -> Close Scene Order ---
+        if (offcanvasEl) {
+            let drawerStartX = 0;
+            let drawerStartY = 0;
+            let drawerStartTime = 0;
+            let isDrawerEligible = false;
+
+            offcanvasEl.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) {
+                    isDrawerEligible = false;
+                    return;
+                }
+
+                // Only handle if drawer is currently open
+                if (!offcanvasEl.classList.contains('show')) {
+                    isDrawerEligible = false;
+                    return;
+                }
+
+                const target = e.target;
+                const elem = target instanceof Element ? target : (target && target.parentElement);
+                if (
+                    !elem ||
+                    (elem.closest && elem.closest('input, textarea, select, button, a, .dropdown, .dropdown-menu, .modal, .modal-dialog, .btn'))
+                ) {
+                    isDrawerEligible = false;
+                    return;
+                }
+
+                const touch = e.touches[0];
+                const startX = touch.clientX;
+
+                // Ignore extreme screen edge buffer
+                if (startX <= 35 || startX >= (window.innerWidth - 35)) {
+                    isDrawerEligible = false;
+                    return;
+                }
+
+                drawerStartX = startX;
+                drawerStartY = touch.clientY;
+                drawerStartTime = Date.now();
+                isDrawerEligible = true;
+            }, { passive: true });
+
+            offcanvasEl.addEventListener('touchend', (e) => {
+                if (!isDrawerEligible || !e.changedTouches || e.changedTouches.length !== 1) {
+                    return;
+                }
+
+                const touch = e.changedTouches[0];
+                const deltaX = touch.clientX - drawerStartX;
+                const deltaY = touch.clientY - drawerStartY;
+                const elapsedTime = Date.now() - drawerStartTime;
+
+                // Deliberate horizontal swipe RIGHT to close within 550ms
+                if (
+                    elapsedTime <= 550 &&
+                    Math.abs(deltaY) < 60 &&
+                    deltaX >= 70 &&
+                    Math.abs(deltaX) >= Math.abs(deltaY) * 1.7
+                ) {
+                    const inst = getOffcanvasInstance();
+                    if (inst) {
+                        inst.hide();
                     }
                 }
-            }
-        }, { passive: true });
+            }, { passive: true });
+        }
     }
 
     // ----------------------------------------------------
