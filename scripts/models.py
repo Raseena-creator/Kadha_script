@@ -179,6 +179,40 @@ class Scene(models.Model):
         return f"Scene {self.scene_number}{self.duplicate_suffix}"
 
     @property
+    def nav_identifier(self) -> str:
+        """
+        Clean identifier for Scene Navigator:
+        e.g., 'Scene 1', 'Scene 2A', 'Scene 2B'
+        """
+        if self.is_sub_scene and self.parent_scene:
+            base = f"Scene {self.parent_scene.scene_number}{self.sub_letter}"
+            suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
+            return f"{base}{suffix}"
+        if self.is_intercut and self.intercut_source:
+            return self.intercut_source.nav_identifier
+        return f"Scene {self.scene_number}{self.duplicate_suffix}"
+
+    @property
+    def clean_location(self) -> str:
+        """
+        Clean location for Scene Navigator:
+        strips INT./EXT. prefixes and trailing time if present.
+        e.g., 'INT. BEDROOM - DAY' -> 'BEDROOM'
+        """
+        import re
+        text = self.clean_heading or self.heading or ''
+        cleaned = re.sub(
+            r'^(?:(?:INT\./EXT\.|EXT\./INT\.|INT/EXT|EXT/INT|INT\.|EXT\.|I/E\.|INT|EXT)\s*[:\.\-\s]\s*)',
+            '',
+            text,
+            flags=re.IGNORECASE
+        ).strip()
+        parts = re.split(r'\s+[-–—]\s+', cleaned)
+        if parts and parts[0].strip():
+            return parts[0].strip()
+        return cleaned or text or 'Scene'
+
+    @property
     def display_number(self) -> str:
         return self.scene_identifier
 

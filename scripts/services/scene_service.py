@@ -521,6 +521,8 @@ def serialize_scenes_hierarchy(script: Script) -> list:
             'is_intercut': sc.is_intercut,
             'scene_number': sc.scene_number,
             'scene_identifier': sc.scene_identifier,
+            'nav_identifier': sc.nav_identifier,
+            'clean_location': sc.clean_location,
             'display_number': sc.display_number,
             'display_number_formatted': sc.display_number_formatted,
             'full_display_heading': sc.full_display_heading,

@@ -55,31 +55,14 @@
 {% endblock navbar_left %}
 
 {% block content %}
-<div class="editor-layout">
+<div class="editor-layout" id="screenplayEditor" data-mode="read">
 
     <!-- Left Scene Sidebar (Visible on Desktop >= 992px) -->
     <aside class="editor-sidebar d-none d-lg-flex" id="editorSidebar">
         <div class="sidebar-header">
-            <h6 class="sidebar-title">
-                <i class="bi bi-collection-play me-1"></i> Scenes (<span id="sidebarSceneCount">{{ scenes|length }}</span>)
+            <h6 class="sidebar-title m-0">
+                <i class="bi bi-collection-play me-1 text-primary"></i> Scenes (<span id="sidebarSceneCount">{{ scenes|length }}</span>)
             </h6>
-            <div class="d-flex gap-1">
-                <button type="button" class="btn btn-sm btn-outline-ks py-0 px-2" id="btnAddScene" title="Append Scene">
-                    <i class="bi bi-plus-lg"></i>
-                </button>
-                <div class="dropdown">
-                    <button class="btn btn-sm btn-light border py-0 px-2 dropdown-toggle" type="button"
-                        data-bs-toggle="dropdown" title="More Scene Actions">
-                        <i class="bi bi-three-dots-vertical"></i>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small" id="sidebarHeaderDropdown">
-                        <li><button type="button" class="dropdown-item" id="btnSidebarInsertScene"><i
-                                    class="bi bi-plus-circle me-2 text-primary"></i>{% if current_scene.is_sub_scene %}Insert Sub Scene{% else %}Insert Scene{% endif %}</button></li>
-                        <li id="sidebarAddSubSceneItem" {% if current_scene.is_sub_scene %}style="display: none;"{% endif %}><button type="button" class="dropdown-item" id="btnSidebarSubScene"><i
-                                    class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
-                    </ul>
-                </div>
-            </div>
         </div>
 
         <div class="scene-search-box">
@@ -88,73 +71,11 @@
 
         <ul class="scenes-list" id="scenesList">
             {% for sc in scenes %}
-            <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-4{% endif %}"
+            <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-3{% endif %}"
                 data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
-                <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
-                    {% if sc.is_sub_scene %}
-                    <span class="sub-scene-indicator text-muted me-1">↳</span>
-                    {% endif %}
-                    <span class="scene-heading-text font-screenplay">{{ sc.full_display_heading }}</span>
-                </div>
-                <div class="scene-item-actions dropdown">
-                    <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button"
-                        data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
-                        <i class="bi bi-three-dots-vertical"></i>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                        {% if sc.is_sub_scene %}
-                        <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
-                                data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
-                                    class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Sub Scene Before</button>
-                        </li>
-                        <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
-                                data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
-                                    class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub Scene After</button></li>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
-                                    class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                        <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
-                                    class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                        <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
-                                    class="bi bi-copy me-2"></i>Duplicate</button></li>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><button type="button" class="dropdown-item text-danger btn-action-delete"
-                                data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true"
-                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
-                        </li>
-                        {% else %}
-                        <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
-                                data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
-                                    class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Scene Before</button>
-                        </li>
-                        <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
-                                data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
-                                    class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Scene After</button>
-                        </li>
-                        <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.id }}"
-                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub Scene</button></li>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
-                                    class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                        <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
-                                    class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                        <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
-                                    class="bi bi-copy me-2"></i>Duplicate</button></li>
-                        <li>
-                            <hr class="dropdown-divider">
-                        </li>
-                        <li><button type="button" class="dropdown-item text-danger btn-action-delete"
-                                data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false"
-                                data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
-                        </li>
-                        {% endif %}
-                    </ul>
+                <div class="scene-nav-item">
+                    <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
+                    <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
                 </div>
             </li>
             {% endfor %}
@@ -166,22 +87,10 @@
     <div class="offcanvas offcanvas-start scenes-offcanvas" tabindex="-1" id="scenesOffcanvas"
         aria-labelledby="scenesOffcanvasLabel">
         <div class="offcanvas-header border-bottom py-2 px-3">
-            <h6 class="offcanvas-title fw-bold" id="scenesOffcanvasLabel">
+            <h6 class="offcanvas-title fw-bold m-0" id="scenesOffcanvasLabel">
                 <i class="bi bi-collection-play me-1 text-primary"></i> Scenes (<span id="offcanvasSceneCount">{{ scenes|length }}</span>)
             </h6>
             <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="p-2 border-bottom bg-light d-flex gap-2">
-            <button class="btn btn-sm btn-primary-ks flex-grow-1" id="btnOffcanvasAddScene">
-                <i class="bi bi-plus-lg me-1"></i> Add Scene
-            </button>
-            <button class="btn btn-sm btn-outline-ks" id="btnOffcanvasInsertScene"
-                title="{% if current_scene.is_sub_scene %}Insert Sub Scene{% else %}Insert Scene{% endif %}">
-                <i class="bi bi-plus-circle me-1"></i> Insert
-            </button>
-            <button class="btn btn-sm btn-outline-info" id="btnOffcanvasSubScene" title="Add Sub-Scene" {% if current_scene.is_sub_scene %}style="display: none;"{% endif %}>
-                <i class="bi bi-diagram-3 me-1"></i> Sub-Scene
-            </button>
         </div>
         <div class="p-2 border-bottom">
             <input type="text" id="offcanvasSceneSearchInput" class="form-control form-control-sm"
@@ -190,73 +99,11 @@
         <div class="offcanvas-body p-2">
             <ul class="scenes-list" id="offcanvasScenesList">
                 {% for sc in scenes %}
-                <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-4{% endif %}"
+                <li class="scene-item {% if sc.id == current_scene.id %}active{% endif %} {% if sc.is_sub_scene %}sub-scene-item ps-3{% endif %}"
                     data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
-                    <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
-                        {% if sc.is_sub_scene %}
-                        <span class="sub-scene-indicator text-muted me-1">↳</span>
-                        {% endif %}
-                        <span class="scene-heading-text font-screenplay">{{ sc.full_display_heading }}</span>
-                    </div>
-                    <div class="scene-item-actions dropdown">
-                        <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button"
-                            data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
-                            <i class="bi bi-three-dots-vertical"></i>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                            {% if sc.is_sub_scene %}
-                            <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
-                                    data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
-                                        class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Sub Scene Before</button>
-                            </li>
-                            <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
-                                    data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
-                                        class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub Scene After</button></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
-                                        class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
-                                        class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
-                                        class="bi bi-copy me-2"></i>Duplicate</button></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><button type="button" class="dropdown-item text-danger btn-action-delete"
-                                    data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="true"
-                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
-                            </li>
-                            {% else %}
-                            <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="{{ sc.id }}"
-                                    data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
-                                        class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Scene Before</button>
-                            </li>
-                            <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
-                                    data-is-sub="false" data-heading="{{ sc.heading|escape }}"><i
-                                        class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Scene After</button>
-                            </li>
-                            <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.id }}"
-                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub Scene</button></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
-                                        class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-move-down" data-id="{{ sc.id }}"><i
-                                        class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
-                                        class="bi bi-copy me-2"></i>Duplicate</button></li>
-                            <li>
-                                <hr class="dropdown-divider">
-                            </li>
-                            <li><button type="button" class="dropdown-item text-danger btn-action-delete"
-                                    data-id="{{ sc.id }}" data-badge="{{ sc.display_number }}" data-is-sub="false"
-                                    data-heading="{{ sc.heading|escape }}"><i class="bi bi-trash me-2"></i>Delete</button>
-                            </li>
-                            {% endif %}
-                        </ul>
+                    <div class="scene-nav-item">
+                        <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
+                        <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
                     </div>
                 </li>
                 {% endfor %}
@@ -361,14 +208,66 @@
 
         <!-- Canvas Container -->
         <div class="editor-canvas-container" id="editorCanvasContainer">
-            <!-- Simulated Standard Screenplay Page (8.5in x 11in ratio) -->
-            <div class="screenplay-page" id="screenplayPage">
+            <!-- Continuous Read-Only Document for READ MODE -->
+            <div class="screenplay-page read-mode-container" id="readModeContainer">
+                {% for sc in scenes %}
+                <section class="read-mode-scene" id="read-scene-{{ sc.id }}" data-scene-id="{{ sc.id }}">
+                    <div class="read-scene-heading font-screenplay">
+                        <span class="read-scene-identifier">{{ sc.full_display_heading }}</span>
+                    </div>
+                    <div class="read-scene-elements">
+                        {% for elem in sc.elements.all %}
+                        {% if elem.element_type != 'scene_heading' %}
+                        <div class="read-element-block element-type-{{ elem.element_type }}">
+                            <div class="element-content font-screenplay font-malayalam">{{ elem.content }}</div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% if sc.transition %}
+                    <div class="read-element-block element-type-transition">
+                        <div class="element-content font-screenplay">{{ sc.transition }}</div>
+                    </div>
+                    {% endif %}
+                </section>
+                {% endfor %}
+            </div>
+
+            <!-- Simulated Standard Screenplay Page (8.5in x 11in ratio) for EDIT MODE -->
+            <div class="screenplay-page interactive-editor" id="screenplayPage">
                 <!-- Script Element Blocks dynamically populated by editor.js -->
             </div>
         </div>
 
         <!-- Character Autocomplete Dropdown -->
         <div class="character-autocomplete-dropdown" id="characterAutocomplete"></div>
+
+        <!-- Contextual Element Suggestion Popup -->
+        <div class="element-suggestion-popup" id="elementSuggestionPopup" role="listbox" aria-label="Element suggestions" style="display: none;"></div>
+
+        <!-- Floating Edit / Done Action Buttons -->
+        <button
+            type="button"
+            id="btnEnterEditMode"
+            data-testid="readModeEditButton"
+            class="editor-mode-fab btn-fab-edit"
+            aria-label="Edit screenplay"
+            title="Edit screenplay"
+        >
+            <i class="bi bi-pencil-fill"></i>
+        </button>
+
+        <button
+            type="button"
+            id="btnExitEditMode"
+            data-testid="readModeDoneButton"
+            class="editor-mode-fab btn-fab-done"
+            aria-label="Done editing"
+            title="Done"
+            style="display: none;"
+        >
+            <i class="bi bi-check-lg"></i>
+        </button>
 
         <!-- Bottom Stats & Status Bar -->
         <footer class="editor-stats-bar">

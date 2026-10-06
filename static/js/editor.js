@@ -59,6 +59,17 @@ class KadhaEditor {
         this.autocompleteDropdown = document.getElementById('characterAutocomplete');
         this.autocompleteIndex = -1;
 
+        // Editor Mode State: default is 'read'
+        this.editorMode = 'read';
+        this.editorRoot = document.getElementById('screenplayEditor');
+        this.readModeContainer = document.getElementById('readModeContainer');
+        this.btnEditFab = document.getElementById('btnEnterEditMode') || document.getElementById('readModeEditButton');
+        this.btnDoneFab = document.getElementById('btnExitEditMode') || document.getElementById('readModeDoneButton');
+        this.readModeObserver = null;
+        this.suggestionPopup = document.getElementById('elementSuggestionPopup');
+        this.activeSuggestionBlock = null;
+        this.activeSuggestionIndex = -1;
+
         window.editor = this;
         this.init();
     }
@@ -75,6 +86,9 @@ class KadhaEditor {
         this.bindFindReplace();
         this.bindNetworkEvents();
         this.bindSwipeNavigation();
+        this.bindModeToggleEvents();
+        this.setEditorMode('read', false);
+        this.setupReadModeScrollObserver();
     }
 
     // CSRF & Headers helper
@@ -232,14 +246,16 @@ class KadhaEditor {
             this.createElementBlock(elem.element_type, elem.content);
         });
 
-        // Focus location input or first editable block
-        const locInput = this.pageContainer.querySelector('.heading-location-input');
-        if (locInput) {
-            locInput.focus();
-        } else {
-            const firstBlock = this.pageContainer.querySelector('.element-content:not(.d-none)');
-            if (firstBlock) {
-                firstBlock.focus();
+        // Only focus if currently in Edit Mode (Read Mode must never steal focus or open keyboard)
+        if (this.editorMode === 'edit') {
+            const locInput = this.pageContainer.querySelector('.heading-location-input');
+            if (locInput) {
+                locInput.focus();
+            } else {
+                const firstBlock = this.pageContainer.querySelector('.element-content:not(.d-none)');
+                if (firstBlock) {
+                    firstBlock.focus();
+                }
             }
         }
     }
@@ -564,6 +580,8 @@ class KadhaEditor {
 
         // Input & Changes
         editable.addEventListener('input', () => {
+            // Dismiss suggestions immediately when typing begins
+            this.hideSuggestionPopup();
             this.markDirty();
             this.calculateLiveStats();
 
@@ -593,6 +611,30 @@ class KadhaEditor {
 
         // Keydown handling: Enter, Tab, Backspace, Arrows
         editable.addEventListener('keydown', (e) => {
+            // Suggestion popup keyboard navigation
+            if (this.suggestionPopup && this.suggestionPopup.style.display === 'inline-flex') {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    this.navigateSuggestions(1);
+                    return;
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    this.navigateSuggestions(-1);
+                    return;
+                } else if (e.key === 'Enter') {
+                    const chips = this.suggestionPopup.querySelectorAll('.suggestion-chip');
+                    if (this.activeSuggestionIndex >= 0 && chips[this.activeSuggestionIndex]) {
+                        e.preventDefault();
+                        const sugType = chips[this.activeSuggestionIndex].dataset.suggestion;
+                        this.applySuggestion(sugType, this.activeSuggestionBlock || block);
+                        return;
+                    }
+                } else if (e.key === 'Escape') {
+                    this.hideSuggestionPopup();
+                    return;
+                }
+            }
+
             // Autocomplete navigation
             if (this.autocompleteDropdown && this.autocompleteDropdown.style.display === 'block') {
                 if (e.key === 'ArrowDown') {
@@ -680,13 +722,16 @@ class KadhaEditor {
         const currentText = editable.innerText.trim();
 
         let nextType = 'action';
+        let suggestions = [];
 
         if (currentType === 'scene_heading') {
             nextType = 'action';
         } else if (currentType === 'action') {
-            nextType = currentText ? 'action' : 'character';
+            nextType = 'action';
+            suggestions = [{ type: 'character', label: '+ Character' }];
         } else if (currentType === 'character') {
             nextType = 'dialogue';
+            suggestions = [{ type: 'parenthetical', label: '+ Parenthetical' }];
         } else if (currentType === 'parenthetical') {
             if (currentText) {
                 const formatted = this.formatParenthetical(currentText);
@@ -696,7 +741,11 @@ class KadhaEditor {
             }
             nextType = 'dialogue';
         } else if (currentType === 'dialogue') {
-            nextType = currentText ? 'character' : 'action';
+            nextType = 'action';
+            suggestions = [
+                { type: 'character', label: '+ Character' },
+                { type: 'action', label: '+ Action' }
+            ];
         } else if (currentType === 'transition') {
             nextType = 'action';
         } else if (currentType === 'shot') {
@@ -713,6 +762,12 @@ class KadhaEditor {
         }
         this.markDirty();
         this.calculateLiveStats();
+
+        if (suggestions.length > 0) {
+            this.showSuggestionPopup(newBlock, suggestions);
+        } else {
+            this.hideSuggestionPopup();
+        }
     }
 
     cycleElementType(block, direction = 1) {
@@ -1223,73 +1278,21 @@ class KadhaEditor {
         let totalSceneCount = 0;
         const htmlChunks = [];
 
-        tree.forEach((mainSc, mainIdx) => {
+        tree.forEach((sc) => {
             totalSceneCount++;
-            const isMainActive = Number(mainSc.id) === Number(this.currentSceneId);
-            const isFirstMain = mainIdx === 0;
-            const isLastMain = mainIdx === tree.length - 1;
+            const isActive = Number(sc.id) === Number(this.currentSceneId);
+            const isSub = Boolean(sc.is_sub_scene);
+            const navId = sc.nav_identifier || sc.scene_identifier || `Scene ${sc.scene_number || ''}`;
+            const cleanLoc = sc.clean_location || sc.clean_heading || sc.heading || 'Scene';
 
-            const safeHeading = (mainSc.clean_heading || mainSc.heading || '').replace(/"/g, '&quot;');
-            const fullMainHeading = mainSc.full_display_heading || `${mainSc.scene_identifier || mainSc.display_number_formatted} : ${mainSc.clean_heading || mainSc.heading}`;
             htmlChunks.push(`
-                <li class="scene-item ${isMainActive ? 'active' : ''}" data-id="${mainSc.id}">
-                    <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
-                        <span class="scene-heading-text font-screenplay">${fullMainHeading}</span>
-                    </div>
-                    <div class="scene-item-actions dropdown">
-                        <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
-                            <i class="bi bi-three-dots-vertical"></i>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                            <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="${mainSc.id}" data-is-sub="false" data-heading="${safeHeading}"><i class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Scene Before</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${mainSc.id}" data-is-sub="false" data-heading="${safeHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Scene After</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="${mainSc.id}" data-heading="${safeHeading}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub Scene</button></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><button type="button" class="dropdown-item btn-action-move-up ${isFirstMain ? 'disabled' : ''}" data-id="${mainSc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-move-down ${isLastMain ? 'disabled' : ''}" data-id="${mainSc.id}"><i class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-dup" data-id="${mainSc.id}"><i class="bi bi-copy me-2"></i>Duplicate</button></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><button type="button" class="dropdown-item text-danger btn-action-delete" data-id="${mainSc.id}" data-badge="${mainSc.display_number}" data-is-sub="false" data-heading="${safeHeading}"><i class="bi bi-trash me-2"></i>Delete</button></li>
-                        </ul>
+                <li class="scene-item ${isSub ? 'sub-scene-item ps-3' : ''} ${isActive ? 'active' : ''}" data-id="${sc.id}">
+                    <div class="scene-nav-item">
+                        <span class="scene-nav-number font-screenplay">${navId}</span>
+                        <span class="scene-nav-location font-malayalam" title="${cleanLoc.replace(/"/g, '&quot;')}">${cleanLoc}</span>
                     </div>
                 </li>
             `);
-
-            // Sub scenes
-            if (mainSc.sub_scenes && mainSc.sub_scenes.length > 0) {
-                mainSc.sub_scenes.forEach((subSc, subIdx) => {
-                    totalSceneCount++;
-                    const isSubActive = Number(subSc.id) === Number(this.currentSceneId);
-                    const isFirstSub = subIdx === 0;
-                    const isLastSub = subIdx === mainSc.sub_scenes.length - 1;
-                    const safeSubHeading = (subSc.clean_heading || subSc.heading || '').replace(/"/g, '&quot;');
-                    const fullSubHeading = subSc.full_display_heading || `${subSc.scene_identifier || subSc.display_number_formatted} : ${subSc.clean_heading || subSc.heading}`;
-
-                    htmlChunks.push(`
-                        <li class="scene-item sub-scene-item ps-4 ${isSubActive ? 'active' : ''}" data-id="${subSc.id}" data-parent="${mainSc.id}">
-                            <div class="d-flex align-items-center flex-grow-1 overflow-hidden">
-                                <span class="sub-scene-indicator text-muted me-1">↳</span>
-                                <span class="scene-heading-text font-screenplay">${fullSubHeading}</span>
-                            </div>
-                            <div class="scene-item-actions dropdown">
-                                <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false">
-                                    <i class="bi bi-three-dots-vertical"></i>
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                                    <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="${subSc.id}" data-is-sub="true" data-heading="${safeSubHeading}"><i class="bi bi-arrow-up-circle me-2 text-primary"></i>Insert Sub Scene Before</button></li>
-                                    <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${subSc.id}" data-is-sub="true" data-heading="${safeSubHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub Scene After</button></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><button type="button" class="dropdown-item btn-action-move-up ${isFirstSub ? 'disabled' : ''}" data-id="${subSc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
-                                    <li><button type="button" class="dropdown-item btn-action-move-down ${isLastSub ? 'disabled' : ''}" data-id="${subSc.id}"><i class="bi bi-arrow-down me-2"></i>Move Down</button></li>
-                                    <li><button type="button" class="dropdown-item btn-action-dup" data-id="${subSc.id}"><i class="bi bi-copy me-2"></i>Duplicate</button></li>
-                                    <li><hr class="dropdown-divider"></li>
-                                    <li><button type="button" class="dropdown-item text-danger btn-action-delete" data-id="${subSc.id}" data-badge="${subSc.display_number}" data-is-sub="true" data-heading="${safeSubHeading}"><i class="bi bi-trash me-2"></i>Delete</button></li>
-                                </ul>
-                            </div>
-                        </li>
-                    `);
-                });
-            }
         });
 
         const listHtml = htmlChunks.join('');
@@ -1381,9 +1384,23 @@ class KadhaEditor {
             const item = e.target.closest('.scene-item');
             if (item) {
                 const sceneId = item.dataset.id;
-                await this.switchScene(sceneId);
-                if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
-                    this.bsOffcanvas.hide();
+                if (this.editorMode === 'read') {
+                    // In Read Mode: smooth scroll to stable scene anchor without navigation or URL changes
+                    const targetEl = document.getElementById(`read-scene-${sceneId}`);
+                    if (targetEl) {
+                        targetEl.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start'
+                        });
+                    }
+                    if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+                        this.bsOffcanvas.hide();
+                    }
+                } else {
+                    await this.switchScene(sceneId);
+                    if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+                        this.bsOffcanvas.hide();
+                    }
                 }
             }
         });
@@ -2345,7 +2362,18 @@ class KadhaEditor {
             if (this.autocompleteDropdown && !this.autocompleteDropdown.contains(e.target) && !e.target.closest('.script-element-block[data-type="character"]')) {
                 this.hideAutocomplete();
             }
+            if (!e.target.closest('#elementSuggestionPopup')) {
+                this.hideSuggestionPopup();
+            }
         });
+
+        // Dismiss element suggestion popup on scroll
+        const canvasContainer = document.getElementById('editorCanvasContainer');
+        if (canvasContainer) {
+            canvasContainer.addEventListener('scroll', () => {
+                this.hideSuggestionPopup();
+            }, { passive: true });
+        }
     }
 
     bindNetworkEvents() {
@@ -2623,4 +2651,342 @@ class KadhaEditor {
             sel.addRange(range);
         }
     }
+
+    // ----------------------------------------------------
+    // READ MODE / EDIT MODE STATE ENGINE
+    // ----------------------------------------------------
+    setEditorMode(mode, scrollTarget = true) {
+        this.editorMode = mode;
+        const isEditMode = (mode === 'edit');
+        if (this.editorRoot) {
+            this.editorRoot.dataset.mode = mode;
+        }
+        document.body.classList.toggle('editor-edit-mode', isEditMode);
+        document.body.classList.toggle('editor-read-mode', !isEditMode);
+
+        const toolbars = document.getElementById('editorTopToolbarsPinned');
+        if (toolbars) toolbars.style.display = (mode === 'read') ? 'none' : '';
+        if (this.pageContainer) this.pageContainer.style.display = (mode === 'read') ? 'none' : '';
+        if (this.readModeContainer) this.readModeContainer.style.display = (mode === 'read') ? 'block' : 'none';
+
+        if (mode === 'read') {
+            if (this.btnEditFab) this.btnEditFab.style.display = 'flex';
+            if (this.btnDoneFab) this.btnDoneFab.style.display = 'none';
+            this.hideSuggestionPopup();
+            this.hideAutocomplete();
+
+            // Prevent mobile keyboard from remaining open & blur contenteditable
+            if (document.activeElement && typeof document.activeElement.blur === 'function') {
+                document.activeElement.blur();
+            }
+
+            if (scrollTarget && this.currentSceneId) {
+                const targetSceneEl = document.getElementById(`read-scene-${this.currentSceneId}`);
+                if (targetSceneEl) {
+                    targetSceneEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        } else {
+            // Edit Mode
+            if (this.btnEditFab) this.btnEditFab.style.display = 'none';
+            if (this.btnDoneFab) this.btnDoneFab.style.display = 'flex';
+
+            // Focus active editor field
+            const locInput = this.pageContainer.querySelector('.heading-location-input');
+            if (locInput) {
+                locInput.focus();
+            } else {
+                const firstEditable = this.pageContainer.querySelector('.element-content:not(.d-none)');
+                if (firstEditable) {
+                    firstEditable.focus();
+                }
+            }
+        }
+    }
+
+    bindModeToggleEvents() {
+        if (this.btnEditFab) {
+            this.btnEditFab.addEventListener('click', async (e) => {
+                e.preventDefault();
+                // Determine which scene is currently closest in view within continuous Read Mode
+                const visibleSceneId = this.findVisibleReadModeSceneId();
+                if (visibleSceneId && Number(visibleSceneId) !== Number(this.currentSceneId)) {
+                    await this.switchScene(visibleSceneId);
+                }
+                this.setEditorMode('edit');
+            });
+        }
+
+        if (this.btnDoneFab) {
+            this.btnDoneFab.addEventListener('click', async (e) => {
+                e.preventDefault();
+                await this.handleDoneClick();
+            });
+        }
+    }
+
+    findVisibleReadModeSceneId() {
+        const scenes = document.querySelectorAll('.read-mode-scene');
+        if (!scenes.length) return this.currentSceneId;
+        const container = document.getElementById('editorCanvasContainer');
+        const containerTop = container ? container.getBoundingClientRect().top : 0;
+        let closestId = null;
+        let minDistance = Infinity;
+
+        scenes.forEach(sec => {
+            const rect = sec.getBoundingClientRect();
+            const distance = Math.abs(rect.top - containerTop);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestId = sec.dataset.sceneId;
+            }
+        });
+        return closestId || this.currentSceneId;
+    }
+
+    async handleDoneClick() {
+        try {
+            this.setSaveStatus('saving', 'Saving before exiting...');
+            await this.flushSave();
+
+            // Extract the saved payload to update Read Mode DOM immediately
+            const payload = this.extractScenePayload();
+            this.updateReadModeScene(this.currentSceneId, payload);
+
+            this.setEditorMode('read', true);
+            this.setSaveStatus('saved', 'Saved ✓');
+        } catch (err) {
+            console.error('Save failed on Done:', err);
+            this.setSaveStatus('error', 'Save failed. Changes kept in Edit Mode.');
+            alert('Failed to save screenplay changes. You remain in Edit Mode so your changes are not lost.');
+        }
+    }
+
+    setupReadModeScrollObserver() {
+        if (!('IntersectionObserver' in window)) return;
+        if (this.readModeObserver) {
+            this.readModeObserver.disconnect();
+        }
+
+        const options = {
+            root: null,
+            rootMargin: '-15% 0px -65% 0px',
+            threshold: 0
+        };
+
+        this.readModeObserver = new IntersectionObserver((entries) => {
+            if (this.editorMode !== 'read') return;
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const sceneId = entry.target.dataset.sceneId;
+                    if (sceneId) {
+                        this.currentSceneId = Number(sceneId);
+                        document.querySelectorAll('.scene-item').forEach(item => {
+                            item.classList.toggle('active', Number(item.dataset.id) === Number(sceneId));
+                        });
+                    }
+                }
+            });
+        }, options);
+
+        const scenes = document.querySelectorAll('.read-mode-scene');
+        scenes.forEach(sec => this.readModeObserver.observe(sec));
+    }
+
+    updateReadModeScene(sceneId, payload) {
+        let sceneSection = document.getElementById(`read-scene-${sceneId}`);
+        if (!sceneSection && this.readModeContainer) {
+            sceneSection = document.createElement('section');
+            sceneSection.className = 'read-mode-scene';
+            sceneSection.id = `read-scene-${sceneId}`;
+            sceneSection.dataset.sceneId = sceneId;
+
+            const headingDiv = document.createElement('div');
+            headingDiv.className = 'read-scene-heading font-screenplay';
+            const idSpan = document.createElement('span');
+            idSpan.className = 'read-scene-identifier';
+            headingDiv.appendChild(idSpan);
+            sceneSection.appendChild(headingDiv);
+
+            const elementsDiv = document.createElement('div');
+            elementsDiv.className = 'read-scene-elements';
+            sceneSection.appendChild(elementsDiv);
+
+            const treeIds = (this.scenesTree || []).map(s => Number(s.id));
+            const currentIdx = treeIds.indexOf(Number(sceneId));
+            let inserted = false;
+            if (currentIdx !== -1) {
+                for (let i = currentIdx + 1; i < treeIds.length; i++) {
+                    const nextEl = document.getElementById(`read-scene-${treeIds[i]}`);
+                    if (nextEl) {
+                        this.readModeContainer.insertBefore(sceneSection, nextEl);
+                        inserted = true;
+                        break;
+                    }
+                }
+            }
+            if (!inserted) {
+                this.readModeContainer.appendChild(sceneSection);
+            }
+            this.setupReadModeScrollObserver();
+        }
+        if (!sceneSection || !payload) return;
+
+        // 1. Update Heading
+        const headingEl = sceneSection.querySelector('.read-scene-identifier');
+        if (headingEl) {
+            const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
+            const cleanHeading = (payload.heading || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
+            headingEl.innerText = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
+        }
+
+        // 2. Update Elements
+        const elementsContainer = sceneSection.querySelector('.read-scene-elements');
+        if (elementsContainer) {
+            elementsContainer.innerHTML = '';
+            (payload.elements || []).forEach(elem => {
+                if (elem.element_type !== 'scene_heading') {
+                    const block = document.createElement('div');
+                    block.className = `read-element-block element-type-${elem.element_type}`;
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'element-content font-screenplay font-malayalam';
+                    contentDiv.innerText = elem.content || '';
+                    block.appendChild(contentDiv);
+                    elementsContainer.appendChild(block);
+                }
+            });
+        }
+
+        // 3. Update Transition if present
+        let transEl = sceneSection.querySelector('.read-element-block.element-type-transition');
+        const transitionText = this.currentSceneTransition || 'CUT TO:';
+        if (transitionText) {
+            if (!transEl) {
+                transEl = document.createElement('div');
+                transEl.className = 'read-element-block element-type-transition';
+                const transContent = document.createElement('div');
+                transContent.className = 'element-content font-screenplay';
+                transEl.appendChild(transContent);
+                sceneSection.appendChild(transEl);
+            }
+            const transContent = transEl.querySelector('.element-content');
+            if (transContent) {
+                transContent.innerText = transitionText;
+            }
+        } else if (transEl) {
+            transEl.remove();
+        }
+    }
+
+    // ----------------------------------------------------
+    // CONTEXTUAL ELEMENT SUGGESTION POPUP
+    // ----------------------------------------------------
+    showSuggestionPopup(targetBlock, suggestions) {
+        if (!this.suggestionPopup || !suggestions || !suggestions.length) return;
+        this.activeSuggestionBlock = targetBlock;
+        this.activeSuggestionIndex = -1;
+
+        this.suggestionPopup.innerHTML = '';
+        suggestions.forEach((sug) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'suggestion-chip';
+            btn.dataset.suggestion = sug.type;
+            btn.innerText = sug.label;
+            btn.setAttribute('role', 'option');
+            btn.addEventListener('mousedown', (e) => {
+                e.preventDefault(); // prevent blur before action
+            });
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.applySuggestion(sug.type, targetBlock);
+            });
+            this.suggestionPopup.appendChild(btn);
+        });
+
+        this.positionSuggestionPopup(targetBlock);
+        this.suggestionPopup.style.display = 'inline-flex';
+    }
+
+    positionSuggestionPopup(targetBlock) {
+        if (!this.suggestionPopup || !targetBlock) return;
+        const blockRect = targetBlock.getBoundingClientRect();
+        const canvasContainer = document.getElementById('editorCanvasContainer');
+        const containerRect = canvasContainer ? canvasContainer.getBoundingClientRect() : { top: 0, left: 0 };
+
+        const scrollTop = canvasContainer ? canvasContainer.scrollTop : window.pageYOffset;
+        const topPos = (blockRect.top - containerRect.top + scrollTop) + blockRect.height + 6;
+        const leftPos = Math.max(16, (blockRect.left - containerRect.left) + 20);
+
+        this.suggestionPopup.style.top = `${topPos}px`;
+        this.suggestionPopup.style.left = `${leftPos}px`;
+    }
+
+    hideSuggestionPopup() {
+        if (this.suggestionPopup) {
+            this.suggestionPopup.style.display = 'none';
+            this.suggestionPopup.innerHTML = '';
+        }
+        this.activeSuggestionBlock = null;
+        this.activeSuggestionIndex = -1;
+    }
+
+    navigateSuggestions(delta) {
+        if (!this.suggestionPopup) return;
+        const chips = this.suggestionPopup.querySelectorAll('.suggestion-chip');
+        if (!chips.length) return;
+
+        chips.forEach(c => c.classList.remove('active'));
+        this.activeSuggestionIndex += delta;
+        if (this.activeSuggestionIndex >= chips.length) this.activeSuggestionIndex = 0;
+        if (this.activeSuggestionIndex < 0) this.activeSuggestionIndex = chips.length - 1;
+
+        chips[this.activeSuggestionIndex].classList.add('active');
+    }
+
+    applySuggestion(suggestionType, targetBlock) {
+        if (!targetBlock || !targetBlock.parentNode) return;
+        this.hideSuggestionPopup();
+
+        this.activeElementBlock = targetBlock;
+        if (suggestionType === 'parenthetical') {
+            this.setElementType(targetBlock, 'parenthetical');
+            const ed = targetBlock.querySelector('.element-content');
+            if (ed) {
+                ed.innerText = '()';
+                ed.focus();
+                this.setCursorInsideParenthetical(ed);
+            }
+        } else {
+            this.setElementType(targetBlock, suggestionType);
+            const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+            if (ed) {
+                ed.focus();
+                this.setCursorToStart(ed);
+            }
+        }
+        this.updateActiveToolbarButton(suggestionType);
+        if (this.currentTypeEl) {
+            this.currentTypeEl.innerText = this.formatTypeLabel(suggestionType);
+        }
+        this.markDirty();
+        this.calculateLiveStats();
+    }
+
+    setCursorInsideParenthetical(el) {
+        if (!el) return;
+        el.focus();
+        if (typeof window.getSelection !== "undefined" && typeof document.createRange !== "undefined") {
+            const range = document.createRange();
+            const textNode = el.firstChild || el;
+            if (textNode.nodeType === Node.TEXT_NODE && textNode.textContent.length >= 2) {
+                range.setStart(textNode, 1);
+                range.setEnd(textNode, 1);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+    }
+
 }

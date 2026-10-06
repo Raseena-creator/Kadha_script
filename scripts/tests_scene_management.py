@@ -544,11 +544,15 @@ class SceneManagementAndMobileTests(TestCase):
         self.assertIn('id="btnNavScenes"', content)
         self.assertIn('data-bs-target="#scenesOffcanvas"', content)
 
-        # Test editor.html page - scene creation/insertion remains fully functional in editor
+        # Test editor.html page - scene creation controls remain fully functional in editor toolbar (Part C)
         res_ed = self.client_a.get(f"{reverse('script_editor', args=[self.script_a.id])}?scene={sub_7a.id}")
         content_ed = res_ed.content.decode('utf-8')
-        self.assertIn('Insert Sub Scene Before', content_ed)
-        self.assertIn('Insert Sub Scene After', content_ed)
+        self.assertIn('btnTopAddScene', content_ed)
+        self.assertIn('btnTopAddSubScene', content_ed)
+        # Redundant action buttons are removed from the navigation sidebar/offcanvas
+        self.assertNotIn('Insert Sub Scene Before', content_ed)
+        self.assertNotIn('Insert Sub Scene After', content_ed)
+        self.assertIn('scene-nav-item', content_ed)
 
     def _create_scenes_1_to_8_with_subs(self):
         for i in range(1, 7):

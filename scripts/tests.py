@@ -367,3 +367,148 @@ class EditorUINavigationClientRequirementsTests(TestCase):
         self.assertIn('id="scenesOffcanvas"', content)
         self.assertIn('class="offcanvas offcanvas-start', content)
         self.assertIn('editor.js', content)
+
+
+class ReadModeAndEditModeTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='filmmaker', password='secretpassword')
+        self.script = Script.objects.create(
+            user=self.user,
+            title='ആരണ്യം (The Forest)',
+            genre='Thriller',
+            script_type='Feature Film',
+            language='Malayalam'
+        )
+        self.client = Client()
+        self.client.login(username='filmmaker', password='secretpassword')
+
+        # Create scenes with hierarchy
+        self.s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. CABIN - DAY', order=0)
+        ScriptElement.objects.create(scene=self.s1, element_type='scene_heading', content=self.s1.heading, order=0)
+        ScriptElement.objects.create(scene=self.s1, element_type='action', content='കാറ്റിന്റെ ശബ്ദം മാത്രം കേൾക്കാം.', order=1)
+
+        self.s2 = Scene.objects.create(script=self.script, scene_number=2, heading='EXT. FOREST - NIGHT', order=1)
+        ScriptElement.objects.create(scene=self.s2, element_type='scene_heading', content=self.s2.heading, order=0)
+        ScriptElement.objects.create(scene=self.s2, element_type='character', content='രാഘവൻ', order=1)
+        ScriptElement.objects.create(scene=self.s2, element_type='dialogue', content='ആരാണ് അവിടെ?', order=2)
+
+        # Sub-scenes under Scene 2
+        self.sub2a = Scene.objects.create(script=self.script, scene_number=2, parent_scene=self.s2, heading='DEEP WOODS', order=2)
+        ScriptElement.objects.create(scene=self.sub2a, element_type='scene_heading', content='DEEP WOODS', order=0)
+        ScriptElement.objects.create(scene=self.sub2a, element_type='action', content='നിഴലുകൾ അനങ്ങുന്നു.', order=1)
+
+        self.sub2b = Scene.objects.create(script=self.script, scene_number=2, parent_scene=self.s2, heading='RIVERBANK', order=3)
+        ScriptElement.objects.create(scene=self.sub2b, element_type='scene_heading', content='RIVERBANK', order=0)
+
+        self.s3 = Scene.objects.create(script=self.script, scene_number=3, heading='INT. POLICE STATION - MORNING', order=4)
+        ScriptElement.objects.create(scene=self.s3, element_type='scene_heading', content=self.s3.heading, order=0)
+
+    def test_editor_opens_in_read_mode_by_default(self):
+        """1. Editor opens in READ MODE by default with data-mode='read' on editor root."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        self.assertIn('id="screenplayEditor"', content)
+        self.assertIn('data-mode="read"', content)
+
+    def test_read_mode_renders_all_scenes_continuously(self):
+        """2. Read Mode renders all scenes continuously in one vertically scrollable document."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Read mode container exists
+        self.assertIn('id="readModeContainer"', content)
+        self.assertIn('read-mode-container', content)
+
+        # Content of scene 1, 2, 2A, 2B, 3 all rendered in read-mode
+        self.assertIn('കാറ്റിന്റെ ശബ്ദം മാത്രം കേൾക്കാം.', content)
+        self.assertIn('രാഘവൻ', content)
+        self.assertIn('ആരാണ് അവിടെ?', content)
+        self.assertIn('നിഴലുകൾ അനങ്ങുന്നു.', content)
+
+    def test_scene_anchors_exist_with_actual_django_ids(self):
+        """3. Every scene in continuous Read Mode has a stable DOM anchor with actual Django ID."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        self.assertIn(f'id="read-scene-{self.s1.id}"', content)
+        self.assertIn(f'data-scene-id="{self.s1.id}"', content)
+        self.assertIn(f'id="read-scene-{self.s2.id}"', content)
+        self.assertIn(f'data-scene-id="{self.s2.id}"', content)
+        self.assertIn(f'id="read-scene-{self.sub2a.id}"', content)
+        self.assertIn(f'data-scene-id="{self.sub2a.id}"', content)
+        self.assertIn(f'id="read-scene-{self.sub2b.id}"', content)
+        self.assertIn(f'data-scene-id="{self.sub2b.id}"', content)
+        self.assertIn(f'id="read-scene-{self.s3.id}"', content)
+        self.assertIn(f'data-scene-id="{self.s3.id}"', content)
+
+    def test_scene_navigator_clean_structure_and_prefixes(self):
+        """4. Scene Navigator in sidebar/offcanvas displays clean Scene X and location without INT./EXT. clutter."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        self.assertIn('class="scene-nav-item"', content)
+        self.assertIn('class="scene-nav-number font-screenplay"', content)
+        self.assertIn('class="scene-nav-location font-malayalam"', content)
+
+        # Verify Scene 1 clean location strips INT. and - DAY
+        self.assertEqual(self.s1.nav_identifier, 'Scene 1')
+        self.assertEqual(self.s1.clean_location, 'CABIN')
+        self.assertEqual(self.s2.nav_identifier, 'Scene 2')
+        self.assertEqual(self.s2.clean_location, 'FOREST')
+        self.assertEqual(self.sub2a.nav_identifier, 'Scene 2A')
+        self.assertEqual(self.sub2a.clean_location, 'DEEP WOODS')
+        self.assertEqual(self.sub2b.nav_identifier, 'Scene 2B')
+        self.assertEqual(self.sub2b.clean_location, 'RIVERBANK')
+        self.assertEqual(self.s3.nav_identifier, 'Scene 3')
+        self.assertEqual(self.s3.clean_location, 'POLICE STATION')
+
+    def test_floating_action_buttons_and_suggestion_popup_present(self):
+        """5. Floating Edit button, Done button, and contextual suggestion popup are present in template."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        self.assertIn('id="btnEnterEditMode"', content)
+        self.assertIn('id="btnExitEditMode"', content)
+        self.assertIn('id="elementSuggestionPopup"', content)
+        self.assertIn('role="listbox"', content)
+        self.assertIn('aria-label="Element suggestions"', content)
+
+    def test_scenes_navbar_button_opens_offcanvas_no_standalone_link(self):
+        """6. Scenes navbar button has data-bs-target='#scenesOffcanvas' and does NOT navigate to standalone page."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        self.assertIn('id="btnNavScenes"', content)
+        self.assertIn('data-bs-target="#scenesOffcanvas"', content)
+        self.assertNotIn('href="/scripts/{self.script.id}/scenes/"', content)
+
+    def test_redundant_action_buttons_removed_from_scenes_sidebar(self):
+        """7. Redundant action buttons (Add Scene, Insert, Add Sub-scene) removed from sidebar/offcanvas."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Verify not present in sidebar/offcanvas
+        self.assertNotIn('Insert Sub Scene Before', content)
+        self.assertNotIn('Insert Sub Scene After', content)
+        self.assertNotIn('sidebar-action-btn', content)
+
+    def test_standalone_management_urls_redirect_to_editor(self):
+        """8. Standalone Scene Management, Detail, and Character Management URLs safely redirect to the editor."""
+        for url in [
+            f'/scripts/{self.script.id}/',
+            f'/scripts/{self.script.id}/scenes/',
+            f'/scripts/{self.script.id}/characters/',
+            f'/scripts/{self.script.id}/notes/',
+            f'/scripts/{self.script.id}/versions/',
+        ]:
+            res = self.client.get(url)
+            self.assertEqual(res.status_code, 302, f"URL {url} did not redirect")
+            self.assertEqual(res.url, f'/scripts/{self.script.id}/editor/')
