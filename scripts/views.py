@@ -1,7 +1,8 @@
+import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse, Http404
+from django.http import HttpResponse, Http404, JsonResponse
 from django.db import transaction
 from django.db.models import Q
 from django.utils.text import slugify
@@ -266,9 +267,49 @@ def script_delete_view(request, script_id):
         title = script.title
         with transaction.atomic():
             script.delete()
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.content_type == 'application/json':
+            total_scripts = Script.objects.filter(user=request.user).count()
+            total_scenes = Scene.objects.filter(script__user=request.user).count()
+            return JsonResponse({
+                'status': 'ok',
+                'message': f'Script "{title}" has been permanently deleted.',
+                'total_scripts': total_scripts,
+                'total_scenes': total_scenes
+            })
         messages.success(request, f'Script "{title}" has been permanently deleted.')
         return redirect('script_list')
     return render(request, 'scripts/script_confirm_delete.html', {'script': script})
+
+
+@login_required
+def script_rename_view(request, script_id):
+    """Update screenplay title directly from homepage/dashboard."""
+    script = get_user_script(request.user, script_id)
+    if request.method == 'POST':
+        new_title = request.POST.get('title', '').strip()
+        if not new_title and request.content_type == 'application/json':
+            try:
+                data = json.loads(request.body)
+                new_title = (data.get('title') or '').strip()
+            except Exception:
+                pass
+
+        if not new_title:
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.content_type == 'application/json':
+                return JsonResponse({'status': 'error', 'message': 'Screenplay title cannot be empty.'}, status=400)
+            messages.error(request, 'Screenplay title cannot be empty.')
+            return redirect('dashboard')
+
+        script.title = new_title
+        script.save(update_fields=['title', 'updated_at'])
+
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.content_type == 'application/json':
+            return JsonResponse({'status': 'ok', 'title': script.title, 'script_id': script.id})
+
+        messages.success(request, f'Screenplay renamed to "{script.title}".')
+        return redirect('dashboard')
+
+    return redirect('dashboard')
 
 
 @login_required

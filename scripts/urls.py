@@ -6,6 +6,7 @@ urlpatterns = [
     path('new/', views.script_create_view, name='script_create'),
     path('<int:script_id>/', views.script_detail_view, name='script_detail'),
     path('<int:script_id>/edit-info/', views.script_edit_metadata_view, name='script_edit_metadata'),
+    path('<int:script_id>/rename/', views.script_rename_view, name='script_rename'),
     path('<int:script_id>/title-page/', views.script_title_page_view, name='script_title_page'),
     path('<int:script_id>/duplicate/', views.script_duplicate_view, name='script_duplicate'),
     path('<int:script_id>/delete/', views.script_delete_view, name='script_delete'),

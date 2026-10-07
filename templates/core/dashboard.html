@@ -18,39 +18,72 @@
         </div>
     </div>
 
+    <!-- Alert Messages Container -->
+    <div id="dashboardAlertContainer" class="mb-3">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show py-2 px-3 small" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+
     <!-- Minimalist Project Metrics -->
     <div class="ks-metrics-bar d-flex align-items-center justify-content-between mb-4">
         <div class="d-flex align-items-center gap-4 flex-wrap">
             <div class="ks-metric-item">
                 <span class="ks-metric-label">Total Projects</span>
-                <span class="ks-metric-value">{{ total_scripts }}</span>
+                <span class="ks-metric-value" id="totalProjectsCount">{{ total_scripts }}</span>
             </div>
             <div class="vr opacity-25 d-none d-sm-block"></div>
             <div class="ks-metric-item">
                 <span class="ks-metric-label">Total SCENES</span>
-                <span class="ks-metric-value">{{ total_scenes }}</span>
+                <span class="ks-metric-value" id="totalScenesCount">{{ total_scenes }}</span>
             </div>
         </div>
     </div>
 
     <!-- Clean Vertical Project List -->
     {% if scripts %}
-    <div class="ks-project-list">
+    <div class="ks-project-list" id="dashboardProjectsList">
         {% for script in scripts %}
-        <a href="{% url 'script_editor' script.id %}" class="ks-project-item" title="Open {{ script.title }} in Screenplay Editor">
-            <span class="ks-project-title font-malayalam">
-                {{ script.title }}
-            </span>
-            <span class="ks-project-scenes">
-                {% with count=script.num_scenes|default:script.scene_count %}
-                    {{ count }} {% if count == 1 %}SCENE{% else %}SCENES{% endif %}
-                {% endwith %}
-            </span>
-        </a>
+        <div class="ks-project-item" data-id="{{ script.id }}" id="project-item-{{ script.id }}">
+            <a href="{% url 'script_editor' script.id %}" class="ks-project-link" title="Open {{ script.title }} in Screenplay Editor">
+                <span class="ks-project-title font-malayalam" id="script-title-{{ script.id }}">
+                    {{ script.title }}
+                </span>
+                <span class="ks-project-scenes" data-scenes="{% with count=script.num_scenes|default:script.scene_count %}{{ count }}{% endwith %}">
+                    {% with count=script.num_scenes|default:script.scene_count %}
+                        {{ count }} {% if count == 1 %}SCENE{% else %}SCENES{% endif %}
+                    {% endwith %}
+                </span>
+            </a>
+            <div class="ks-project-actions dropdown ms-2">
+                <button class="btn btn-sm btn-link p-0 border-0 dropdown-toggle project-action-btn" type="button"
+                    data-bs-toggle="dropdown" aria-expanded="false" title="Options for {{ script.title }}" aria-label="Options for {{ script.title }}">
+                    <i class="bi bi-three-dots-vertical"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                    <li>
+                        <button type="button" class="dropdown-item btn-action-rename-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
+                            <i class="bi bi-pencil me-2 text-primary"></i>Rename
+                        </button>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <button type="button" class="dropdown-item text-danger btn-action-delete-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
+                            <i class="bi bi-trash me-2"></i>Delete
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
         {% endfor %}
     </div>
     {% else %}
-    <div class="text-center py-5 ks-card bg-white p-5">
+    <div class="text-center py-5 ks-card bg-white p-5" id="dashboardEmptyState">
         <i class="bi bi-journal-text fs-1 text-muted d-block mb-3" style="color: var(--ks-accent) !important;"></i>
         <h4 class="fw-bold text-dark mb-2">No screenplays yet</h4>
         <p class="text-muted small mb-4">Start writing your first Malayalam screenplay.</p>
@@ -61,4 +94,265 @@
     {% endif %}
 
 </div>
+
+<!-- Rename Screenplay Modal -->
+<div class="modal fade" id="renameScriptModal" tabindex="-1" aria-labelledby="renameScriptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border shadow-lg">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold text-dark" id="renameScriptModalLabel"><i class="bi bi-pencil me-2 text-primary"></i>Rename Screenplay</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="renameScriptForm">
+                <div class="modal-body py-3">
+                    <input type="hidden" id="renameScriptId" value="">
+                    <div class="mb-3">
+                        <label for="renameScriptTitleInput" class="form-label small fw-semibold text-muted">Screenplay Title</label>
+                        <input type="text" class="form-control font-screenplay font-malayalam" id="renameScriptTitleInput" required autocomplete="off" placeholder="Enter screenplay title...">
+                        <div class="invalid-feedback" id="renameScriptError">Title cannot be empty.</div>
+                    </div>
+                </div>
+                <div class="modal-footer py-2 border-top bg-light d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn-primary-ks btn-sm" id="btnSubmitRenameScript">Save Title</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Screenplay Modal -->
+<div class="modal fade" id="deleteScriptModal" tabindex="-1" aria-labelledby="deleteScriptModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border shadow-lg">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold text-dark" id="deleteScriptModalLabel"><i class="bi bi-trash me-2 text-danger"></i>Delete Screenplay</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-3">
+                <input type="hidden" id="deleteScriptId" value="">
+                <p class="mb-2 text-dark">Delete '<strong id="deleteModalScriptTitle"></strong>'?</p>
+                <div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2 mb-0">
+                    <i class="bi bi-exclamation-triangle-fill text-warning flex-shrink-0"></i>
+                    <span>This action cannot be undone.</span>
+                </div>
+            </div>
+            <div class="modal-footer py-2 border-top bg-light d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelDeleteScript" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm btn-danger" id="btnConfirmDeleteScript">
+                    <span id="btnConfirmDeleteScriptText">Delete</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const csrfToken = '{{ csrf_token }}';
+
+    // Elements
+    const renameModalEl = document.getElementById('renameScriptModal');
+    const deleteModalEl = document.getElementById('deleteScriptModal');
+    const bsRenameModal = renameModalEl ? new bootstrap.Modal(renameModalEl) : null;
+    const bsDeleteModal = deleteModalEl ? new bootstrap.Modal(deleteModalEl) : null;
+
+    const renameForm = document.getElementById('renameScriptForm');
+    const renameIdInput = document.getElementById('renameScriptId');
+    const renameTitleInput = document.getElementById('renameScriptTitleInput');
+    const renameError = document.getElementById('renameScriptError');
+    const btnSubmitRename = document.getElementById('btnSubmitRenameScript');
+
+    const deleteIdInput = document.getElementById('deleteScriptId');
+    const deleteTitleSpan = document.getElementById('deleteModalScriptTitle');
+    const btnConfirmDelete = document.getElementById('btnConfirmDeleteScript');
+    const btnConfirmDeleteText = document.getElementById('btnConfirmDeleteScriptText');
+
+    const alertContainer = document.getElementById('dashboardAlertContainer');
+    const projectsList = document.getElementById('dashboardProjectsList');
+    const totalProjectsEl = document.getElementById('totalProjectsCount');
+    const totalScenesEl = document.getElementById('totalScenesCount');
+
+    function showAlert(type, message) {
+        if (!alertContainer) return;
+        alertContainer.textContent = '';
+
+        const alertDiv = document.createElement('div');
+        const alertType = type === 'danger' ? 'danger' : 'success';
+        alertDiv.className = `alert alert-${alertType} alert-dismissible fade show py-2 px-3 small`;
+        alertDiv.setAttribute('role', 'alert');
+
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = message;
+        alertDiv.appendChild(messageSpan);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'btn-close';
+        closeBtn.setAttribute('data-bs-dismiss', 'alert');
+        closeBtn.setAttribute('aria-label', 'Close');
+        alertDiv.appendChild(closeBtn);
+
+        alertContainer.appendChild(alertDiv);
+        setTimeout(() => {
+            if (alertDiv && alertDiv.parentNode) {
+                const bsAlert = bootstrap.Alert.getOrCreateInstance(alertDiv);
+                bsAlert.close();
+            }
+        }, 4000);
+    }
+
+    // 1. Rename Screenplay Trigger
+    document.addEventListener('click', (e) => {
+        const renameBtn = e.target.closest('.btn-action-rename-script');
+        if (renameBtn) {
+            e.preventDefault();
+            const scriptId = renameBtn.dataset.id;
+            const currentTitle = renameBtn.dataset.title || '';
+            renameIdInput.value = scriptId;
+            renameTitleInput.value = currentTitle;
+            renameTitleInput.classList.remove('is-invalid');
+            if (bsRenameModal) bsRenameModal.show();
+            setTimeout(() => {
+                renameTitleInput.focus();
+                renameTitleInput.select();
+            }, 300);
+            return;
+        }
+
+        // 2. Delete Screenplay Trigger
+        const deleteBtn = e.target.closest('.btn-action-delete-script');
+        if (deleteBtn) {
+            e.preventDefault();
+            const scriptId = deleteBtn.dataset.id;
+            const title = deleteBtn.dataset.title || 'this screenplay';
+            deleteIdInput.value = scriptId;
+            deleteTitleSpan.innerText = title;
+            if (bsDeleteModal) bsDeleteModal.show();
+            return;
+        }
+    });
+
+    // 3. Rename Form Submit
+    if (renameForm) {
+        renameForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const scriptId = renameIdInput.value;
+            const newTitle = renameTitleInput.value.trim();
+
+            if (!newTitle) {
+                renameTitleInput.classList.add('is-invalid');
+                return;
+            }
+            renameTitleInput.classList.remove('is-invalid');
+
+            btnSubmitRename.disabled = true;
+            btnSubmitRename.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+
+            try {
+                const res = await fetch(`/scripts/${scriptId}/rename/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({ title: newTitle })
+                });
+
+                const data = await res.json();
+                if (!res.ok || data.status !== 'ok') {
+                    throw new Error(data.message || 'Failed to rename screenplay');
+                }
+
+                // Update UI immediately without reload
+                const titleEl = document.getElementById(`script-title-${scriptId}`);
+                if (titleEl) titleEl.innerText = data.title;
+
+                // Update data-title attributes on action buttons
+                const row = document.getElementById(`project-item-${scriptId}`);
+                if (row) {
+                    const rBtn = row.querySelector('.btn-action-rename-script');
+                    const dBtn = row.querySelector('.btn-action-delete-script');
+                    if (rBtn) rBtn.dataset.title = data.title;
+                    if (dBtn) dBtn.dataset.title = data.title;
+                    const link = row.querySelector('.ks-project-link');
+                    if (link) link.title = `Open ${data.title} in Screenplay Editor`;
+                }
+
+                if (bsRenameModal) bsRenameModal.hide();
+                showAlert('success', `Screenplay renamed to "${data.title}".`);
+            } catch (err) {
+                renameTitleInput.classList.add('is-invalid');
+                renameError.innerText = err.message || 'Failed to rename screenplay.';
+            } finally {
+                btnSubmitRename.disabled = false;
+                btnSubmitRename.innerText = 'Save Title';
+            }
+        });
+    }
+
+    // 4. Confirm Delete Submit
+    if (btnConfirmDelete) {
+        btnConfirmDelete.addEventListener('click', async () => {
+            const scriptId = deleteIdInput.value;
+            if (!scriptId) return;
+
+            btnConfirmDelete.disabled = true;
+            btnConfirmDeleteText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
+
+            try {
+                const res = await fetch(`/scripts/${scriptId}/delete/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const data = await res.json();
+                if (!res.ok || data.status !== 'ok') {
+                    throw new Error(data.message || 'Failed to delete screenplay');
+                }
+
+                if (bsDeleteModal) bsDeleteModal.hide();
+
+                // Remove item from DOM
+                const row = document.getElementById(`project-item-${scriptId}`);
+                if (row) {
+                    row.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+                    row.style.opacity = '0';
+                    row.style.transform = 'translateY(-6px)';
+                    setTimeout(() => {
+                        row.remove();
+                        // Check if list is empty
+                        if (projectsList && projectsList.children.length === 0) {
+                            location.reload();
+                        }
+                    }, 260);
+                }
+
+                // Update counts
+                if (totalProjectsEl && data.total_scripts !== undefined) {
+                    totalProjectsEl.innerText = data.total_scripts;
+                }
+                if (totalScenesEl && data.total_scenes !== undefined) {
+                    totalScenesEl.innerText = data.total_scenes;
+                }
+
+                showAlert('success', data.message || 'Screenplay deleted successfully.');
+            } catch (err) {
+                showAlert('danger', err.message || 'Failed to delete screenplay.');
+            } finally {
+                btnConfirmDelete.disabled = false;
+                btnConfirmDeleteText.innerText = 'Delete';
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

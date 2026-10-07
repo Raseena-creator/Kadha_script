@@ -1285,13 +1285,41 @@ class KadhaEditor {
             const isSub = Boolean(sc.is_sub_scene);
             const navId = sc.nav_identifier || sc.scene_identifier || `Scene ${sc.scene_number || ''}`;
             const cleanLoc = sc.clean_location || sc.clean_heading || sc.heading || 'Scene';
+            const escapedHeading = (sc.heading || '').replace(/"/g, '&quot;');
+            const parentId = sc.parent_scene_id || sc.id;
+
+            const beforeLabel = isSub ? 'Insert Sub-Scene Before' : 'Insert Scene Before';
+            const afterLabel = isSub ? 'Insert Sub-Scene After' : 'Insert Scene After';
+            const targetParentId = isSub ? parentId : sc.id;
+
+            const actionsMenuHtml = `
+                <div class="scene-item-actions dropdown">
+                    <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle scene-action-btn" type="button"
+                        data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" title="Scene Actions" aria-label="Scene Actions">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                        <li><button type="button" class="dropdown-item btn-action-insert-before" data-id="${sc.id}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-arrow-up-circle me-2 text-primary"></i>${beforeLabel}</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${sc.id}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>${afterLabel}</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="${targetParentId}" data-heading="${escapedHeading}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button type="button" class="dropdown-item btn-action-dup" data-id="${sc.id}"><i class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-move-up" data-id="${sc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
+                        <li><button type="button" class="dropdown-item btn-action-move-down" data-id="${sc.id}"><i class="bi bi-arrow-down me-2"></i>Move Down</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><button type="button" class="dropdown-item text-danger btn-action-delete" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-trash me-2"></i>Delete</button></li>
+                    </ul>
+                </div>
+            `;
 
             htmlChunks.push(`
-                <li class="scene-item ${isSub ? 'sub-scene-item ps-3' : ''} ${isActive ? 'active' : ''}" data-id="${sc.id}">
+                <li class="scene-item ${isSub ? 'sub-scene-item' : ''} ${isActive ? 'active' : ''}" data-id="${sc.id}" data-parent="${sc.parent_scene_id || ''}">
                     <div class="scene-nav-item">
                         <span class="scene-nav-number font-screenplay">${navId}</span>
+                        <span class="scene-nav-separator">:</span>
                         <span class="scene-nav-location font-malayalam" title="${cleanLoc.replace(/"/g, '&quot;')}">${cleanLoc}</span>
                     </div>
+                    ${actionsMenuHtml}
                 </li>
             `);
         });
@@ -1385,8 +1413,15 @@ class KadhaEditor {
             const item = e.target.closest('.scene-item');
             if (item) {
                 const sceneId = item.dataset.id;
+                document.querySelectorAll('.scene-item').forEach(el => {
+                    el.classList.toggle('active', String(el.dataset.id) === String(sceneId));
+                });
                 if (this.editorMode === 'read') {
                     // In Read Mode: smooth scroll to stable scene anchor without navigation or URL changes
+                    this.currentSceneId = Number(sceneId);
+                    this.isNavigatingToScene = true;
+                    clearTimeout(this._navSceneTimer);
+                    this._navSceneTimer = setTimeout(() => { this.isNavigatingToScene = false; }, 600);
                     const targetEl = document.getElementById(`read-scene-${sceneId}`);
                     if (targetEl) {
                         targetEl.scrollIntoView({
@@ -2771,12 +2806,12 @@ class KadhaEditor {
 
         const options = {
             root: null,
-            rootMargin: '-15% 0px -65% 0px',
+            rootMargin: '0px 0px -60% 0px',
             threshold: 0
         };
 
         this.readModeObserver = new IntersectionObserver((entries) => {
-            if (this.editorMode !== 'read') return;
+            if (this.editorMode !== 'read' || this.isNavigatingToScene) return;
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const sceneId = entry.target.dataset.sceneId;

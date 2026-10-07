@@ -512,3 +512,119 @@ class ReadModeAndEditModeTests(TestCase):
             res = self.client.get(url)
             self.assertEqual(res.status_code, 302, f"URL {url} did not redirect")
             self.assertEqual(res.url, f'/scripts/{self.script.id}/editor/')
+
+
+class DashboardScriptManagementAndSceneDropdownTests(TestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(username='user1', password='passuser1')
+        self.user2 = User.objects.create_user(username='user2', password='passuser2')
+        self.script1 = Script.objects.create(
+            user=self.user1,
+            title='ആദ്യത്തെ തിരക്കഥ (First Script)',
+            genre='Drama',
+            script_type='Feature Film'
+        )
+        self.sc1 = Scene.objects.create(script=self.script1, scene_number=1, heading='INT. HOUSE - DAY', order=0)
+        self.sub1 = Scene.objects.create(script=self.script1, parent_scene=self.sc1, scene_number=1, heading='INT. BEDROOM - DAY', order=1)
+
+        self.client1 = Client()
+        self.client1.login(username='user1', password='passuser1')
+        self.client2 = Client()
+        self.client2.login(username='user2', password='passuser2')
+
+    def test_dashboard_displays_screenplay_with_rename_and_delete_actions(self):
+        """Dashboard renders project item with action buttons and modal triggers."""
+        res = self.client1.get('/dashboard/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+        self.assertIn('ആദ്യത്തെ തിരക്കഥ (First Script)', content)
+        self.assertIn('btn-action-rename-script', content)
+        self.assertIn('btn-action-delete-script', content)
+        self.assertIn('id="renameScriptModal"', content)
+        self.assertIn('id="deleteScriptModal"', content)
+
+    def test_rename_screenplay_success_json(self):
+        """Rename screenplay via JSON request updates Script model and returns ok."""
+        res = self.client1.post(
+            f'/scripts/{self.script1.id}/rename/',
+            data=json.dumps({'title': 'നവീകരിച്ച തിരക്കഥ (Renamed Script)'}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'ok')
+        self.assertEqual(data['title'], 'നവീകരിച്ച തിരക്കഥ (Renamed Script)')
+
+        self.script1.refresh_from_db()
+        self.assertEqual(self.script1.title, 'നവീകരിച്ച തിരക്കഥ (Renamed Script)')
+
+    def test_rename_screenplay_empty_title_rejected(self):
+        """Rename screenplay rejects empty title with error status."""
+        res = self.client1.post(
+            f'/scripts/{self.script1.id}/rename/',
+            data=json.dumps({'title': '   '}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 400)
+        data = res.json()
+        self.assertEqual(data['status'], 'error')
+
+        self.script1.refresh_from_db()
+        self.assertEqual(self.script1.title, 'ആദ്യത്തെ തിരക്കഥ (First Script)')
+
+    def test_rename_screenplay_permission_denied_for_other_user(self):
+        """User cannot rename screenplay belonging to another user."""
+        res = self.client2.post(
+            f'/scripts/{self.script1.id}/rename/',
+            data=json.dumps({'title': 'Hacked Title'}),
+            content_type='application/json',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 404)
+        self.script1.refresh_from_db()
+        self.assertEqual(self.script1.title, 'ആദ്യത്തെ തിരക്കഥ (First Script)')
+
+    def test_delete_screenplay_success_json(self):
+        """Delete screenplay via AJAX POST returns JSON with updated counts."""
+        res = self.client1.post(
+            f'/scripts/{self.script1.id}/delete/',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'ok')
+        self.assertEqual(data['total_scripts'], 0)
+        self.assertEqual(data['total_scenes'], 0)
+        self.assertFalse(Script.objects.filter(id=self.script1.id).exists())
+
+    def test_delete_screenplay_permission_denied_for_other_user(self):
+        """User cannot delete screenplay belonging to another user."""
+        res = self.client2.post(
+            f'/scripts/{self.script1.id}/delete/',
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(res.status_code, 404)
+        self.assertTrue(Script.objects.filter(id=self.script1.id).exists())
+
+    def test_editor_renders_scene_and_subscene_dropdown_action_menus(self):
+        """Editor scenes list renders dropdown action menu for both main and sub-scenes."""
+        res = self.client1.get(f'/scripts/{self.script1.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+
+        # Dropdown action buttons present
+        self.assertIn('scene-action-btn', content)
+        self.assertIn('btn-action-insert-before', content)
+        self.assertIn('btn-action-insert-after', content)
+        self.assertIn('btn-action-add-sub', content)
+        self.assertIn('btn-action-dup', content)
+        self.assertIn('btn-action-move-up', content)
+        self.assertIn('btn-action-move-down', content)
+        self.assertIn('btn-action-delete', content)
+
+        # Modals present
+        self.assertIn('id="editorInsertModal"', content)
+        self.assertIn('id="editorSubSceneModal"', content)
+        self.assertIn('id="editorDeleteModal"', content)
