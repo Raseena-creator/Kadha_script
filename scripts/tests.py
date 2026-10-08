@@ -620,11 +620,43 @@ class DashboardScriptManagementAndSceneDropdownTests(TestCase):
         self.assertIn('btn-action-insert-after', content)
         self.assertIn('btn-action-add-sub', content)
         self.assertIn('btn-action-dup', content)
+        self.assertIn('btn-action-copy-scene', content)
         self.assertIn('btn-action-move-up', content)
         self.assertIn('btn-action-move-down', content)
         self.assertIn('btn-action-delete', content)
+
+        # Toolbar Copy Current Scene present
+        self.assertIn('id="btnToolbarCopyCurrentScene"', content)
 
         # Modals present
         self.assertIn('id="editorInsertModal"', content)
         self.assertIn('id="editorSubSceneModal"', content)
         self.assertIn('id="editorDeleteModal"', content)
+
+    def test_copy_full_scene_api_elements_retrieval_and_structure(self):
+        """Scene detail API returns full ordered elements with semantic types and Unicode preserved for Copy Full Scene."""
+        # Create elements for script1 scene1
+        ScriptElement.objects.create(scene=self.sc1, element_type='scene_heading', content=self.sc1.heading, order=0)
+        ScriptElement.objects.create(scene=self.sc1, element_type='character', content='റഹീം (RAHEEM)', order=1)
+        ScriptElement.objects.create(scene=self.sc1, element_type='parenthetical', content='(പുഞ്ചിരിയോടെ)', order=2)
+        ScriptElement.objects.create(scene=self.sc1, element_type='dialogue', content='എല്ലാം ശരിയാകും.', order=3)
+        ScriptElement.objects.create(scene=self.sc1, element_type='transition', content='CUT TO:', order=4)
+
+        res = self.client1.get(f'/scripts/api/{self.script1.id}/scenes/{self.sc1.id}/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['status'], 'ok')
+        scene_data = data['scene']
+        self.assertEqual(scene_data['id'], self.sc1.id)
+        self.assertEqual(scene_data['heading'], 'INT. HOUSE - DAY')
+
+        elements = data['elements']
+        self.assertEqual(len(elements), 5)  # scene_heading, character, parenthetical, dialogue, transition
+        types = [e['element_type'] for e in elements]
+        self.assertEqual(types, ['scene_heading', 'character', 'parenthetical', 'dialogue', 'transition'])
+        # Unicode content preservation
+        self.assertEqual(elements[0]['content'], 'INT. HOUSE - DAY')
+        self.assertEqual(elements[1]['content'], 'റഹീം (RAHEEM)')
+        self.assertEqual(elements[2]['content'], '(പുഞ്ചിരിയോടെ)')
+        self.assertEqual(elements[3]['content'], 'എല്ലാം ശരിയാകും.')
+        self.assertEqual(elements[4]['content'], 'CUT TO:')

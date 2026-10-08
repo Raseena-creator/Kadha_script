@@ -97,6 +97,8 @@
                         <li>
                             <hr class="dropdown-divider">
                         </li>
+                        <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
+                                    class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                         <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
                                     class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
@@ -124,6 +126,8 @@
                         <li>
                             <hr class="dropdown-divider">
                         </li>
+                        <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
+                                    class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                         <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
                                     class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
@@ -188,6 +192,8 @@
                             <li>
                                 <hr class="dropdown-divider">
                             </li>
+                            <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
+                                        class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                             <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
                                         class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                             <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
@@ -215,6 +221,8 @@
                             <li>
                                 <hr class="dropdown-divider">
                             </li>
+                            <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
+                                        class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                             <li><button type="button" class="dropdown-item btn-action-dup" data-id="{{ sc.id }}"><i
                                         class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                             <li><button type="button" class="dropdown-item btn-action-move-up" data-id="{{ sc.id }}"><i
@@ -280,6 +288,11 @@
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
+                        <li><button type="button" class="dropdown-item" id="btnToolbarCopyCurrentScene"><i
+                                    class="bi bi-clipboard me-2 text-secondary"></i>Copy Current Scene</button></li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#findReplaceModal"><i
                                     class="bi bi-search me-2"></i>Find & Replace</button></li>
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#shortcutsModal"><i

@@ -81,6 +81,8 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
+        opts.add_argument("--disable-cache")
+        opts.add_argument("--incognito")
         opts.add_argument("--window-size=1280,800")
         if os.path.exists(CHROMEDRIVER_PATH):
             service = Service(executable_path=CHROMEDRIVER_PATH)
@@ -235,6 +237,7 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertIn("Insert Scene After", menu_text)
                 self.assertIn("Add Sub-Scene", menu_text)
                 self.assertIn("Duplicate", menu_text)
+                self.assertIn("Copy Full Scene", menu_text)
                 self.assertIn("Move Up", menu_text)
                 self.assertIn("Move Down", menu_text)
                 self.assertIn("Delete", menu_text)
@@ -250,9 +253,169 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertIn("Insert Sub-Scene After", sub_menu_text)
                 self.assertIn("Add Sub-Scene", sub_menu_text)
                 self.assertIn("Duplicate", sub_menu_text)
+                self.assertIn("Copy Full Scene", sub_menu_text)
                 self.assertIn("Move Up", sub_menu_text)
                 self.assertIn("Move Down", sub_menu_text)
                 self.assertIn("Delete", sub_menu_text)
+
+                # ========================================================
+                # FEATURE 2 & 3: COPY FULL SCENE (Menu & Toolbar)
+                # ========================================================
+                copy_sub_btn = sub_menu.find_element(By.CLASS_NAME, "btn-action-copy-scene")
+                driver.execute_script("arguments[0].click();", copy_sub_btn)
+                time.sleep(0.5)
+
+                # Verify scene navigation was NOT triggered
+                curr_sub = scene_list_el.find_element(By.CSS_SELECTOR, f".sub-scene-item[data-id='{self.sub2a.id}']")
+                self.assertIn("active", curr_sub.get_attribute("class"))
+
+                # Verify clipboard payload generated with full scene semantic structure
+                sub_payload = driver.execute_script("return (window.editor || window.editorInstance) ? (window.editor || window.editorInstance).lastCopiedPayload : null;")
+                self.assertIsNotNone(sub_payload)
+                self.assertTrue(sub_payload.get('is_full_scene'))
+                self.assertEqual(sub_payload.get('version'), '1.0')
+                self.assertEqual(sub_payload.get('source'), 'kadhascript')
+                self.assertEqual(sub_payload.get('scene_id'), self.sub2a.id)
+                self.assertIn('elements', sub_payload)
+
+                # Pinned toolbar "Copy Current Scene" (when toolbar visible)
+                if not is_mobile:
+                    more_tools_btn = driver.find_elements(By.CSS_SELECTOR, "button[title='More Tools']")
+                    if more_tools_btn:
+                        driver.execute_script("arguments[0].click();", more_tools_btn[0])
+                        time.sleep(0.3)
+                    tb_copy_btn = driver.find_element(By.ID, "btnToolbarCopyCurrentScene")
+                    driver.execute_script("arguments[0].click();", tb_copy_btn)
+                    time.sleep(0.5)
+                    tb_payload = driver.execute_script("return (window.editor || window.editorInstance) ? (window.editor || window.editorInstance).lastCopiedPayload : null;")
+                    self.assertIsNotNone(tb_payload)
+                    self.assertTrue(tb_payload.get('is_full_scene'))
+
+                # Close mobile offcanvas if open
+                if is_mobile:
+                    close_btn = driver.find_elements(By.CSS_SELECTOR, "#scenesOffcanvas .btn-close")
+                    if close_btn and close_btn[0].is_displayed():
+                        driver.execute_script("arguments[0].click();", close_btn[0])
+                        time.sleep(0.5)
+
+                # ========================================================
+                # FEATURE 5: REMOVE AUTOMATIC EDIT MODE FOCUS
+                # ========================================================
+                editor_root = driver.find_element(By.ID, "screenplayEditor")
+                self.assertEqual(editor_root.get_attribute("data-mode"), "read")
+
+                driver.execute_script("if (document.activeElement) document.activeElement.blur();")
+                btn_edit = driver.find_element(By.ID, "btnEnterEditMode")
+                driver.execute_script("arguments[0].click();", btn_edit)
+                time.sleep(0.5)
+
+                self.assertEqual(editor_root.get_attribute("data-mode"), "edit")
+
+                # Verify NO editor element is automatically focused upon entering Edit Mode
+                active_id = driver.execute_script("return document.activeElement ? (document.activeElement.id || '') : '';")
+                active_class = driver.execute_script("return document.activeElement ? (document.activeElement.className || '') : '';")
+                self.assertNotEqual(active_id, "headingLocationInput")
+                self.assertNotIn("heading-location-input", active_class)
+                self.assertNotIn("element-content", active_class)
+
+                # Verify explicit click/focus still works as expected (Heading Input)
+                heading_input = driver.find_element(By.CSS_SELECTOR, "#screenplayPage .heading-location-input")
+                driver.execute_script("arguments[0].focus();", heading_input)
+                time.sleep(0.2)
+                focused_class = driver.execute_script("return document.activeElement ? (document.activeElement.className || '') : '';")
+                self.assertIn("heading-location-input", focused_class)
+
+                # ========================================================
+                # FEATURE 1 & 2: SEMANTIC SCREENPLAY COPY & PASTE
+                # ========================================================
+                # Paste custom semantic blocks including Malayalam Unicode and Parenthetical
+                paste_payload = {
+                    "version": "1.0",
+                    "source": "kadhascript",
+                    "elements": [
+                        {"type": "character", "content": "റഹീം (RAHEEM)"},
+                        {"type": "parenthetical", "content": "(പുഞ്ചിരിയോടെ)"},
+                        {"type": "dialogue", "content": "എല്ലാം ശരിയാകും."},
+                        {"type": "action", "content": "റഹീം കാപ്പികുടിച്ച് പുറത്തേക്ക് നടക്കുന്നു."}
+                    ]
+                }
+                driver.execute_script("""
+                    const payload = arguments[0];
+                    const jsonStr = JSON.stringify(payload);
+                    const dt = new DataTransfer();
+                    dt.setData('application/x-kadhascript-elements', jsonStr);
+                    dt.setData('text/plain', "റഹീം (RAHEEM)\\n(പുഞ്ചിരിയോടെ)\\nഎല്ലാം ശരിയാകും.\\n\\nറഹീം കാപ്പികുടിച്ച് പുറത്തേക്ക് നടക്കുന്നു.");
+                    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                    const target = document.getElementById('screenplayPage');
+                    target.dispatchEvent(pasteEvt);
+                """, paste_payload)
+                time.sleep(0.5)
+
+                # Verify elements in DOM retain their semantic types
+                dom_elements = driver.execute_script("""
+                    return Array.from(document.querySelectorAll('#screenplayPage .script-element-block')).map(b => ({
+                        type: b.getAttribute('data-type'),
+                        content: (b.querySelector('.element-content') ? b.querySelector('.element-content').innerText.trim() : '')
+                    }));
+                """)
+                types = [e['type'] for e in dom_elements]
+                self.assertIn('character', types)
+                self.assertIn('parenthetical', types)
+                self.assertIn('dialogue', types)
+                self.assertIn('action', types)
+
+                # Verify Malayalam Unicode preservation and parenthetical single wrapping
+                char_elem = next(e for e in dom_elements if e['type'] == 'character' and 'റഹീം' in e['content'])
+                self.assertEqual(char_elem['content'], 'റഹീം (RAHEEM)')
+
+                paren_elem = next(e for e in dom_elements if e['type'] == 'parenthetical')
+                self.assertEqual(paren_elem['content'], '(പുഞ്ചിരിയോടെ)')
+                self.assertNotIn('((', paren_elem['content'])
+
+                diag_elem = next(e for e in dom_elements if e['type'] == 'dialogue')
+                self.assertEqual(diag_elem['content'], 'എല്ലാം ശരിയാകും.')
+
+                # Verify explicit click/focus on pasted contenteditable elements
+                first_editable = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "#screenplayPage .element-content:not(.d-none)"))
+                )
+                driver.execute_script("""
+                    const el = arguments[0];
+                    el.focus();
+                    const range = document.createRange();
+                    range.selectNodeContents(el);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                """, first_editable)
+                time.sleep(0.2)
+                active_el_is_editable = driver.execute_script("return document.activeElement === arguments[0] || arguments[0].contains(document.activeElement);", first_editable)
+                self.assertTrue(active_el_is_editable)
+
+                # Test multi-block selection copy
+                driver.execute_script("""
+                    const charEl = document.querySelector('#screenplayPage .script-element-block[data-type="character"] .element-content');
+                    const diagEl = document.querySelector('#screenplayPage .script-element-block[data-type="dialogue"] .element-content');
+                    if (charEl && diagEl) {
+                        const range = document.createRange();
+                        range.setStart(charEl.firstChild || charEl, 0);
+                        range.setEnd(diagEl.firstChild || diagEl, (diagEl.firstChild || diagEl).textContent.length);
+                        const sel = window.getSelection();
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+
+                        const dt = new DataTransfer();
+                        const copyEvt = new ClipboardEvent('copy', { bubbles: true, cancelable: true, clipboardData: dt });
+                        document.dispatchEvent(copyEvt);
+                    }
+                """)
+                time.sleep(0.3)
+                copied = driver.execute_script("return (window.editor || window.editorInstance) ? (window.editor || window.editorInstance).lastCopiedPayload : null;")
+                self.assertIsNotNone(copied)
+                self.assertEqual(copied.get('source'), 'kadhascript')
+                copied_types = [el['type'] for el in copied.get('elements', [])]
+                self.assertIn('character', copied_types)
+                self.assertIn('dialogue', copied_types)
 
                 # Save Screenshot for this viewport
                 screenshot_path = os.path.join(ARTIFACTS_DIR, f"browser_verify_{vp_name}.png")

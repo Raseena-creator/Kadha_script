@@ -69,8 +69,10 @@ class KadhaEditor {
         this.suggestionPopup = document.getElementById('elementSuggestionPopup');
         this.activeSuggestionBlock = null;
         this.activeSuggestionIndex = -1;
+        this.lastCopiedPayload = null;
 
         window.editor = this;
+        window.editorInstance = this;
         this.init();
     }
 
@@ -90,6 +92,7 @@ class KadhaEditor {
         this.setEditorMode('read', false);
         this.setupReadModeScrollObserver();
         this.bindSuggestionPopupEvents();
+        this.bindClipboardEvents();
     }
 
     // CSRF & Headers helper
@@ -247,18 +250,7 @@ class KadhaEditor {
             this.createElementBlock(elem.element_type, elem.content);
         });
 
-        // Only focus if currently in Edit Mode (Read Mode must never steal focus or open keyboard)
-        if (this.editorMode === 'edit') {
-            const locInput = this.pageContainer.querySelector('.heading-location-input');
-            if (locInput) {
-                locInput.focus();
-            } else {
-                const firstBlock = this.pageContainer.querySelector('.element-content:not(.d-none)');
-                if (firstBlock) {
-                    firstBlock.focus();
-                }
-            }
-        }
+        // Edit Mode entry does not automatically steal focus; user explicitly clicks to focus
     }
 
     formatParenthetical(text) {
@@ -1303,6 +1295,7 @@ class KadhaEditor {
                         <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${sc.id}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>${afterLabel}</button></li>
                         <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="${targetParentId}" data-heading="${escapedHeading}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="${sc.id}"><i class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                         <li><button type="button" class="dropdown-item btn-action-dup" data-id="${sc.id}"><i class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="${sc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-down" data-id="${sc.id}"><i class="bi bi-arrow-down me-2"></i>Move Down</button></li>
@@ -1387,7 +1380,16 @@ class KadhaEditor {
                 return;
             }
 
-            // 6. Duplicate
+            // 6. Copy Full Scene
+            const copySceneBtn = e.target.closest('.btn-action-copy-scene');
+            if (copySceneBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                await this.copyFullScene(copySceneBtn.dataset.id);
+                return;
+            }
+
+            // 7. Duplicate
             const dupBtn = e.target.closest('.btn-action-dup');
             if (dupBtn) {
                 e.preventDefault();
@@ -2264,6 +2266,14 @@ class KadhaEditor {
             });
         }
 
+        const btnToolbarCopy = document.getElementById('btnToolbarCopyCurrentScene');
+        if (btnToolbarCopy) {
+            btnToolbarCopy.addEventListener('click', async (e) => {
+                e.preventDefault();
+                await this.copyFullScene(this.currentSceneId);
+            });
+        }
+
         const btnSave = document.getElementById('btnSaveManual');
         if (btnSave) {
             btnSave.addEventListener('click', async () => {
@@ -2726,17 +2736,7 @@ class KadhaEditor {
             // Edit Mode
             if (this.btnEditFab) this.btnEditFab.style.display = 'none';
             if (this.btnDoneFab) this.btnDoneFab.style.display = 'flex';
-
-            // Focus active editor field
-            const locInput = this.pageContainer.querySelector('.heading-location-input');
-            if (locInput) {
-                locInput.focus();
-            } else {
-                const firstEditable = this.pageContainer.querySelector('.element-content:not(.d-none)');
-                if (firstEditable) {
-                    firstEditable.focus();
-                }
-            }
+            // Explicit user click/tap focuses elements without automatic focus or mobile keyboard popping
         }
     }
 
@@ -3202,4 +3202,422 @@ class KadhaEditor {
         }
     }
 
+    // ----------------------------------------------------
+    // SEMANTIC CLIPBOARD & FULL SCENE COPY ENGINE (Batch 1)
+    // ----------------------------------------------------
+    bindClipboardEvents() {
+        document.addEventListener('copy', (e) => this.handleCopy(e));
+        document.addEventListener('paste', (e) => this.handlePaste(e));
+    }
+
+    escapeAttribute(str) {
+        if (!str) return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    unescapeAttribute(str) {
+        if (!str) return '';
+        return str
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&');
+    }
+
+    formatElementsToPlainText(elements) {
+        if (!elements || !elements.length) return '';
+        const lines = [];
+        elements.forEach(el => {
+            const type = el.type || 'action';
+            const content = el.content || '';
+            if (type === 'scene_heading') {
+                lines.push(content + '\n');
+            } else if (type === 'character') {
+                lines.push('                    ' + content + '\n');
+            } else if (type === 'parenthetical') {
+                lines.push('                ' + this.formatParenthetical(content) + '\n');
+            } else if (type === 'dialogue') {
+                lines.push('            ' + content + '\n');
+            } else if (type === 'transition') {
+                lines.push('                                                    ' + content + '\n');
+            } else if (type === 'note') {
+                lines.push('[[ ' + content + ' ]]\n');
+            } else {
+                lines.push(content + '\n');
+            }
+        });
+        return lines.join('\n').trim();
+    }
+
+    formatElementsToHtml(elements) {
+        if (!elements || !elements.length) return '';
+        return elements.map(el => {
+            const type = el.type || 'action';
+            const content = el.content || '';
+            const escaped = this.escapeAttribute(content);
+            return `<div data-element-type="${type}" class="kadhascript-element element-type-${type}">${escaped}</div>`;
+        }).join('\n');
+    }
+
+    handleCopy(e) {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+        const range = sel.getRangeAt(0);
+
+        // Check if selection is within the screenplay editor content
+        const isInsideEdit = this.pageContainer && (this.pageContainer.contains(range.startContainer) || this.pageContainer.contains(range.endContainer));
+        const isInsideRead = this.readModeContainer && (this.readModeContainer.contains(range.startContainer) || this.readModeContainer.contains(range.endContainer));
+
+        if (!isInsideEdit && !isInsideRead) return;
+
+        let elements = [];
+
+        if (isInsideEdit) {
+            const allBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+            const selectedBlocks = allBlocks.filter(block => {
+                try {
+                    return range.intersectsNode(block);
+                } catch (err) {
+                    return false;
+                }
+            });
+
+            if (selectedBlocks.length === 0) return;
+
+            // If user selected partial text inside a single action/dialogue block, let browser copy plain text inline
+            if (selectedBlocks.length === 1) {
+                const singleBlock = selectedBlocks[0];
+                const ed = singleBlock.querySelector('.element-content:not(.d-none)') || singleBlock.querySelector('.element-content');
+                const fullText = (ed ? ed.innerText : '').trim();
+                const selText = sel.toString().trim();
+                if (selText && selText !== fullText && (singleBlock.dataset.type === 'action' || singleBlock.dataset.type === 'dialogue')) {
+                    return;
+                }
+            }
+
+            selectedBlocks.forEach(block => {
+                let type = block.dataset.type || 'action';
+                let content = '';
+                if (type === 'scene_heading') {
+                    const intext = block.querySelector('.heading-intext-select')?.value || 'INT.';
+                    const loc = block.querySelector('.heading-location-input')?.value.trim() || '';
+                    const time = block.querySelector('.heading-time-select')?.value || 'DAY';
+                    content = this.buildHeading(intext, loc || 'LOCATION', time);
+                    if (!content) {
+                        content = block.querySelector('.element-content')?.innerText.trim() || 'INT. LOCATION - DAY';
+                    }
+                } else {
+                    const ed = block.querySelector('.element-content:not(.d-none)') || block.querySelector('.element-content');
+                    content = ed ? ed.innerText.trim() : '';
+                    if (type === 'parenthetical') {
+                        content = this.formatParenthetical(content);
+                    }
+                }
+                elements.push({ type, content });
+            });
+        } else if (isInsideRead) {
+            const allReadItems = Array.from(this.readModeContainer.querySelectorAll('.read-scene-heading, .read-element-block'));
+            const selectedItems = allReadItems.filter(item => {
+                try {
+                    return range.intersectsNode(item);
+                } catch (err) {
+                    return false;
+                }
+            });
+
+            if (selectedItems.length === 0) return;
+
+            selectedItems.forEach(item => {
+                if (item.classList.contains('read-scene-heading')) {
+                    const content = item.querySelector('.read-scene-identifier')?.innerText.trim() || item.innerText.trim();
+                    elements.push({ type: 'scene_heading', content });
+                } else {
+                    let type = 'action';
+                    for (const cls of item.classList) {
+                        if (cls.startsWith('element-type-')) {
+                            type = cls.replace('element-type-', '');
+                            break;
+                        }
+                    }
+                    let content = item.querySelector('.element-content')?.innerText.trim() || '';
+                    if (type === 'parenthetical') {
+                        content = this.formatParenthetical(content);
+                    }
+                    elements.push({ type, content });
+                }
+            });
+        }
+
+        if (elements.length === 0) return;
+
+        const payload = {
+            version: "1.0",
+            source: "kadhascript",
+            elements: elements
+        };
+
+        const jsonString = JSON.stringify(payload);
+        const plainText = this.formatElementsToPlainText(elements);
+        const htmlText = this.formatElementsToHtml(elements);
+
+        this.lastCopiedPayload = payload;
+
+        if (e.clipboardData) {
+            e.preventDefault();
+            try {
+                e.clipboardData.setData('application/x-kadhascript-elements', jsonString);
+            } catch (err) {
+                // Ignore if engine restricts custom MIME type
+            }
+            e.clipboardData.setData('text/plain', plainText);
+            const htmlWithData = `<div data-kadhascript-elements="${this.escapeAttribute(jsonString)}">${htmlText}</div>`;
+            e.clipboardData.setData('text/html', htmlWithData);
+        }
+    }
+
+    handlePaste(e) {
+        // Only intercept in Edit Mode inside page container
+        if (this.editorMode !== 'edit' || !this.pageContainer) return;
+
+        // Do not intercept if active element is a search input or modal input
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.closest('.modal'))) {
+            if (!activeEl.classList.contains('heading-location-input')) {
+                return;
+            }
+        }
+
+        this.hideSuggestionPopup();
+        this.hideAutocomplete();
+
+        let payload = null;
+        let rawCustom = e.clipboardData ? e.clipboardData.getData('application/x-kadhascript-elements') : null;
+        if (rawCustom) {
+            try {
+                payload = JSON.parse(rawCustom);
+            } catch (err) {
+                payload = null;
+            }
+        }
+
+        // Fallback: check text/html data attribute
+        if (!payload && e.clipboardData) {
+            const rawHtml = e.clipboardData.getData('text/html');
+            if (rawHtml && rawHtml.includes('data-kadhascript-elements=')) {
+                try {
+                    const match = rawHtml.match(/data-kadhascript-elements=["']([^"']+)["']/);
+                    if (match && match[1]) {
+                        const unescaped = this.unescapeAttribute(match[1]);
+                        payload = JSON.parse(unescaped);
+                    }
+                } catch (err) {
+                    payload = null;
+                }
+            }
+        }
+
+        // In-memory fallback if within same browser session
+        if (!payload && this.lastCopiedPayload && e.clipboardData) {
+            const pastedText = e.clipboardData.getData('text/plain');
+            const expectedText = this.formatElementsToPlainText(this.lastCopiedPayload.elements);
+            if (pastedText && expectedText && pastedText.trim() === expectedText.trim()) {
+                payload = this.lastCopiedPayload;
+            }
+        }
+
+        if (!payload || !payload.elements || !Array.isArray(payload.elements) || payload.elements.length === 0) {
+            // Not a semantic KadhaScript clipboard payload, let standard browser paste proceed
+            return;
+        }
+
+        e.preventDefault();
+
+        // Determine target block
+        let targetBlock = this.activeElementBlock;
+        if (!targetBlock || !targetBlock.parentNode || targetBlock.parentNode !== this.pageContainer) {
+            const sel = window.getSelection();
+            if (sel && sel.anchorNode) {
+                const node = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
+                targetBlock = node ? node.closest('.script-element-block') : null;
+            }
+        }
+        if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
+            targetBlock = this.pageContainer.querySelector('.script-element-block.focused') ||
+                          this.pageContainer.lastElementChild;
+        }
+
+        // Check if targetBlock is an empty block that can be safely replaced
+        let shouldReplaceTarget = false;
+        if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
+            const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+            if (ed && ed.innerText.trim() === '') {
+                shouldReplaceTarget = true;
+            }
+        }
+
+        let insertAnchor = targetBlock;
+        if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
+            insertAnchor = targetBlock.previousElementSibling;
+        }
+
+        let currentAnchor = insertAnchor;
+        let firstInserted = null;
+        let lastInserted = null;
+
+        payload.elements.forEach((el) => {
+            const type = el.type || 'action';
+            let content = el.content || '';
+            if (type === 'parenthetical') {
+                content = this.formatParenthetical(content);
+            }
+            const newBlock = this.createElementBlock(type, content, currentAnchor);
+            if (!firstInserted) firstInserted = newBlock;
+            lastInserted = newBlock;
+            currentAnchor = newBlock;
+        });
+
+        if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
+            targetBlock.remove();
+        }
+
+        if (lastInserted) {
+            const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
+            if (lastEd) {
+                lastEd.focus();
+                this.setCursorToEnd(lastEd);
+            }
+            document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+            lastInserted.classList.add('focused');
+            this.activeElementBlock = lastInserted;
+            this.updateActiveToolbarButton(lastInserted.dataset.type);
+            if (this.currentTypeEl) {
+                this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
+            }
+        }
+
+        this.markDirty();
+        this.calculateLiveStats();
+    }
+
+    async copyFullScene(sceneId) {
+        try {
+            const sid = Number(sceneId);
+            let sceneHeading = 'INT. LOCATION - DAY';
+            let elements = [];
+            let transition = 'CUT TO:';
+
+            if (sid === Number(this.currentSceneId)) {
+                // Use live editor state
+                const payload = this.extractScenePayload();
+                sceneHeading = payload.heading || 'INT. LOCATION - DAY';
+                transition = this.currentSceneTransition || 'CUT TO:';
+                elements = (payload.elements || []).map(e => ({
+                    type: e.element_type,
+                    content: e.content
+                }));
+                const hasTransition = elements.some(e => e.type === 'transition');
+                if (!hasTransition && transition) {
+                    elements.push({ type: 'transition', content: transition });
+                }
+            } else {
+                // Fetch scene data from existing API
+                const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${sid}/`);
+                if (!res.ok) throw new Error('Failed to fetch scene data');
+                const data = await res.json();
+                sceneHeading = data.scene.heading || 'INT. LOCATION - DAY';
+                transition = data.scene.transition || 'CUT TO:';
+                elements = (data.elements || []).map(e => ({
+                    type: e.element_type,
+                    content: e.content
+                }));
+                const hasTransition = elements.some(e => e.type === 'transition');
+                if (!hasTransition && transition) {
+                    elements.push({ type: 'transition', content: transition });
+                }
+            }
+
+            const fullScenePayload = {
+                version: "1.0",
+                source: "kadhascript",
+                is_full_scene: true,
+                scene_id: sid,
+                scene_heading: sceneHeading,
+                elements: elements,
+                transition: transition
+            };
+
+            const jsonString = JSON.stringify(fullScenePayload);
+            const plainText = this.formatElementsToPlainText(elements);
+            const htmlText = this.formatElementsToHtml(elements);
+
+            this.lastCopiedPayload = fullScenePayload;
+
+            let writeSuccess = false;
+            if (navigator.clipboard && navigator.clipboard.write) {
+                try {
+                    const textBlob = new Blob([plainText], { type: 'text/plain' });
+                    const htmlBlob = new Blob([
+                        `<div data-kadhascript-elements="${this.escapeAttribute(jsonString)}">${htmlText}</div>`
+                    ], { type: 'text/html' });
+
+                    try {
+                        const customBlob = new Blob([jsonString], { type: 'application/x-kadhascript-elements' });
+                        await navigator.clipboard.write([
+                            new ClipboardItem({
+                                'application/x-kadhascript-elements': customBlob,
+                                'text/plain': textBlob,
+                                'text/html': htmlBlob,
+                            })
+                        ]);
+                        writeSuccess = true;
+                    } catch (mErr) {
+                        await navigator.clipboard.write([
+                            new ClipboardItem({
+                                'text/plain': textBlob,
+                                'text/html': htmlBlob,
+                            })
+                        ]);
+                        writeSuccess = true;
+                    }
+                } catch (wErr) {
+                    console.warn('Clipboard write failed, falling back to writeText:', wErr);
+                }
+            }
+
+            if (!writeSuccess && navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(plainText);
+                    writeSuccess = true;
+                } catch (tErr) {
+                    console.warn('Clipboard writeText failed:', tErr);
+                }
+            }
+
+            this.showCopyFeedback('Full scene copied');
+        } catch (err) {
+            console.error('Error copying full scene:', err);
+        }
+    }
+
+    showCopyFeedback(message = 'Full scene copied') {
+        if (this.saveBadge) {
+            const prevText = this.saveBadge.innerHTML;
+            const prevClass = this.saveBadge.className;
+            this.saveBadge.className = 'save-status-badge saved';
+            this.saveBadge.innerHTML = `<i class="bi bi-clipboard-check me-1"></i> ${message} ✓`;
+            setTimeout(() => {
+                if (!this.isDirty) {
+                    this.saveBadge.className = prevClass;
+                    this.saveBadge.innerHTML = prevText;
+                }
+            }, 2000);
+        }
+    }
 }
