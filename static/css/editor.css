@@ -728,8 +728,8 @@
 
 /* Autocomplete Suggestion Popup */
 .character-autocomplete-dropdown {
-    position: absolute;
-    z-index: 1000;
+    position: fixed;
+    z-index: 1060;
     background: #ffffff;
     border: 1px solid #d9d2c5;
     border-radius: 6px;
@@ -737,6 +737,7 @@
     max-height: 180px;
     overflow-y: auto;
     min-width: 180px;
+    max-width: calc(100vw - 24px);
     display: none;
 }
 

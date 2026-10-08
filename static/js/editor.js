@@ -987,11 +987,67 @@ class KadhaEditor {
             this.autocompleteDropdown.appendChild(item);
         });
 
-        // Position dropdown near the element
+        this.activeAutocompleteEditable = editable;
+
+        // Position dropdown near the element using fixed viewport coordinates
+        this.positionAutocomplete(editable);
+    }
+
+    positionAutocomplete(editable) {
+        if (!this.autocompleteDropdown || !editable) return;
+
         const rect = editable.getBoundingClientRect();
-        this.autocompleteDropdown.style.left = `${rect.left}px`;
-        this.autocompleteDropdown.style.top = `${rect.bottom + window.scrollY + 4}px`;
+        const vv = this.getVisibleViewport ? this.getVisibleViewport() : {
+            top: 0,
+            bottom: window.innerHeight,
+            left: 0,
+            right: window.innerWidth,
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        this.autocompleteDropdown.style.position = 'fixed';
         this.autocompleteDropdown.style.display = 'block';
+
+        const dropdownRect = this.autocompleteDropdown.getBoundingClientRect();
+        const dropdownWidth = dropdownRect.width || 180;
+        const dropdownHeight = dropdownRect.height || 140;
+
+        const GAP = 4;
+        const MARGIN_X = 12;
+
+        // Viewport boundaries
+        const minLeft = (vv.left || 0) + MARGIN_X;
+        const maxLeft = Math.max(minLeft, (vv.right || window.innerWidth) - dropdownWidth - MARGIN_X);
+
+        let leftPos = rect.left;
+        leftPos = Math.max(minLeft, Math.min(leftPos, maxLeft));
+
+        // Space above and below in viewport
+        const spaceBelow = vv.bottom - (rect.bottom + GAP);
+        const spaceAbove = (rect.top - GAP) - vv.top;
+
+        let topPos;
+        if (spaceBelow >= Math.min(dropdownHeight, 100)) {
+            topPos = rect.bottom + GAP;
+        } else if (spaceAbove >= dropdownHeight) {
+            topPos = rect.top - dropdownHeight - GAP;
+        } else if (spaceBelow >= spaceAbove) {
+            topPos = rect.bottom + GAP;
+        } else {
+            topPos = rect.top - dropdownHeight - GAP;
+        }
+
+        // Hard clamp within visible viewport boundaries
+        if (topPos + dropdownHeight > vv.bottom - 8) {
+            topPos = Math.max(vv.top + 8, vv.bottom - dropdownHeight - 8);
+        }
+        if (topPos < vv.top + 8) {
+            topPos = vv.top + 8;
+        }
+
+        this.autocompleteDropdown.style.left = `${Math.round(leftPos)}px`;
+        this.autocompleteDropdown.style.top = `${Math.round(topPos)}px`;
     }
 
     navigateAutocomplete(dir) {
@@ -1027,6 +1083,7 @@ class KadhaEditor {
         if (this.autocompleteDropdown) {
             this.autocompleteDropdown.style.display = 'none';
         }
+        this.activeAutocompleteEditable = null;
         this.autocompleteIndex = -1;
     }
 
@@ -2412,14 +2469,6 @@ class KadhaEditor {
                 this.hideSuggestionPopup();
             }
         });
-
-        // Dismiss element suggestion popup on scroll
-        const canvasContainer = document.getElementById('editorCanvasContainer');
-        if (canvasContainer) {
-            canvasContainer.addEventListener('scroll', () => {
-                this.hideSuggestionPopup();
-            }, { passive: true });
-        }
     }
 
     bindNetworkEvents() {
@@ -2922,6 +2971,14 @@ class KadhaEditor {
             if (this.suggestionPopup && this.suggestionPopup.style.display !== 'none' && this.activeSuggestionBlock) {
                 this.positionContextualPopup(this.activeSuggestionBlock);
             }
+            if (this.autocompleteDropdown && this.autocompleteDropdown.style.display !== 'none' && this.activeAutocompleteEditable) {
+                const rect = this.activeAutocompleteEditable.getBoundingClientRect();
+                if (rect.bottom < 0 || rect.top > window.innerHeight) {
+                    this.hideAutocomplete();
+                } else {
+                    this.positionAutocomplete(this.activeAutocompleteEditable);
+                }
+            }
         };
 
         window.addEventListener('resize', updateIfVisible, { passive: true });
@@ -3018,7 +3075,7 @@ class KadhaEditor {
 
         if (rect.top < safeTop || rect.bottom > safeBottom) {
             block.scrollIntoView({
-                behavior: 'smooth',
+                behavior: 'auto',
                 block: 'center',
                 inline: 'nearest'
             });
@@ -3432,78 +3489,213 @@ class KadhaEditor {
             }
         }
 
-        if (!payload || !payload.elements || !Array.isArray(payload.elements) || payload.elements.length === 0) {
-            // Not a semantic KadhaScript clipboard payload, let standard browser paste proceed
+        // ----------------------------------------------------
+        // BRANCH 1: INTERNAL KADHASCRIPT SEMANTIC CLIPBOARD
+        // ----------------------------------------------------
+        if (payload && payload.elements && Array.isArray(payload.elements) && payload.elements.length > 0) {
+            e.preventDefault();
+
+            // Determine target block
+            let targetBlock = this.activeElementBlock;
+            if (!targetBlock || !targetBlock.parentNode || targetBlock.parentNode !== this.pageContainer) {
+                const sel = window.getSelection();
+                if (sel && sel.anchorNode) {
+                    const node = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
+                    targetBlock = node ? node.closest('.script-element-block') : null;
+                }
+            }
+            if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
+                targetBlock = this.pageContainer.querySelector('.script-element-block.focused') ||
+                              this.pageContainer.lastElementChild;
+            }
+
+            // Check if targetBlock is an empty block that can be safely replaced
+            let shouldReplaceTarget = false;
+            if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
+                const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+                if (ed && ed.innerText.trim() === '') {
+                    shouldReplaceTarget = true;
+                }
+            }
+
+            let insertAnchor = targetBlock;
+            if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
+                insertAnchor = targetBlock.previousElementSibling;
+            }
+
+            let currentAnchor = insertAnchor;
+            let firstInserted = null;
+            let lastInserted = null;
+
+            payload.elements.forEach((el) => {
+                const type = el.type || 'action';
+                let content = el.content || '';
+                if (type === 'parenthetical') {
+                    content = this.formatParenthetical(content);
+                }
+                const newBlock = this.createElementBlock(type, content, currentAnchor);
+                if (!firstInserted) firstInserted = newBlock;
+                lastInserted = newBlock;
+                currentAnchor = newBlock;
+            });
+
+            if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
+                targetBlock.remove();
+            }
+
+            if (lastInserted) {
+                const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
+                if (lastEd) {
+                    lastEd.focus();
+                    this.setCursorToEnd(lastEd);
+                }
+                document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                lastInserted.classList.add('focused');
+                this.activeElementBlock = lastInserted;
+                this.updateActiveToolbarButton(lastInserted.dataset.type);
+                if (this.currentTypeEl) {
+                    this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
+                }
+            }
+
+            this.markDirty();
+            this.calculateLiveStats();
             return;
         }
 
+        // ----------------------------------------------------
+        // BRANCH 2: EXTERNAL CLIPBOARD (PLAIN TEXT ONLY)
+        // ----------------------------------------------------
+        let externalText = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        if (!externalText) {
+            // Nothing to paste
+            return;
+        }
+
+        // Intercept external paste - treat purely as plain text
         e.preventDefault();
 
-        // Determine target block
-        let targetBlock = this.activeElementBlock;
-        if (!targetBlock || !targetBlock.parentNode || targetBlock.parentNode !== this.pageContainer) {
-            const sel = window.getSelection();
-            if (sel && sel.anchorNode) {
-                const node = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
-                targetBlock = node ? node.closest('.script-element-block') : null;
-            }
-        }
-        if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
-            targetBlock = this.pageContainer.querySelector('.script-element-block.focused') ||
-                          this.pageContainer.lastElementChild;
-        }
+        // Normalize line breaks: CRLF and CR -> LF
+        externalText = externalText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-        // Check if targetBlock is an empty block that can be safely replaced
-        let shouldReplaceTarget = false;
-        if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
-            const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
-            if (ed && ed.innerText.trim() === '') {
-                shouldReplaceTarget = true;
+        // Resolve target editable element
+        let targetEditable = null;
+        const sel = window.getSelection();
+
+        if (sel && sel.anchorNode) {
+            const node = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode.parentElement;
+            if (node) {
+                const ed = node.closest('.element-content, .heading-location-input');
+                if (ed && this.pageContainer.contains(ed)) {
+                    targetEditable = ed;
+                }
             }
         }
 
-        let insertAnchor = targetBlock;
-        if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
-            insertAnchor = targetBlock.previousElementSibling;
+        if (!targetEditable && document.activeElement) {
+            const act = document.activeElement;
+            if ((act.classList.contains('element-content') || act.classList.contains('heading-location-input')) && this.pageContainer.contains(act)) {
+                targetEditable = act;
+            }
         }
 
-        let currentAnchor = insertAnchor;
-        let firstInserted = null;
-        let lastInserted = null;
+        let isTargetAlreadyFocused = !!targetEditable;
 
-        payload.elements.forEach((el) => {
-            const type = el.type || 'action';
-            let content = el.content || '';
-            if (type === 'parenthetical') {
-                content = this.formatParenthetical(content);
+        if (!targetEditable) {
+            // Case C: No contenteditable currently has focus.
+            // Resolve safe target block from existing editor state
+            let fallbackBlock = this.activeElementBlock;
+            if (!fallbackBlock || !this.pageContainer.contains(fallbackBlock)) {
+                fallbackBlock = this.pageContainer.querySelector('.script-element-block.focused');
             }
-            const newBlock = this.createElementBlock(type, content, currentAnchor);
-            if (!firstInserted) firstInserted = newBlock;
-            lastInserted = newBlock;
-            currentAnchor = newBlock;
-        });
-
-        if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
-            targetBlock.remove();
-        }
-
-        if (lastInserted) {
-            const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
-            if (lastEd) {
-                lastEd.focus();
-                this.setCursorToEnd(lastEd);
+            if (!fallbackBlock || !this.pageContainer.contains(fallbackBlock)) {
+                fallbackBlock = this.pageContainer.lastElementChild;
             }
+
+            if (!fallbackBlock || !this.pageContainer.contains(fallbackBlock)) {
+                // No valid editing target exists in the editor. Fail safely.
+                return;
+            }
+
+            targetEditable = fallbackBlock.querySelector('.element-content:not(.d-none)') ||
+                             fallbackBlock.querySelector('.element-content, .heading-location-input');
+
+            if (!targetEditable) {
+                return;
+            }
+
+            // Place caret at a predictable safe location: end of the target element
+            targetEditable.focus();
+            this.setCursorToEnd(targetEditable);
+
+            // Update focused state on fallback block
             document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
-            lastInserted.classList.add('focused');
-            this.activeElementBlock = lastInserted;
-            this.updateActiveToolbarButton(lastInserted.dataset.type);
+            fallbackBlock.classList.add('focused');
+            this.activeElementBlock = fallbackBlock;
+            this.updateActiveToolbarButton(fallbackBlock.dataset.type);
             if (this.currentTypeEl) {
-                this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
+                this.currentTypeEl.innerText = this.formatTypeLabel(fallbackBlock.dataset.type);
             }
         }
+
+        // Insert clean plain text at current caret position
+        this.insertPlainTextAtCaret(targetEditable, externalText, isTargetAlreadyFocused);
 
         this.markDirty();
         this.calculateLiveStats();
+    }
+
+    insertPlainTextAtCaret(targetEditable, text, isTargetAlreadyFocused) {
+        if (!targetEditable || !text) return;
+
+        if (targetEditable.tagName === 'INPUT' || targetEditable.tagName === 'TEXTAREA') {
+            const start = targetEditable.selectionStart ?? targetEditable.value.length;
+            const end = targetEditable.selectionEnd ?? targetEditable.value.length;
+            const val = targetEditable.value;
+            const cleanText = text.replace(/\n/g, ' ');
+            targetEditable.value = val.slice(0, start) + cleanText + val.slice(end);
+            targetEditable.selectionStart = targetEditable.selectionEnd = start + cleanText.length;
+            targetEditable.dispatchEvent(new Event('input', { bubbles: true }));
+            return;
+        }
+
+        if (!isTargetAlreadyFocused) {
+            targetEditable.focus();
+            this.setCursorToEnd(targetEditable);
+        }
+
+        let inserted = false;
+        try {
+            inserted = document.execCommand('insertText', false, text);
+        } catch (e) {
+            inserted = false;
+        }
+
+        if (!inserted) {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                let range = sel.getRangeAt(0);
+                if (!targetEditable.contains(range.commonAncestorContainer)) {
+                    range = document.createRange();
+                    range.selectNodeContents(targetEditable);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+                range.deleteContents();
+                const textNode = document.createTextNode(text);
+                range.insertNode(textNode);
+                range.setStartAfter(textNode);
+                range.setEndAfter(textNode);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } else {
+                targetEditable.appendChild(document.createTextNode(text));
+                this.setCursorToEnd(targetEditable);
+            }
+        }
+
+        targetEditable.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     async copyFullScene(sceneId) {

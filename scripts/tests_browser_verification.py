@@ -417,6 +417,216 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertIn('character', copied_types)
                 self.assertIn('dialogue', copied_types)
 
+                # ========================================================
+                # BATCH 1 FOLLOW-UP FIX VERIFICATIONS
+                # ========================================================
+
+                # --------------------------------------------------------
+                # FIX 1: EXTERNAL PASTE (CASES A, B, C)
+                # --------------------------------------------------------
+                # Case A1: Caret in middle of Action block with external Malayalam plain text
+                action_editable = driver.find_element(By.CSS_SELECTOR, '#screenplayPage .script-element-block[data-type="action"] .element-content')
+                driver.execute_script("""
+                    const ed = arguments[0];
+                    ed.innerText = "ഒരു പഴയ മാളിക.";
+                    ed.focus();
+                    // Place caret right after "ഒരു പഴയ " (index 8)
+                    const range = document.createRange();
+                    const textNode = ed.firstChild;
+                    range.setStart(textNode, 8);
+                    range.setEnd(textNode, 8);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+
+                    // Paste external plain text (no KadhaScript custom MIME type)
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', "മനോഹരമായ ");
+                    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                    document.dispatchEvent(pasteEvt);
+                """, action_editable)
+                time.sleep(0.3)
+
+                action_text = driver.execute_script("return arguments[0].innerText.trim();", action_editable)
+                self.assertEqual(action_text, "ഒരു പഴയ മനോഹരമായ മാളിക.", f"Expected text inserted at caret in Action, got: {action_text}")
+                action_html = driver.execute_script("return arguments[0].innerHTML;", action_editable)
+                self.assertNotIn("<span", action_html)
+                self.assertNotIn("font-family", action_html)
+
+                # Case A2: Caret in middle of Malayalam Dialogue with external plain text
+                diag_editable = driver.find_element(By.CSS_SELECTOR, '#screenplayPage .script-element-block[data-type="dialogue"] .element-content')
+                driver.execute_script("""
+                    const ed = arguments[0];
+                    ed.innerText = "എല്ലാം ശരിയാകും.";
+                    ed.focus();
+                    // Place caret right after "എല്ലാം " (index 7)
+                    const range = document.createRange();
+                    const textNode = ed.firstChild;
+                    range.setStart(textNode, 7);
+                    range.setEnd(textNode, 7);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', "തീർച്ചയായും ");
+                    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                    document.dispatchEvent(pasteEvt);
+                """, diag_editable)
+                time.sleep(0.3)
+
+                diag_text = driver.execute_script("return arguments[0].innerText.trim();", diag_editable)
+                self.assertEqual(diag_text, "എല്ലാം തീർച്ചയായും ശരിയാകും.", f"Expected text inserted at caret in Dialogue, got: {diag_text}")
+
+                # Case B: External multiline text inserted cleanly without creating new blocks or scenes
+                blocks_count_before = driver.execute_script("return document.querySelectorAll('#screenplayPage .script-element-block').length;")
+                driver.execute_script("""
+                    const ed = arguments[0];
+                    ed.focus();
+                    // Set caret to end
+                    const range = document.createRange();
+                    range.selectNodeContents(ed);
+                    range.collapse(false);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+
+                    const multilineText = "\\nരണ്ടാം വരി\\nമൂന്നാം വരി";
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', multilineText);
+                    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                    document.dispatchEvent(pasteEvt);
+                """, action_editable)
+                time.sleep(0.3)
+
+                blocks_count_after = driver.execute_script("return document.querySelectorAll('#screenplayPage .script-element-block').length;")
+                self.assertEqual(blocks_count_before, blocks_count_after, "Multiline plain text paste must not create new semantic element blocks!")
+                updated_action = driver.execute_script("return arguments[0].innerText;", action_editable)
+                self.assertIn("രണ്ടാം വരി", updated_action)
+                self.assertIn("മൂന്നാം വരി", updated_action)
+
+                # Case C: External paste when no element is focused
+                driver.execute_script("""
+                    if (document.activeElement && document.activeElement.blur) {
+                        document.activeElement.blur();
+                    }
+                    window.getSelection().removeAllRanges();
+                    document.body.focus();
+
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', " (കൂട്ടിച്ചേർത്തത്)");
+                    const pasteEvt = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt });
+                    document.dispatchEvent(pasteEvt);
+                """)
+                time.sleep(0.3)
+
+                # Confirm fallback target block safely received the text
+                editor_content = driver.execute_script("return document.getElementById('screenplayPage').innerText;")
+                self.assertIn("(കൂട്ടിച്ചേർത്തത്)", editor_content, "Case C external paste must safely insert text into the editor target!")
+
+                # --------------------------------------------------------
+                # FIX 2: CHARACTER AUTOCOMPLETE POSITIONING & VIEWPORT
+                # --------------------------------------------------------
+                # Trigger Character Autocomplete
+                driver.execute_script("""
+                    const ed = (window.editor || window.editorInstance);
+                    if (ed) {
+                        ed.characters = ['റഹീം', 'വിക്രം', 'അനു', 'SIDDHARTH', 'CHANDRAN'];
+                        const charBlock = document.querySelector('#screenplayPage .script-element-block[data-type="character"]');
+                        if (charBlock) {
+                            const editable = charBlock.querySelector('.element-content');
+                            editable.innerText = "റ";
+                            ed.handleCharacterInput(editable);
+                        }
+                    }
+                """)
+                time.sleep(0.3)
+
+                ac_data = driver.execute_script("""
+                    const dropdown = document.getElementById('characterAutocomplete');
+                    const charBlock = document.querySelector('#screenplayPage .script-element-block[data-type="character"] .element-content');
+                    if (!dropdown || !charBlock) return null;
+                    const dRect = dropdown.getBoundingClientRect();
+                    const cRect = charBlock.getBoundingClientRect();
+                    const computed = window.getComputedStyle(dropdown);
+                    return {
+                        position: computed.position,
+                        display: computed.display,
+                        left: dRect.left,
+                        top: dRect.top,
+                        width: dRect.width,
+                        height: dRect.height,
+                        charLeft: cRect.left,
+                        charBottom: cRect.bottom,
+                        winWidth: window.innerWidth,
+                        winHeight: window.innerHeight
+                    };
+                """)
+                self.assertIsNotNone(ac_data)
+                self.assertEqual(ac_data['position'], 'fixed', "Character autocomplete must use position: fixed!")
+                self.assertEqual(ac_data['display'], 'block', "Character autocomplete must be visible!")
+                self.assertGreaterEqual(ac_data['left'], 0, "Autocomplete dropdown must stay within left viewport bound!")
+                self.assertLessEqual(ac_data['left'] + ac_data['width'], ac_data['winWidth'], "Autocomplete dropdown must stay within right viewport bound!")
+
+                # Test canvas scrolling: dropdown must not stay frozen at old detached location
+                driver.execute_script("""
+                    const canvasContainer = document.getElementById('editorCanvasContainer');
+                    if (canvasContainer) {
+                        canvasContainer.scrollTop += 60;
+                        canvasContainer.dispatchEvent(new Event('scroll'));
+                    }
+                """)
+                time.sleep(0.2)
+
+                scrolled_ac = driver.execute_script("""
+                    const dropdown = document.getElementById('characterAutocomplete');
+                    const charBlock = document.querySelector('#screenplayPage .script-element-block[data-type="character"] .element-content');
+                    if (!dropdown || !charBlock) return null;
+                    const dRect = dropdown.getBoundingClientRect();
+                    const cRect = charBlock.getBoundingClientRect();
+                    const computed = window.getComputedStyle(dropdown);
+                    return {
+                        display: computed.display,
+                        top: dRect.top,
+                        charBottom: cRect.bottom
+                    };
+                """)
+                if scrolled_ac and scrolled_ac['display'] != 'none':
+                    # If repositioned, must remain attached to Character field
+                    self.assertAlmostEqual(scrolled_ac['top'], scrolled_ac['charBottom'] + 4, delta=20)
+
+                # --------------------------------------------------------
+                # FIX 3: CONTEXTUAL SUGGESTION POPUP SCROLL CONFLICT
+                # --------------------------------------------------------
+                driver.execute_script("""
+                    const ed = (window.editor || window.editorInstance);
+                    if (ed) {
+                        const targetBlock = document.querySelector('#screenplayPage .script-element-block[data-type="action"]');
+                        ed.showSuggestionPopup(targetBlock, [
+                            { type: 'dialogue', label: 'Dialogue' },
+                            { type: 'parenthetical', label: 'Parenthetical' }
+                        ]);
+                    }
+                """)
+                time.sleep(0.3)
+
+                # Scroll canvas container by 25px
+                driver.execute_script("""
+                    const canvasContainer = document.getElementById('editorCanvasContainer');
+                    if (canvasContainer) {
+                        canvasContainer.scrollTop += 25;
+                        canvasContainer.dispatchEvent(new Event('scroll'));
+                    }
+                """)
+                time.sleep(0.2)
+
+                popup_display = driver.execute_script("""
+                    const popup = document.getElementById('elementSuggestionPopup');
+                    return popup ? window.getComputedStyle(popup).display : 'none';
+                """)
+                # The conflicting listener was removed, so popup remains visible and repositioned
+                self.assertIn(popup_display, ['inline-flex', 'flex', 'block'], "Suggestion popup must NOT be dismissed immediately upon scrolling canvas!")
+
                 # Save Screenshot for this viewport
                 screenshot_path = os.path.join(ARTIFACTS_DIR, f"browser_verify_{vp_name}.png")
                 driver.save_screenshot(screenshot_path)
