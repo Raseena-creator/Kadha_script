@@ -53,9 +53,16 @@ class KadhaEditor {
         this.saveTimeout = null;
         this.activeSavePromise = null;
         this.needsQueuedSave = false;
+        this.changeVersion = 0;
         this.activeElementBlock = null;
         this.scenesTree = [];
         this.currentSceneIsSub = false;
+
+        // Navigation Coordination & Scene Loading
+        this.loadRequestId = 0;
+        this.isSwitchingScene = false;
+        this.activeSwitchPromise = null;
+        this.pendingSwitchSceneId = null;
 
         // Autocomplete
         this.autocompleteDropdown = document.getElementById('characterAutocomplete');
@@ -109,11 +116,22 @@ class KadhaEditor {
     // SCENE LOADING & RENDERING
     // ----------------------------------------------------
     async loadCurrentScene() {
+        const requestId = ++this.loadRequestId;
+        const requestedSceneId = this.currentSceneId;
         try {
             this.setSaveStatus('saving', 'Loading scene...');
-            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${this.currentSceneId}/`);
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${requestedSceneId}/`);
+            if (requestId !== this.loadRequestId) {
+                return;
+            }
             if (!res.ok) throw new Error(`Failed to load scene (HTTP ${res.status})`);
             const data = await res.json();
+            if (requestId !== this.loadRequestId) {
+                return;
+            }
+            if (Number(data?.scene?.id) !== Number(this.currentSceneId)) {
+                return;
+            }
             
             this.characters = data.characters || this.characters;
             this.scenesTree = data.scenes_tree || [];
@@ -134,13 +152,22 @@ class KadhaEditor {
             }
 
             this.renderSceneElements(data.scene, data.elements);
+            this.updateReadModeScene(data.scene.id, {
+                heading: data.scene.heading,
+                elements: data.elements,
+                transition: data.scene.transition
+            });
             this.renderScenesTree(this.scenesTree);
             this.updateSceneContextControls(data.scene);
             this.updateStats(data.script_stats);
             this.setSaveStatus('saved', 'Saved ✓');
             this.isDirty = false;
             this.needsQueuedSave = false;
+            this.changeVersion = 0;
         } catch (err) {
+            if (requestId !== this.loadRequestId) {
+                return;
+            }
             console.error('Error loading scene:', err);
             this.setSaveStatus('error', 'Error loading scene');
         }
@@ -1093,6 +1120,7 @@ class KadhaEditor {
     // ROBUST AUTO-SAVE & PERSISTENCE (Task 7 Architecture)
     // ----------------------------------------------------
     markDirty() {
+        this.changeVersion = (this.changeVersion || 0) + 1;
         this.isDirty = true;
         this.setSaveStatus('dirty', 'Unsaved changes');
         
@@ -1191,7 +1219,7 @@ class KadhaEditor {
 
     ensurePreviousSceneHasTransition() {
         const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
-        if (blocks.length === 0) return;
+        if (blocks.length === 0) return null;
 
         // Check if there is already a non-empty transition element
         const hasTransition = blocks.some(b => {
@@ -1203,7 +1231,7 @@ class KadhaEditor {
         });
 
         if (hasTransition) {
-            return;
+            return null;
         }
 
         // Find the last non-note element block to insert the transition after
@@ -1219,9 +1247,10 @@ class KadhaEditor {
             targetBlock = blocks[blocks.length - 1];
         }
 
-        this.createElementBlock('transition', 'CUT TO:', targetBlock);
+        const newBlock = this.createElementBlock('transition', 'CUT TO:', targetBlock);
         this.markDirty();
         this.calculateLiveStats();
+        return newBlock;
     }
 
     async saveCurrentScene(force = false) {
@@ -1235,9 +1264,13 @@ class KadhaEditor {
             return Promise.reject(new Error('Device is offline'));
         }
 
-        if (this.isSaving) {
+        if (this.isSaving && this.activeSavePromise) {
             this.needsQueuedSave = true;
-            return this.activeSavePromise || Promise.resolve();
+            return this.activeSavePromise.then(() => {
+                if (this.isDirty) {
+                    return this.saveCurrentScene(force);
+                }
+            });
         }
 
         clearTimeout(this.saveTimeout);
@@ -1246,6 +1279,7 @@ class KadhaEditor {
         this.setSaveStatus('saving', 'Saving...');
 
         const targetSceneId = this.currentSceneId;
+        const saveVersion = this.changeVersion || 0;
         const payload = this.extractScenePayload();
 
         this.activeSavePromise = (async () => {
@@ -1266,20 +1300,19 @@ class KadhaEditor {
                     throw new Error(result.message || 'Save failed');
                 }
 
-                this.isSaving = false;
-
-                if (this.needsQueuedSave) {
-                    this.needsQueuedSave = false;
-                    return this.saveCurrentScene(true);
+                if ((this.changeVersion || 0) === saveVersion) {
+                    this.isDirty = false;
+                    this.setSaveStatus('saved', 'Saved ✓');
+                } else {
+                    this.isDirty = true;
+                    this.setSaveStatus('dirty', 'Unsaved changes');
                 }
 
-                this.isDirty = false;
-                this.setSaveStatus('saved', 'Saved ✓');
                 this.updateStats(result.script_stats);
+                this.updateReadModeScene(targetSceneId, payload);
                 return result;
             } catch (err) {
                 console.error('Save error:', err);
-                this.isSaving = false;
                 const isOffline = !navigator.onLine;
                 this.setSaveStatus(
                     isOffline ? 'offline' : 'error',
@@ -1295,6 +1328,7 @@ class KadhaEditor {
 
                 throw err;
             } finally {
+                this.isSaving = false;
                 this.activeSavePromise = null;
             }
         })();
@@ -1304,11 +1338,16 @@ class KadhaEditor {
 
     async flushSave() {
         clearTimeout(this.saveTimeout);
-        if (this.isSaving && this.activeSavePromise) {
+        while (this.isSaving && this.activeSavePromise) {
             await this.activeSavePromise.catch(() => {});
         }
-        if (this.isDirty) {
+        let attempts = 0;
+        while (this.isDirty && attempts < 5) {
+            attempts++;
             await this.saveCurrentScene(true);
+        }
+        if (this.isDirty) {
+            throw new Error('Could not save current scene changes after multiple attempts');
         }
     }
 
@@ -1326,6 +1365,9 @@ class KadhaEditor {
     renderScenesTree(tree) {
         if (!tree) return;
         this.scenesTree = tree;
+
+        // Synchronize continuous Read Mode DOM (#readModeContainer) with authoritative tree
+        this.syncReadModeWithScenesTree(tree);
 
         let primaryCount = 0;
         let subCount = 0;
@@ -1397,6 +1439,77 @@ class KadhaEditor {
         if (this.sceneCountEl) {
             this.sceneCountEl.innerText = subCount > 0 ? `${primaryCount} (${subCount} sub)` : `${primaryCount}`;
         }
+    }
+
+    syncReadModeWithScenesTree(tree) {
+        if (!this.readModeContainer || !Array.isArray(tree)) return;
+
+        const validIds = new Set(tree.map(s => Number(s.id)));
+
+        // 1. Remove deleted scenes from #readModeContainer DOM
+        const existingSections = this.readModeContainer.querySelectorAll('.read-mode-scene');
+        existingSections.forEach(sec => {
+            const secId = Number(sec.dataset.sceneId);
+            if (!validIds.has(secId)) {
+                sec.remove();
+            }
+        });
+
+        // 2. Re-order and sync headings for each scene in authoritative order
+        tree.forEach(sc => {
+            const scId = Number(sc.id);
+            let sec = document.getElementById(`read-scene-${scId}`);
+            if (!sec) {
+                sec = document.createElement('section');
+                sec.className = 'read-mode-scene';
+                sec.id = `read-scene-${scId}`;
+                sec.dataset.sceneId = scId;
+
+                const headingDiv = document.createElement('div');
+                headingDiv.className = 'read-scene-heading font-screenplay';
+                const idSpan = document.createElement('span');
+                idSpan.className = 'read-scene-identifier';
+                headingDiv.appendChild(idSpan);
+                sec.appendChild(headingDiv);
+
+                const elementsDiv = document.createElement('div');
+                elementsDiv.className = 'read-scene-elements';
+                sec.appendChild(elementsDiv);
+            }
+
+            // Append ensures DOM order strictly matches tree order without duplication
+            this.readModeContainer.appendChild(sec);
+
+            // Update heading identifier
+            const headingEl = sec.querySelector('.read-scene-identifier');
+            if (headingEl) {
+                const fullHeading = sc.full_display_heading ||
+                    `${sc.scene_identifier || sc.display_number_formatted || ('Scene ' + sc.scene_number)} : ${sc.clean_heading || sc.heading || 'UNTITLED SCENE'}`;
+                headingEl.innerText = fullHeading;
+            }
+
+            // Update transition if present
+            let transEl = sec.querySelector('.read-element-block.element-type-transition');
+            const transitionText = (sc.transition || '').trim();
+            if (transitionText) {
+                if (!transEl) {
+                    transEl = document.createElement('div');
+                    transEl.className = 'read-element-block element-type-transition';
+                    const transContent = document.createElement('div');
+                    transContent.className = 'element-content font-screenplay';
+                    transEl.appendChild(transContent);
+                    sec.appendChild(transEl);
+                }
+                const transContent = transEl.querySelector('.element-content');
+                if (transContent) {
+                    transContent.innerText = transitionText;
+                }
+            } else if (transEl) {
+                transEl.remove();
+            }
+        });
+
+        this.setupReadModeScrollObserver();
     }
 
     updateNavHeadingCounts(primaryCount, subCount) {
@@ -1532,43 +1645,100 @@ class KadhaEditor {
 
     async switchScene(newSceneId) {
         const targetId = Number(newSceneId);
-        if (targetId === Number(this.currentSceneId)) return;
+        if (isNaN(targetId)) return;
+        if (!this.isSwitchingScene && targetId === Number(this.currentSceneId)) return;
 
-        const currentMainId = this.getMainSceneIdForScene(this.currentSceneId);
-        const targetMainId = this.getMainSceneIdForScene(targetId);
-        const mainOrder = this.getMainSceneOrderIds();
-        const currentMainIdx = mainOrder.indexOf(currentMainId);
-        const targetMainIdx = mainOrder.indexOf(targetMainId);
-
-        if (currentMainIdx !== -1 && targetMainIdx !== -1 && targetMainIdx > currentMainIdx) {
-            this.ensurePreviousSceneHasTransition();
+        if (this.isSwitchingScene) {
+            this.pendingSwitchSceneId = targetId;
+            document.querySelectorAll('.scene-item').forEach(item => {
+                item.classList.toggle('active', Number(item.dataset.id) === targetId);
+            });
+            while (this.isSwitchingScene) {
+                try {
+                    await this.activeSwitchPromise;
+                } catch (e) {
+                    break;
+                }
+            }
+            return;
         }
+
+        this.isSwitchingScene = true;
+        this.activeSwitchPromise = (async () => {
+            const currentMainId = this.getMainSceneIdForScene(this.currentSceneId);
+            const targetMainId = this.getMainSceneIdForScene(targetId);
+            const mainOrder = this.getMainSceneOrderIds();
+            const currentMainIdx = mainOrder.indexOf(currentMainId);
+            const targetMainIdx = mainOrder.indexOf(targetMainId);
+
+            let addedTransition = null;
+            if (currentMainIdx !== -1 && targetMainIdx !== -1 && targetMainIdx > currentMainIdx) {
+                addedTransition = this.ensurePreviousSceneHasTransition();
+            }
+
+            try {
+                await this.flushSave();
+                if (this.currentSceneId) {
+                    const payload = this.extractScenePayload();
+                    this.updateReadModeScene(this.currentSceneId, payload);
+                }
+            } catch (err) {
+                console.error('Save failed before switching scene:', err);
+                if (addedTransition && addedTransition.parentElement) {
+                    addedTransition.remove();
+                    this.calculateLiveStats();
+                }
+                this.pendingSwitchSceneId = null;
+                document.querySelectorAll('.scene-item').forEach(item => {
+                    item.classList.toggle('active', Number(item.dataset.id) === Number(this.currentSceneId));
+                });
+                alert('Could not save the current scene. Scene switching was cancelled to protect your unsaved writing. Please retry once saved.');
+                return;
+            }
+
+            if (this.pendingSwitchSceneId !== null && this.pendingSwitchSceneId !== targetId) {
+                return;
+            }
+
+            document.querySelectorAll('.scene-item').forEach(item => {
+                item.classList.toggle('active', Number(item.dataset.id) === targetId);
+            });
+
+            this.currentSceneId = targetId;
+            window.history.replaceState(null, '', `?scene=${targetId}`);
+            await this.loadCurrentScene();
+        })();
 
         try {
-            await this.flushSave();
-        } catch (err) {
-            const proceed = confirm('Could not save current scene due to a network error. Switch anyway? (Unsaved changes will remain in browser memory)');
-            if (!proceed) return;
+            await this.activeSwitchPromise;
+        } finally {
+            this.isSwitchingScene = false;
+            this.activeSwitchPromise = null;
+            if (this.pendingSwitchSceneId !== null) {
+                const nextTarget = this.pendingSwitchSceneId;
+                this.pendingSwitchSceneId = null;
+                if (nextTarget !== Number(this.currentSceneId)) {
+                    await this.switchScene(nextTarget);
+                }
+            }
         }
-
-        document.querySelectorAll('.scene-item').forEach(item => {
-            item.classList.toggle('active', Number(item.dataset.id) === targetId);
-        });
-
-        this.currentSceneId = targetId;
-        window.history.replaceState(null, '', `?scene=${targetId}`);
-        await this.loadCurrentScene();
     }
 
     // ----------------------------------------------------
     // SCENE CREATION, INSERTION, SUB-SCENE & MOVE OPERATIONS
     // ----------------------------------------------------
     async appendScene() {
-        this.ensurePreviousSceneHasTransition();
+        const addedTransition = this.ensurePreviousSceneHasTransition();
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before appending scene:', err);
+            console.error('Save failed before appending scene:', err);
+            if (addedTransition && addedTransition.parentElement) {
+                addedTransition.remove();
+                this.calculateLiveStats();
+            }
+            alert('Could not save the current scene. Scene creation was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1595,7 +1765,9 @@ class KadhaEditor {
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before creating sub-scene:', err);
+            console.error('Save failed before creating sub-scene:', err);
+            alert('Could not save the current scene. Sub-scene creation was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1676,13 +1848,20 @@ class KadhaEditor {
     }
 
     async submitInsertScene(refId, pos, heading, summary) {
+        let addedTransition = null;
         if (pos === 'after' && Number(refId) === Number(this.currentSceneId)) {
-            this.ensurePreviousSceneHasTransition();
+            addedTransition = this.ensurePreviousSceneHasTransition();
         }
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before inserting scene:', err);
+            console.error('Save failed before inserting scene:', err);
+            if (addedTransition && addedTransition.parentElement) {
+                addedTransition.remove();
+                this.calculateLiveStats();
+            }
+            alert('Could not save the current scene. Scene insertion was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1713,7 +1892,9 @@ class KadhaEditor {
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before creating sub-scene:', err);
+            console.error('Save failed before creating sub-scene:', err);
+            alert('Could not save the current scene. Sub-scene creation was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1741,8 +1922,14 @@ class KadhaEditor {
     async moveScene(sceneId, direction) {
         try {
             await this.flushSave();
+            if (this.currentSceneId) {
+                const payload = this.extractScenePayload();
+                this.updateReadModeScene(this.currentSceneId, payload);
+            }
         } catch (err) {
-            console.warn('Flush save warning before moving scene:', err);
+            console.error('Save failed before moving scene:', err);
+            alert('Could not save the current scene. Scene movement was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1755,7 +1942,11 @@ class KadhaEditor {
             const data = await res.json();
             if (data.status === 'ok') {
                 this.renderScenesTree(data.scenes_tree);
-                await this.loadCurrentScene();
+                if (this.editorMode !== 'read') {
+                    await this.loadCurrentScene();
+                } else {
+                    this.setSaveStatus('saved', 'Saved ✓');
+                }
             } else {
                 this.setSaveStatus('saved', 'Saved ✓');
             }
@@ -1769,7 +1960,9 @@ class KadhaEditor {
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before duplicating scene:', err);
+            console.error('Save failed before duplicating scene:', err);
+            alert('Could not save the current scene. Scene duplication was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1826,8 +2019,16 @@ class KadhaEditor {
 
         try {
             await this.flushSave();
+            if (this.currentSceneId && Number(this.currentSceneId) !== Number(sceneId)) {
+                const payload = this.extractScenePayload();
+                this.updateReadModeScene(this.currentSceneId, payload);
+            }
         } catch (err) {
-            console.warn('Flush save warning before deleting scene:', err);
+            console.error('Save failed before deleting scene:', err);
+            if (submitBtn) submitBtn.disabled = false;
+            if (submitBtnText) submitBtnText.innerText = 'Delete Scene';
+            alert('Could not save the current scene. Scene deletion was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         try {
@@ -1852,8 +2053,14 @@ class KadhaEditor {
 
             this.renderScenesTree(data.scenes_tree);
             if (Number(sceneId) === Number(this.currentSceneId) && data.fallback_scene_id) {
-                await this.switchScene(data.fallback_scene_id);
-            } else {
+                if (this.editorMode === 'read') {
+                    this.currentSceneId = Number(data.fallback_scene_id);
+                    const targetEl = document.getElementById(`read-scene-${data.fallback_scene_id}`);
+                    if (targetEl) targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                } else {
+                    await this.switchScene(data.fallback_scene_id);
+                }
+            } else if (this.editorMode !== 'read') {
                 await this.loadCurrentScene();
             }
         } catch (err) {
@@ -2143,7 +2350,10 @@ class KadhaEditor {
         try {
             await this.flushSave();
         } catch (err) {
-            console.warn('Flush save warning before creating scene selection:', err);
+            console.error('Save failed before creating scene selection:', err);
+            this.isCreatingScene = false;
+            alert('Could not save the current scene. Scene creation was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
         }
 
         const mode = this.sceneSelectMode;
@@ -2934,22 +3144,7 @@ class KadhaEditor {
             elementsDiv.className = 'read-scene-elements';
             sceneSection.appendChild(elementsDiv);
 
-            const treeIds = (this.scenesTree || []).map(s => Number(s.id));
-            const currentIdx = treeIds.indexOf(Number(sceneId));
-            let inserted = false;
-            if (currentIdx !== -1) {
-                for (let i = currentIdx + 1; i < treeIds.length; i++) {
-                    const nextEl = document.getElementById(`read-scene-${treeIds[i]}`);
-                    if (nextEl) {
-                        this.readModeContainer.insertBefore(sceneSection, nextEl);
-                        inserted = true;
-                        break;
-                    }
-                }
-            }
-            if (!inserted) {
-                this.readModeContainer.appendChild(sceneSection);
-            }
+            this.readModeContainer.appendChild(sceneSection);
             this.setupReadModeScrollObserver();
         }
         if (!sceneSection || !payload) return;
@@ -2957,14 +3152,19 @@ class KadhaEditor {
         // 1. Update Heading
         const headingEl = sceneSection.querySelector('.read-scene-identifier');
         if (headingEl) {
-            const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
-            const cleanHeading = (payload.heading || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
-            headingEl.innerText = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
+            const scMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(sceneId));
+            if (scMeta && scMeta.full_display_heading) {
+                headingEl.innerText = scMeta.full_display_heading;
+            } else {
+                const currentIdent = (scMeta && scMeta.nav_identifier) || (scMeta && scMeta.scene_identifier) || this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
+                const cleanHeading = (payload.heading || (scMeta && scMeta.heading) || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
+                headingEl.innerText = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
+            }
         }
 
         // 2. Update Elements
         const elementsContainer = sceneSection.querySelector('.read-scene-elements');
-        if (elementsContainer) {
+        if (elementsContainer && payload.elements) {
             elementsContainer.innerHTML = '';
             (payload.elements || []).forEach(elem => {
                 if (elem.element_type !== 'scene_heading') {
@@ -2981,7 +3181,7 @@ class KadhaEditor {
 
         // 3. Update Transition if present
         let transEl = sceneSection.querySelector('.read-element-block.element-type-transition');
-        const transitionText = this.currentSceneTransition || 'CUT TO:';
+        const transitionText = payload.transition !== undefined ? payload.transition : (this.currentSceneTransition || 'CUT TO:');
         if (transitionText) {
             if (!transEl) {
                 transEl = document.createElement('div');

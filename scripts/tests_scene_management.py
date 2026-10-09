@@ -729,3 +729,161 @@ class SceneManagementAndMobileTests(TestCase):
         txt_export = generate_screenplay_txt(self.script_a)
         for expected in expected_headings:
             self.assertIn(expected, txt_export)
+
+    def test_batch_2b_move_main_scene_up_across_preceding_scene_with_subscenes(self):
+        """
+        Batch 2B Regression Test 1:
+        Moving Scene 2 upward when preceding Scene 1 has multiple sub-scenes (1.A, 1.B).
+        Scene 2 must move above the ENTIRE Scene 1 block.
+        Result: Scene 2 (now Scene 1), Scene 1 (now Scene 2), 1.A (now 2.A), 1.B (now 2.B), Scene 3.
+        """
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. HOUSE - DAY', order=0)
+        s1_a = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. KITCHEN - DAY')
+        s1_b = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. BEDROOM - DAY')
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='EXT. STREET - NIGHT', order=3)
+        s3 = Scene.objects.create(script=self.script_a, scene_number=3, heading='INT. OFFICE - DAY', order=4)
+        resequence_script_scenes(self.script_a)
+
+        # Baseline check
+        ordered_before = self.script_a.get_ordered_scenes()
+        self.assertEqual([sc.display_number for sc in ordered_before], ['Scene 1', 'Scene 1.A', 'Scene 1.B', 'Scene 2', 'Scene 3'])
+
+        # Move Scene 2 up
+        moved = move_scene(self.script_a, s2.id, 'up')
+        self.assertTrue(moved)
+
+        ordered_after = self.script_a.get_ordered_scenes()
+        expected = ['Scene 1', 'Scene 2', 'Scene 2.A', 'Scene 2.B', 'Scene 3']
+        self.assertEqual([sc.display_number for sc in ordered_after], expected)
+        # Verify scene ids match: s2 is first, s1 is second, then s1_a, s1_b, then s3
+        self.assertEqual([sc.id for sc in ordered_after], [s2.id, s1.id, s1_a.id, s1_b.id, s3.id])
+        # Verify sub-scenes remain children of s1
+        s1_a.refresh_from_db()
+        s1_b.refresh_from_db()
+        self.assertEqual(s1_a.parent_scene_id, s1.id)
+        self.assertEqual(s1_b.parent_scene_id, s1.id)
+
+    def test_batch_2b_move_main_scene_down_across_following_scene_with_subscenes(self):
+        """
+        Batch 2B Regression Test 2:
+        Moving Scene 1 downward when following Scene 2 has multiple sub-scenes (2.A, 2.B).
+        Scene 1 must move below the ENTIRE Scene 2 block.
+        Result: Scene 2 (now Scene 1), 2.A (now 1.A), 2.B (now 1.B), Scene 1 (now Scene 2), Scene 3.
+        """
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. HOUSE - DAY', order=0)
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='EXT. ROAD - NIGHT', order=1)
+        s2_a = create_sub_scene(self.script_a, parent_scene_id=s2.id, heading='EXT. BUS STOP - NIGHT')
+        s2_b = create_sub_scene(self.script_a, parent_scene_id=s2.id, heading='EXT. HIGHWAY - NIGHT')
+        s3 = Scene.objects.create(script=self.script_a, scene_number=3, heading='INT. OFFICE - DAY', order=4)
+        resequence_script_scenes(self.script_a)
+
+        ordered_before = self.script_a.get_ordered_scenes()
+        self.assertEqual([sc.display_number for sc in ordered_before], ['Scene 1', 'Scene 2', 'Scene 2.A', 'Scene 2.B', 'Scene 3'])
+
+        # Move Scene 1 down
+        moved = move_scene(self.script_a, s1.id, 'down')
+        self.assertTrue(moved)
+
+        ordered_after = self.script_a.get_ordered_scenes()
+        self.assertEqual([sc.id for sc in ordered_after], [s2.id, s2_a.id, s2_b.id, s1.id, s3.id])
+        self.assertEqual([sc.display_number for sc in ordered_after], ['Scene 1', 'Scene 1.A', 'Scene 1.B', 'Scene 2', 'Scene 3'])
+
+    def test_batch_2b_preserve_subscene_order_when_moving_parent_with_subscenes(self):
+        """
+        Batch 2B Regression Test 3:
+        Both Scene 1 and Scene 2 have multiple sub-scenes.
+        Moving Scene 1 down below Scene 2 must preserve the relative order of sub-scenes in BOTH blocks.
+        """
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. HOUSE - DAY', order=0)
+        s1_a = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. HOUSE - KITCHEN')
+        s1_b = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. HOUSE - ATTIC')
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='INT. OFFICE - DAY', order=3)
+        s2_a = create_sub_scene(self.script_a, parent_scene_id=s2.id, heading='INT. OFFICE - LOBBY')
+        s2_b = create_sub_scene(self.script_a, parent_scene_id=s2.id, heading='INT. OFFICE - BOARDROOM')
+        resequence_script_scenes(self.script_a)
+
+        # Move Scene 1 down
+        moved = move_scene(self.script_a, s1.id, 'down')
+        self.assertTrue(moved)
+
+        ordered_after = self.script_a.get_ordered_scenes()
+        self.assertEqual([sc.id for sc in ordered_after], [s2.id, s2_a.id, s2_b.id, s1.id, s1_a.id, s1_b.id])
+        self.assertEqual([sc.display_number for sc in ordered_after], ['Scene 1', 'Scene 1.A', 'Scene 1.B', 'Scene 2', 'Scene 2.A', 'Scene 2.B'])
+
+    def test_batch_2b_boundary_conditions_without_errors(self):
+        """
+        Batch 2B Regression Test 4:
+        Moving the first main scene up returns False and does nothing.
+        Moving the last main scene down returns False and does nothing.
+        Moving an invalid scene id returns False.
+        """
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. FIRST - DAY', order=0)
+        s1_a = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. FIRST SUB - DAY')
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='INT. LAST - NIGHT', order=2)
+        resequence_script_scenes(self.script_a)
+
+        # Boundary up on first scene
+        self.assertFalse(move_scene(self.script_a, s1.id, 'up'))
+
+        # Boundary down on last scene
+        self.assertFalse(move_scene(self.script_a, s2.id, 'down'))
+
+        # Non-existent scene id
+        self.assertFalse(move_scene(self.script_a, 999999, 'up'))
+
+        # Verify nothing moved
+        ordered = self.script_a.get_ordered_scenes()
+        self.assertEqual([sc.id for sc in ordered], [s1.id, s1_a.id, s2.id])
+
+    def test_batch_2b_transitions_and_batch_2a_metrics_preserved_during_reorder(self):
+        """
+        Batch 2B Regression Test 5 & 6:
+        Confirming transition entries (Subscene From / Cut Back To) are not converted to ordinary scenes,
+        are not counted as ordinary scenes/sub-scenes, and Batch 2A scene metrics are preserved.
+        """
+        from scripts.services.scene_service import create_sub_scene_2, create_intercut_scene
+
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. HOUSE - DAY', order=0)
+        s1_a = create_sub_scene(self.script_a, parent_scene_id=s1.id, heading='INT. LIVING ROOM - DAY')
+        # Subscene From and Cut Back To transitions
+        sub_from = create_sub_scene_2(self.script_a, source_scene_id=s1.id, current_scene_id=s1_a.id)
+        cut_back = create_intercut_scene(self.script_a, source_scene_id=s1.id, current_scene_id=sub_from.id)
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='EXT. STREET - NIGHT', order=4)
+        resequence_script_scenes(self.script_a)
+
+        # Initial Batch 2A metrics check
+        self.script_a.refresh_from_db()
+        self.assertEqual(self.script_a.primary_scene_count, 2)
+        self.assertEqual(self.script_a.sub_scene_count, 1)
+        self.assertEqual(self.script_a.scene_count, 3)
+
+        # Move Scene 2 up past cut_back
+        moved = move_scene(self.script_a, s2.id, 'up')
+        self.assertTrue(moved)
+
+        # Move Scene 2 up past sub_from
+        moved = move_scene(self.script_a, s2.id, 'up')
+        self.assertTrue(moved)
+
+        # Move Scene 2 up past Scene 1 block to top
+        moved = move_scene(self.script_a, s2.id, 'up')
+        self.assertTrue(moved)
+
+        # Verify Scene 2 is now first
+        ordered = self.script_a.get_ordered_scenes()
+        self.assertEqual(ordered[0].id, s2.id)
+        self.assertEqual(ordered[0].display_number, 'Scene 1')
+
+        # Verify transition entries still have is_intercut=True
+        sub_from.refresh_from_db()
+        cut_back.refresh_from_db()
+        self.assertTrue(sub_from.is_intercut)
+        self.assertTrue(cut_back.is_intercut)
+        self.assertFalse(sub_from.is_actual_scene)
+        self.assertFalse(cut_back.is_actual_scene)
+
+        # Verify Batch 2A metrics remain exactly 2 primary, 1 sub, 3 total
+        self.script_a.refresh_from_db()
+        self.assertEqual(self.script_a.primary_scene_count, 2)
+        self.assertEqual(self.script_a.sub_scene_count, 1)
+        self.assertEqual(self.script_a.scene_count, 3)

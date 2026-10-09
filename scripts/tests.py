@@ -215,6 +215,219 @@ class EditorTransitionAndParentheticalTests(TestCase):
         parent_transitions = ScriptElement.objects.filter(scene=sc2, element_type='transition')
         self.assertEqual(parent_transitions.count(), 0)
 
+    def test_9_editor_script_contains_transition_rollback_safeguards(self):
+        """9. editor.js implements transition rollback, dirty-version tracking, and save coordination."""
+        import os
+        from django.conf import settings
+        editor_js_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'editor.js')
+        with open(editor_js_path, 'r', encoding='utf-8') as f:
+            js_content = f.read()
+
+        # ensurePreviousSceneHasTransition returns newBlock or null
+        self.assertIn('ensurePreviousSceneHasTransition() {', js_content)
+        self.assertIn('return newBlock;', js_content)
+        self.assertIn('return null;', js_content)
+
+        # appendScene rollback on flushSave failure
+        self.assertIn('const addedTransition = this.ensurePreviousSceneHasTransition();', js_content)
+        self.assertIn('if (addedTransition && addedTransition.parentElement) {', js_content)
+
+        # submitInsertScene rollback on flushSave failure
+        self.assertIn('addedTransition = this.ensurePreviousSceneHasTransition();', js_content)
+
+        # switchScene cancellation and rollback on save failure
+        self.assertIn('Save failed before switching scene:', js_content)
+        self.assertIn('addedTransition.remove();', js_content)
+        self.assertIn('this.calculateLiveStats();', js_content)
+        self.assertIn('Scene switching was cancelled to protect your unsaved writing.', js_content)
+
+        # moveScene and submitDeleteScene cancellation on save failure
+        self.assertIn('Save failed before moving scene:', js_content)
+        self.assertIn('Scene movement was cancelled to protect your unsaved writing.', js_content)
+        self.assertIn('Save failed before deleting scene:', js_content)
+        self.assertIn('Scene deletion was cancelled to protect your unsaved writing.', js_content)
+        self.assertNotIn('Could not save current scene before moving. Move anyway?', js_content)
+        self.assertNotIn('Could not save current scene before deleting. Delete anyway?', js_content)
+
+        # Dirty-state version tracking and flushSave coordination
+        self.assertIn('this.changeVersion = (this.changeVersion || 0) + 1;', js_content)
+        self.assertIn('(this.changeVersion || 0) === saveVersion', js_content)
+        self.assertIn('while (this.isSaving && this.activeSavePromise)', js_content)
+        self.assertIn('while (this.isDirty && attempts < 5)', js_content)
+        self.assertIn('if (this.isDirty) {', js_content)
+        self.assertIn("throw new Error('Could not save current scene changes after multiple attempts');", js_content)
+
+    def test_10_database_elements_preserved_when_save_fails(self):
+        """10. Previous scene elements remain intact on DB if a subsequent save payload fails."""
+        sc = Scene.objects.create(script=self.script, scene_number=1, heading='INT. CABIN - NIGHT', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='scene_heading', content='INT. CABIN - NIGHT', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='action', content='കാറ്റ് വീശുന്നു.', order=1)
+
+        # Attempt to save with invalid payload that returns an error
+        res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{sc.id}/save/',
+            data='invalid json',
+            content_type='application/json'
+        )
+        self.assertNotEqual(res.status_code, 200)
+
+        # Verify DB elements remain unchanged
+        elems = ScriptElement.objects.filter(scene=sc).order_by('order')
+        self.assertEqual(elems.count(), 2)
+        self.assertEqual(elems[1].content, 'കാറ്റ് വീശുന്നു.')
+
+    def test_11_sequential_saves_preserve_and_update_latest_content(self):
+        """11. Backend correctly persists sequential save updates when newer edits follow prior saves."""
+        sc = Scene.objects.create(script=self.script, scene_number=1, heading='INT. OFFICE - DAY', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='scene_heading', content='INT. OFFICE - DAY', order=0)
+
+        # Save 1: Initial action element
+        payload1 = {
+            'heading': 'INT. OFFICE - DAY',
+            'elements': [
+                {'element_type': 'scene_heading', 'content': 'INT. OFFICE - DAY', 'order': 0},
+                {'element_type': 'action', 'content': 'Initial typing.', 'order': 1},
+            ]
+        }
+        res1 = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{sc.id}/save/',
+            data=json.dumps(payload1),
+            content_type='application/json'
+        )
+        self.assertEqual(res1.status_code, 200)
+
+        # Save 2: Newer edits adding transition
+        payload2 = {
+            'heading': 'INT. OFFICE - DAY',
+            'elements': [
+                {'element_type': 'scene_heading', 'content': 'INT. OFFICE - DAY', 'order': 0},
+                {'element_type': 'action', 'content': 'Initial typing.', 'order': 1},
+                {'element_type': 'transition', 'content': 'CUT TO:', 'order': 2},
+            ]
+        }
+        res2 = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{sc.id}/save/',
+            data=json.dumps(payload2),
+            content_type='application/json'
+        )
+        self.assertEqual(res2.status_code, 200)
+
+        elems = ScriptElement.objects.filter(scene=sc).order_by('order')
+        self.assertEqual(elems.count(), 3)
+        self.assertEqual(elems[2].element_type, 'transition')
+        self.assertEqual(elems[2].content, 'CUT TO:')
+
+    def test_12_failed_save_before_scene_creation_prevents_orphan_scenes(self):
+        """12. If saving fails, the scene count remains unchanged and no orphan scene is added."""
+        sc = Scene.objects.create(script=self.script, scene_number=1, heading='INT. ROOM - DAY', order=0)
+        ScriptElement.objects.create(scene=sc, element_type='scene_heading', content='INT. ROOM - DAY', order=0)
+
+        initial_count = Scene.objects.filter(script=self.script).count()
+        self.assertEqual(initial_count, 1)
+
+        # Failed save does not create or alter scenes in DB
+        res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{sc.id}/save/',
+            data='{invalid}',
+            content_type='application/json'
+        )
+        self.assertNotEqual(res.status_code, 200)
+
+        # Verify no second scene was created
+        current_count = Scene.objects.filter(script=self.script).count()
+        self.assertEqual(current_count, 1)
+
+    def test_13_move_and_delete_not_triggered_on_save_failure(self):
+        """13. Verified that when save fails, scenes remain in order and are not deleted."""
+        sc1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1 - DAY', order=0)
+        sc2 = Scene.objects.create(script=self.script, scene_number=2, heading='INT. SCENE 2 - DAY', order=1)
+
+        # Verify initial order
+        self.assertEqual(Scene.objects.filter(script=self.script).count(), 2)
+        scenes = list(Scene.objects.filter(script=self.script).order_by('order'))
+        self.assertEqual(scenes[0].id, sc1.id)
+        self.assertEqual(scenes[1].id, sc2.id)
+
+        # Failed save does not delete or alter order
+        res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{sc1.id}/save/',
+            data='{invalid}',
+            content_type='application/json'
+        )
+        self.assertNotEqual(res.status_code, 200)
+
+        scenes_after = list(Scene.objects.filter(script=self.script).order_by('order'))
+        self.assertEqual(len(scenes_after), 2)
+        self.assertEqual(scenes_after[0].id, sc1.id)
+        self.assertEqual(scenes_after[1].id, sc2.id)
+
+    def test_14_batch_2b_3_scene_navigation_and_load_race_guards(self):
+        """
+        14. Batch 2B-3: editor.js contains monotonic load tokens, stale response discard,
+        and reentrant navigation lock coordination.
+        """
+        import os
+        from django.conf import settings
+        editor_js_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'editor.js')
+        with open(editor_js_path, 'r', encoding='utf-8') as f:
+            js_content = f.read()
+
+        # 1. Monotonic load token and stale response discard
+        self.assertIn('this.loadRequestId = 0;', js_content)
+        self.assertIn('const requestId = ++this.loadRequestId;', js_content)
+        self.assertIn('if (requestId !== this.loadRequestId) {', js_content)
+        self.assertIn('Number(data?.scene?.id) !== Number(this.currentSceneId)', js_content)
+
+        # 2. Reentrancy lock and navigation coordination in switchScene
+        self.assertIn('this.isSwitchingScene = false;', js_content)
+        self.assertIn('this.activeSwitchPromise = null;', js_content)
+        self.assertIn('this.pendingSwitchSceneId = null;', js_content)
+        self.assertIn('if (this.isSwitchingScene) {', js_content)
+        self.assertIn('this.pendingSwitchSceneId = targetId;', js_content)
+        self.assertIn('while (this.isSwitchingScene) {', js_content)
+        self.assertIn('await this.activeSwitchPromise;', js_content)
+
+        # 3. Superseded intermediate scene switch skips stale rendering
+        self.assertIn('if (this.pendingSwitchSceneId !== null && this.pendingSwitchSceneId !== targetId) {', js_content)
+
+        # 4. Lock release guarantee in try/finally
+        self.assertIn('this.isSwitchingScene = true;', js_content)
+        self.assertIn('} finally {', js_content)
+        self.assertIn('this.isSwitchingScene = false;', js_content)
+        self.assertIn('this.activeSwitchPromise = null;', js_content)
+
+        # 5. Failed save cancels switch and restores active scene UI
+        self.assertIn('this.pendingSwitchSceneId = null;', js_content)
+        self.assertIn('Number(item.dataset.id) === Number(this.currentSceneId)', js_content)
+
+    def test_15_backend_scene_endpoints_support_concurrent_loads(self):
+        """
+        15. Rapid/concurrent scene load API requests return independent, correct payloads
+        without race conditions or cross-contamination.
+        """
+        sc_a = Scene.objects.create(script=self.script, scene_number=4, heading='INT. SCENE A - DAY', order=5)
+        ScriptElement.objects.create(scene=sc_a, element_type='scene_heading', content=sc_a.heading, order=0)
+        ScriptElement.objects.create(scene=sc_a, element_type='action', content='Content A in Scene A.', order=1)
+
+        sc_b = Scene.objects.create(script=self.script, scene_number=5, heading='EXT. SCENE B - NIGHT', order=6)
+        ScriptElement.objects.create(scene=sc_b, element_type='scene_heading', content=sc_b.heading, order=0)
+        ScriptElement.objects.create(scene=sc_b, element_type='action', content='Content B in Scene B.', order=1)
+
+        # Request A then Request B
+        res_a = self.client.get(f'/scripts/api/{self.script.id}/scenes/{sc_a.id}/')
+        res_b = self.client.get(f'/scripts/api/{self.script.id}/scenes/{sc_b.id}/')
+
+        self.assertEqual(res_a.status_code, 200)
+        self.assertEqual(res_b.status_code, 200)
+
+        data_a = res_a.json()
+        data_b = res_b.json()
+
+        self.assertEqual(data_a['scene']['id'], sc_a.id)
+        self.assertEqual(data_b['scene']['id'], sc_b.id)
+        self.assertEqual(data_a['elements'][1]['content'], 'Content A in Scene A.')
+        self.assertEqual(data_b['elements'][1]['content'], 'Content B in Scene B.')
+
 
 class EditorUINavigationClientRequirementsTests(TestCase):
     def setUp(self):
@@ -512,6 +725,127 @@ class ReadModeAndEditModeTests(TestCase):
             res = self.client.get(url)
             self.assertEqual(res.status_code, 302, f"URL {url} did not redirect")
             self.assertEqual(res.url, f'/scripts/{self.script.id}/editor/')
+
+    def test_batch_2b_2_delete_scene_disappears_from_read_mode(self):
+        """Batch 2B-2 regression test: Deleting a scene via API removes it and updates scenes_tree."""
+        # Check initial editor rendering has scene 1, 2, 2A, 2B, 3
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        content = res.content.decode('utf-8')
+        self.assertIn(f'id="read-scene-{self.s2.id}"', content)
+        self.assertIn(f'id="read-scene-{self.sub2a.id}"', content)
+
+        # Delete scene 2 (which also cascades to its subscenes)
+        del_res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{self.s2.id}/delete/',
+            data=json.dumps({}),
+            content_type='application/json'
+        )
+        self.assertEqual(del_res.status_code, 200)
+        data = del_res.json()
+        self.assertEqual(data['status'], 'ok')
+
+        # Verify scenes_tree returned has only s1 and s3
+        tree_ids = [item['id'] for item in data['scenes_tree']]
+        self.assertNotIn(self.s2.id, tree_ids)
+        self.assertNotIn(self.sub2a.id, tree_ids)
+        self.assertNotIn(self.sub2b.id, tree_ids)
+        self.assertIn(self.s1.id, tree_ids)
+        self.assertIn(self.s3.id, tree_ids)
+
+        # Verify next render of editor has no trace of s2 or its subscenes
+        res_after = self.client.get(f'/scripts/{self.script.id}/editor/')
+        content_after = res_after.content.decode('utf-8')
+        self.assertNotIn(f'id="read-scene-{self.s2.id}"', content_after)
+        self.assertNotIn(f'id="read-scene-{self.sub2a.id}"', content_after)
+        self.assertNotIn(f'id="read-scene-{self.sub2b.id}"', content_after)
+        self.assertIn(f'id="read-scene-{self.s1.id}"', content_after)
+        self.assertIn(f'id="read-scene-{self.s3.id}"', content_after)
+
+    def test_batch_2b_2_move_scene_read_mode_order_updates(self):
+        """Batch 2B-2 regression test: Moving a scene updates order and full_display_heading."""
+        # Initial order: s1, s2, sub2a, sub2b, s3
+        # Move s3 up above s2 block (Batch 2B-1 behavior)
+        move_res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{self.s3.id}/move/',
+            data=json.dumps({'direction': 'up'}),
+            content_type='application/json'
+        )
+        self.assertEqual(move_res.status_code, 200)
+        data = move_res.json()
+        self.assertEqual(data['status'], 'ok')
+
+        tree = data['scenes_tree']
+        tree_ids = [item['id'] for item in tree]
+        # Expected new order: s1, s3, s2, sub2a, sub2b
+        self.assertEqual(tree_ids, [self.s1.id, self.s3.id, self.s2.id, self.sub2a.id, self.sub2b.id])
+
+        # Headings updated authoritatively:
+        s3_item = next(item for item in tree if item['id'] == self.s3.id)
+        self.assertEqual(s3_item['scene_number'], 2)
+        self.assertEqual(s3_item['nav_identifier'], 'Scene 2')
+
+        # Read mode template rendering also reflects new order
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        content = res.content.decode('utf-8')
+        pos_s1 = content.find(f'id="read-scene-{self.s1.id}"')
+        pos_s3 = content.find(f'id="read-scene-{self.s3.id}"')
+        pos_s2 = content.find(f'id="read-scene-{self.s2.id}"')
+        pos_sub2a = content.find(f'id="read-scene-{self.sub2a.id}"')
+
+        self.assertTrue(pos_s1 < pos_s3 < pos_s2 < pos_sub2a)
+
+    def test_batch_2b_2_move_main_scene_with_subscenes_preserves_block_order(self):
+        """Batch 2B-2 regression test: Moving main scene down moves all its subscenes together."""
+        # Move s1 down past s2's block
+        move_res = self.client.post(
+            f'/scripts/api/{self.script.id}/scenes/{self.s1.id}/move/',
+            data=json.dumps({'direction': 'down'}),
+            content_type='application/json'
+        )
+        self.assertEqual(move_res.status_code, 200)
+        data = move_res.json()
+        self.assertEqual(data['status'], 'ok')
+        tree = data['scenes_tree']
+        tree_ids = [item['id'] for item in tree]
+        # s2 block (s2, sub2a, sub2b) moved before s1
+        self.assertEqual(tree_ids, [self.s2.id, self.sub2a.id, self.sub2b.id, self.s1.id, self.s3.id])
+
+        # Subscene association preserved
+        sub2a_item = next(item for item in tree if item['id'] == self.sub2a.id)
+        self.assertEqual(sub2a_item['parent_scene_id'], self.s2.id)
+        self.assertEqual(sub2a_item['scene_number'], 1)  # s2 became scene 1, sub2a became 1A
+
+    def test_batch_2b_2_switching_modes_no_duplicated_sections(self):
+        """Batch 2B-2 regression test: Template contains exactly one section per scene in Read Mode."""
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        content = res.content.decode('utf-8')
+        for sc_id in [self.s1.id, self.s2.id, self.sub2a.id, self.sub2b.id, self.s3.id]:
+            self.assertEqual(content.count(f'id="read-scene-{sc_id}"'), 1)
+            self.assertEqual(content.count(f'class="read-mode-scene" id="read-scene-{sc_id}"'), 1)
+
+    def test_batch_2b_2_transition_entries_and_metrics_preserved_in_read_mode(self):
+        """Batch 2B-2 regression test: Subscene From and Cut Back To transitions are rendered correctly."""
+        from scripts.services.scene_service import create_sub_scene_2, create_intercut_scene
+        sub_from = create_sub_scene_2(self.script, source_scene_id=self.s1.id, current_scene_id=self.s2.id)
+        cut_back = create_intercut_scene(self.script, source_scene_id=self.s1.id, current_scene_id=sub_from.id)
+
+        res = self.client.get(f'/scripts/{self.script.id}/editor/')
+        content = res.content.decode('utf-8')
+        # Check transition sections in Read Mode
+        self.assertIn(f'id="read-scene-{sub_from.id}"', content)
+        self.assertIn(f'id="read-scene-{cut_back.id}"', content)
+
+        # Also verify via scenes_tree API that these exist and is_intercut is preserved
+        tree_res = self.client.get(f'/scripts/api/{self.script.id}/scenes/tree/')
+        self.assertEqual(tree_res.status_code, 200)
+        tree = tree_res.json()['scenes_tree']
+        sub_from_item = next(item for item in tree if item['id'] == sub_from.id)
+        cut_back_item = next(item for item in tree if item['id'] == cut_back.id)
+        self.assertTrue(sub_from_item['is_intercut'])
+        self.assertTrue(cut_back_item['is_intercut'])
+
+
 
 
 class DashboardScriptManagementAndSceneDropdownTests(TestCase):

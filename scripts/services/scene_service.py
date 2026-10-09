@@ -449,7 +449,8 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
     """
     Moves a scene up or down:
     - Standard sub-scene: moves strictly within parent's sub-scenes.
-    - Intercut sub-scene / Main scene: moves within screenplay top order.
+    - Intercut sub-scene / Main scene: moves within screenplay top-level blocks,
+      preserving all ordinary sub-scenes attached to their parent scene.
     """
     with transaction.atomic():
         try:
@@ -459,6 +460,8 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
 
         if scene.is_sub_scene and not scene.is_intercut:
             # Standard sub-scene: move within parent's sub-scenes only
+            if not scene.parent_scene:
+                return False
             siblings = list(scene.parent_scene.sub_scenes.filter(is_intercut=False).order_by('order', 'id'))
             try:
                 idx = siblings.index(scene)
@@ -466,37 +469,73 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
                 return False
 
             if direction == 'up' and idx > 0:
-                target = siblings[idx - 1]
-                scene.order, target.order = target.order, scene.order
-                scene.save(update_fields=['order'])
-                target.save(update_fields=['order'])
+                target_idx = idx - 1
             elif direction == 'down' and idx < len(siblings) - 1:
-                target = siblings[idx + 1]
-                scene.order, target.order = target.order, scene.order
-                scene.save(update_fields=['order'])
-                target.save(update_fields=['order'])
+                target_idx = idx + 1
             else:
                 return False
+
+            target = siblings[target_idx]
+            if scene.order == target.order:
+                if target_idx < idx:
+                    scene.order = target.order - 1
+                else:
+                    scene.order = target.order + 1
+            else:
+                scene.order, target.order = target.order, scene.order
+            scene.save(update_fields=['order'])
+            target.save(update_fields=['order'])
         else:
-            # Main scene, intercut scene, or intercut sub-scene
-            all_scenes = list(script.scenes.all().order_by('order', 'id'))
+            # Main scene, intercut scene, or intercut sub-scene:
+            # Moves across top-level blocks in screenplay flow.
+            top_items = list(script.scenes.filter(
+                models.Q(parent_scene__isnull=True) | models.Q(is_intercut=True)
+            ).order_by('order', 'id'))
+
             try:
-                idx = all_scenes.index(scene)
+                idx = top_items.index(scene)
             except ValueError:
                 return False
 
             if direction == 'up' and idx > 0:
-                target = all_scenes[idx - 1]
-                scene.order, target.order = target.order, scene.order
-                scene.save(update_fields=['order'])
-                target.save(update_fields=['order'])
-            elif direction == 'down' and idx < len(all_scenes) - 1:
-                target = all_scenes[idx + 1]
-                scene.order, target.order = target.order, scene.order
-                scene.save(update_fields=['order'])
-                target.save(update_fields=['order'])
+                target_idx = idx - 1
+            elif direction == 'down' and idx < len(top_items) - 1:
+                target_idx = idx + 1
             else:
                 return False
+
+            # Swap the two top-level items
+            top_items[idx], top_items[target_idx] = top_items[target_idx], top_items[idx]
+
+            # Reconstruct the flat sequence of all scenes in the script:
+            # Each top-level item followed by its ordinary sub-scenes
+            ordered_scenes = []
+            seen_ids = set()
+
+            for item in top_items:
+                if item.id in seen_ids:
+                    continue
+                ordered_scenes.append(item)
+                seen_ids.add(item.id)
+
+                # If it's a main scene (not a sub-scene), append its standard (non-intercut) sub-scenes immediately after
+                if not item.is_sub_scene:
+                    for sub in item.sub_scenes.filter(is_intercut=False).order_by('order', 'id'):
+                        if sub.id not in seen_ids:
+                            ordered_scenes.append(sub)
+                            seen_ids.add(sub.id)
+
+            # Include any remaining scenes if any exist (safety fallback)
+            all_remaining = script.scenes.exclude(id__in=seen_ids).order_by('order', 'id')
+            for rem in all_remaining:
+                ordered_scenes.append(rem)
+                seen_ids.add(rem.id)
+
+            # Assign new sequential order values
+            for new_order, sc in enumerate(ordered_scenes):
+                if sc.order != new_order:
+                    sc.order = new_order
+                    sc.save(update_fields=['order'])
 
         resequence_script_scenes(script)
         script.updated_at = timezone.now()
