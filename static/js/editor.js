@@ -70,6 +70,8 @@ class KadhaEditor {
 
         // Editor Mode State: default is 'read'
         this.editorMode = 'read';
+        this.readModeActiveSceneId = Number(config.currentSceneId);
+        this._isEnteringEditMode = false;
         this.editorRoot = document.getElementById('screenplayEditor');
         this.readModeContainer = document.getElementById('readModeContainer');
         this.btnEditFab = document.getElementById('btnEnterEditMode') || document.getElementById('readModeEditButton');
@@ -160,6 +162,9 @@ class KadhaEditor {
             this.renderScenesTree(this.scenesTree);
             this.updateSceneContextControls(data.scene);
             this.updateStats(data.script_stats);
+            if (this.pageContainer) {
+                this.pageContainer.dataset.loadedSceneId = String(data.scene.id);
+            }
             this.setSaveStatus('saved', 'Saved ✓');
             this.isDirty = false;
             this.needsQueuedSave = false;
@@ -170,6 +175,10 @@ class KadhaEditor {
             }
             console.error('Error loading scene:', err);
             this.setSaveStatus('error', 'Error loading scene');
+            if (this.pageContainer) {
+                this.pageContainer.dataset.loadedSceneId = '';
+                this.pageContainer.innerHTML = '<div class="alert alert-danger my-4">Failed to load scene. Please check your connection and click to retry.</div>';
+            }
         }
     }
 
@@ -259,7 +268,10 @@ class KadhaEditor {
     }
 
     renderSceneElements(scene, elements) {
-        this.pageContainer.innerHTML = '';
+        if (this.pageContainer) {
+            this.pageContainer.dataset.loadedSceneId = String(scene.id);
+            this.pageContainer.innerHTML = '';
+        }
 
         const allElements = elements || [];
         const contentElements = allElements.filter(e => e.element_type !== 'note');
@@ -386,12 +398,22 @@ class KadhaEditor {
                 const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
                 const fullHeading = locVal ? `${currentIdent} : ${built}` : `${currentIdent} : UNTITLED SCENE`;
 
-                const activeSidebarItems = document.querySelectorAll(`.scene-item[data-id="${this.currentSceneId}"] .scene-heading-text`);
-                activeSidebarItems.forEach(item => {
-                    item.innerText = fullHeading;
+                const targetSceneId = Number(this.currentSceneId);
+                const displayLoc = locVal || 'Location';
+                const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
+                activeSidebarLocs.forEach(item => {
+                    item.innerText = displayLoc;
+                    item.title = displayLoc;
                 });
                 if (this.currentSelectorBadge) {
                     this.currentSelectorBadge.innerText = fullHeading;
+                }
+
+                const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === targetSceneId);
+                if (treeItem) {
+                    treeItem.clean_location = locVal;
+                    treeItem.clean_heading = built;
+                    treeItem.heading = built;
                 }
 
                 this.markDirty();
@@ -614,12 +636,25 @@ class KadhaEditor {
                 const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
                 const fullHeading = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
 
-                const activeSidebarItems = document.querySelectorAll(`.scene-item[data-id="${this.currentSceneId}"] .scene-heading-text`);
-                activeSidebarItems.forEach(item => {
-                    item.innerText = fullHeading;
+                const targetSceneId = Number(this.currentSceneId);
+                const m = cleanHeading.match(/^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*(.*?)(?:\s*-\s*([A-Za-z]+))?$/i);
+                const extractedLoc = m ? m[1].trim() : cleanHeading;
+                const displayLoc = extractedLoc || cleanHeading || 'Location';
+
+                const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
+                activeSidebarLocs.forEach(item => {
+                    item.innerText = displayLoc;
+                    item.title = displayLoc;
                 });
                 if (this.currentSelectorBadge) {
                     this.currentSelectorBadge.innerText = fullHeading;
+                }
+
+                const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === targetSceneId);
+                if (treeItem) {
+                    treeItem.clean_location = displayLoc;
+                    treeItem.clean_heading = cleanHeading;
+                    treeItem.heading = cleanHeading;
                 }
             }
 
@@ -1264,6 +1299,22 @@ class KadhaEditor {
             return Promise.reject(new Error('Device is offline'));
         }
 
+        // Canvas-to-Save-Target Integrity Guard
+        const targetSceneId = Number(this.currentSceneId);
+        const canvasLoadedId = this.pageContainer && this.pageContainer.dataset ? Number(this.pageContainer.dataset.loadedSceneId) : null;
+
+        if (!canvasLoadedId || isNaN(canvasLoadedId)) {
+            console.error(`Canvas integrity check failed: canvas has no loadedSceneId for save target ${targetSceneId}`);
+            this.setSaveStatus('error', 'Scene not loaded. Save aborted.');
+            return Promise.reject(new Error(`Data integrity violation: Canvas has no loaded scene for save target ${targetSceneId}`));
+        }
+
+        if (canvasLoadedId !== targetSceneId) {
+            console.error(`Canvas integrity check failed: canvas loadedSceneId (${canvasLoadedId}) does not match currentSceneId (${targetSceneId})`);
+            this.setSaveStatus('error', 'Integrity error: scene mismatch. Save aborted.');
+            return Promise.reject(new Error(`Data integrity violation: Canvas loaded scene ${canvasLoadedId} does not match save target ${targetSceneId}`));
+        }
+
         if (this.isSaving && this.activeSavePromise) {
             this.needsQueuedSave = true;
             return this.activeSavePromise.then(() => {
@@ -1278,7 +1329,6 @@ class KadhaEditor {
         this.needsQueuedSave = false;
         this.setSaveStatus('saving', 'Saving...');
 
-        const targetSceneId = this.currentSceneId;
         const saveVersion = this.changeVersion || 0;
         const payload = this.extractScenePayload();
 
@@ -1308,23 +1358,39 @@ class KadhaEditor {
                     this.setSaveStatus('dirty', 'Unsaved changes');
                 }
 
+                // Synchronize in-memory tree and sidebar with persisted location from server
+                if (result.clean_location) {
+                    const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === Number(targetSceneId));
+                    if (treeItem) {
+                        treeItem.clean_location = result.clean_location;
+                    }
+                    const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
+                    activeSidebarLocs.forEach(item => {
+                        item.innerText = result.clean_location;
+                        item.title = result.clean_location;
+                    });
+                }
+
                 this.updateStats(result.script_stats);
                 this.updateReadModeScene(targetSceneId, payload);
                 return result;
             } catch (err) {
                 console.error('Save error:', err);
+                const isIntegrityError = err && err.message && err.message.includes('Data integrity violation');
                 const isOffline = !navigator.onLine;
                 this.setSaveStatus(
-                    isOffline ? 'offline' : 'error',
-                    isOffline ? 'Offline / connection problem' : 'Save failed (click to retry)'
+                    isIntegrityError ? 'error' : (isOffline ? 'offline' : 'error'),
+                    isIntegrityError ? 'Integrity error: save aborted' : (isOffline ? 'Offline / connection problem' : 'Save failed (click to retry)')
                 );
 
                 clearTimeout(this.saveTimeout);
-                this.saveTimeout = setTimeout(() => {
-                    if (this.isDirty) {
-                        this.saveCurrentScene();
-                    }
-                }, 4000);
+                if (!isIntegrityError) {
+                    this.saveTimeout = setTimeout(() => {
+                        if (this.isDirty) {
+                            this.saveCurrentScene();
+                        }
+                    }, 4000);
+                }
 
                 throw err;
             } finally {
@@ -1380,7 +1446,8 @@ class KadhaEditor {
                     primaryCount++;
                 }
             }
-            const isActive = Number(sc.id) === Number(this.currentSceneId);
+            const activeId = (this.editorMode === 'read') ? Number(this.readModeActiveSceneId) : Number(this.currentSceneId);
+            const isActive = Number(sc.id) === activeId;
             const isSub = Boolean(sc.is_sub_scene);
             const navId = sc.nav_identifier || sc.scene_identifier || `Scene ${sc.scene_number || ''}`;
             const cleanLoc = sc.clean_location || sc.clean_heading || sc.heading || 'Scene';
@@ -1614,12 +1681,12 @@ class KadhaEditor {
             const item = e.target.closest('.scene-item');
             if (item) {
                 const sceneId = item.dataset.id;
-                document.querySelectorAll('.scene-item').forEach(el => {
-                    el.classList.toggle('active', String(el.dataset.id) === String(sceneId));
-                });
                 if (this.editorMode === 'read') {
-                    // In Read Mode: smooth scroll to stable scene anchor without navigation or URL changes
-                    this.currentSceneId = Number(sceneId);
+                    // In Read Mode: smooth scroll to stable scene anchor without altering edit canvas currentSceneId
+                    this.readModeActiveSceneId = Number(sceneId);
+                    document.querySelectorAll('.scene-item').forEach(el => {
+                        el.classList.toggle('active', Number(el.dataset.id) === Number(sceneId));
+                    });
                     this.isNavigatingToScene = true;
                     clearTimeout(this._navSceneTimer);
                     this._navSceneTimer = setTimeout(() => { this.isNavigatingToScene = false; }, 600);
@@ -1634,6 +1701,9 @@ class KadhaEditor {
                         this.bsOffcanvas.hide();
                     }
                 } else {
+                    document.querySelectorAll('.scene-item').forEach(el => {
+                        el.classList.toggle('active', String(el.dataset.id) === String(sceneId));
+                    });
                     await this.switchScene(sceneId);
                     if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
                         this.bsOffcanvas.hide();
@@ -1646,7 +1716,8 @@ class KadhaEditor {
     async switchScene(newSceneId) {
         const targetId = Number(newSceneId);
         if (isNaN(targetId)) return;
-        if (!this.isSwitchingScene && targetId === Number(this.currentSceneId)) return;
+        const canvasLoadedId = this.pageContainer && this.pageContainer.dataset ? Number(this.pageContainer.dataset.loadedSceneId) : null;
+        if (!this.isSwitchingScene && targetId === Number(this.currentSceneId) && canvasLoadedId === targetId) return;
 
         if (this.isSwitchingScene) {
             this.pendingSwitchSceneId = targetId;
@@ -3022,10 +3093,13 @@ class KadhaEditor {
                 document.activeElement.blur();
             }
 
-            if (scrollTarget && this.currentSceneId) {
-                const targetSceneEl = document.getElementById(`read-scene-${this.currentSceneId}`);
-                if (targetSceneEl) {
-                    targetSceneEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            if (scrollTarget) {
+                const targetId = this.readModeActiveSceneId || this.currentSceneId;
+                if (targetId) {
+                    const targetSceneEl = document.getElementById(`read-scene-${targetId}`);
+                    if (targetSceneEl) {
+                        targetSceneEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
                 }
             }
         } else {
@@ -3040,12 +3114,33 @@ class KadhaEditor {
         if (this.btnEditFab) {
             this.btnEditFab.addEventListener('click', async (e) => {
                 e.preventDefault();
-                // Determine which scene is currently closest in view within continuous Read Mode
-                const visibleSceneId = this.findVisibleReadModeSceneId();
-                if (visibleSceneId && Number(visibleSceneId) !== Number(this.currentSceneId)) {
-                    await this.switchScene(visibleSceneId);
+                if (this._isEnteringEditMode) return;
+                this._isEnteringEditMode = true;
+                try {
+                    // Determine which scene is currently closest in view within continuous Read Mode
+                    const visibleSceneId = this.findVisibleReadModeSceneId();
+                    const targetSceneId = Number(this.readModeActiveSceneId || visibleSceneId || this.currentSceneId);
+
+                    const canvasLoadedId = this.pageContainer && this.pageContainer.dataset ? Number(this.pageContainer.dataset.loadedSceneId) : null;
+                    if (targetSceneId && (Number(this.currentSceneId) !== targetSceneId || canvasLoadedId !== targetSceneId)) {
+                        await this.switchScene(targetSceneId);
+                    }
+
+                    // Verify canvas represents intended scene
+                    const verifiedLoadedId = this.pageContainer && this.pageContainer.dataset ? Number(this.pageContainer.dataset.loadedSceneId) : null;
+                    if (!verifiedLoadedId || verifiedLoadedId !== targetSceneId || Number(this.currentSceneId) !== targetSceneId) {
+                        console.error(`Cannot enter Edit Mode: Canvas represents scene ${verifiedLoadedId}, expected ${targetSceneId}`);
+                        alert('Could not safely load the scene for editing. Please try again.');
+                        return;
+                    }
+
+                    this.setEditorMode('edit');
+                } catch (err) {
+                    console.error('Error transitioning from Read Mode to Edit Mode:', err);
+                    alert('An error occurred while opening the scene in Edit Mode. Please retry.');
+                } finally {
+                    this._isEnteringEditMode = false;
                 }
-                this.setEditorMode('edit');
             });
         }
 
@@ -3059,7 +3154,7 @@ class KadhaEditor {
 
     findVisibleReadModeSceneId() {
         const scenes = document.querySelectorAll('.read-mode-scene');
-        if (!scenes.length) return this.currentSceneId;
+        if (!scenes.length) return this.readModeActiveSceneId || this.currentSceneId;
         const container = document.getElementById('editorCanvasContainer');
         const containerTop = container ? container.getBoundingClientRect().top : 0;
         let closestId = null;
@@ -3073,7 +3168,7 @@ class KadhaEditor {
                 closestId = sec.dataset.sceneId;
             }
         });
-        return closestId || this.currentSceneId;
+        return closestId ? Number(closestId) : (this.readModeActiveSceneId || this.currentSceneId);
     }
 
     async handleDoneClick() {
@@ -3085,6 +3180,7 @@ class KadhaEditor {
             const payload = this.extractScenePayload();
             this.updateReadModeScene(this.currentSceneId, payload);
 
+            this.readModeActiveSceneId = Number(this.currentSceneId);
             this.setEditorMode('read', true);
             this.setSaveStatus('saved', 'Saved ✓');
         } catch (err) {
@@ -3112,7 +3208,7 @@ class KadhaEditor {
                 if (entry.isIntersecting) {
                     const sceneId = entry.target.dataset.sceneId;
                     if (sceneId) {
-                        this.currentSceneId = Number(sceneId);
+                        this.readModeActiveSceneId = Number(sceneId);
                         document.querySelectorAll('.scene-item').forEach(item => {
                             item.classList.toggle('active', Number(item.dataset.id) === Number(sceneId));
                         });

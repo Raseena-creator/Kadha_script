@@ -887,3 +887,298 @@ class SceneManagementAndMobileTests(TestCase):
         self.assertEqual(self.script_a.primary_scene_count, 2)
         self.assertEqual(self.script_a.sub_scene_count, 1)
         self.assertEqual(self.script_a.scene_count, 3)
+
+
+class Batch2CSceneIntegrityAndLocationTests(TestCase):
+    """
+    Batch 2C Regression Tests:
+    - Decouple Read Mode viewing state from Edit Mode canvas scene ID
+    - Floating Edit Button verified scene loading and transition guard
+    - Canvas-to-Save-Target integrity guard
+    - Immediate sidebar location updates and clean_location synchronization
+    - Backend ownership scoping and identical location isolation
+    """
+
+    def setUp(self):
+        self.user_a = User.objects.create_user(username='batch2c_user_a', password='password123')
+        self.user_b = User.objects.create_user(username='batch2c_user_b', password='password123')
+
+        self.script_a = Script.objects.create(
+            user=self.user_a,
+            title='Batch 2C Integrity Script',
+            genre='Drama',
+            script_type='Feature Film',
+            language='Malayalam'
+        )
+        self.script_b = Script.objects.create(
+            user=self.user_b,
+            title='User B Separate Script',
+            genre='Thriller',
+            script_type='Short Film',
+        )
+
+        self.client_a = Client()
+        self.client_a.login(username='batch2c_user_a', password='password123')
+
+        self.client_b = Client()
+        self.client_b.login(username='batch2c_user_b', password='password123')
+
+    def test_01_read_mode_to_edit_mode_independent_scenes(self):
+        """
+        Test 1 — Read Mode to Edit Mode:
+        Create two scenes with different content and the same location, 'Car'.
+        Scene A: 'SCENE_A_UNIQUE_LYRICS'
+        Scene B: 'SCENE_B_UNIQUE_DIALOGUE'
+        Verify saving Scene B does not overwrite Scene A, and Scene A reloads unchanged.
+        """
+        sc_a = Scene.objects.create(
+            script=self.script_a,
+            scene_number=1,
+            heading='INT. CAR - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(scene=sc_a, element_type='scene_heading', content='INT. CAR - DAY', order=0)
+        ScriptElement.objects.create(scene=sc_a, element_type='action', content='SCENE_A_UNIQUE_LYRICS', order=1)
+
+        sc_b = Scene.objects.create(
+            script=self.script_a,
+            scene_number=2,
+            heading='EXT. CAR - NIGHT',
+            order=1
+        )
+        ScriptElement.objects.create(scene=sc_b, element_type='scene_heading', content='EXT. CAR - NIGHT', order=0)
+        ScriptElement.objects.create(scene=sc_b, element_type='dialogue', content='SCENE_B_UNIQUE_DIALOGUE', order=1)
+
+        resequence_script_scenes(self.script_a)
+
+        # Save Scene B with updated dialogue
+        url_b = reverse('api_save_scene', kwargs={'script_id': self.script_a.id, 'scene_id': sc_b.id})
+        payload_b = {
+            'heading': 'EXT. CAR - NIGHT',
+            'transition': 'CUT TO',
+            'elements': [
+                {'type': 'scene_heading', 'content': 'EXT. CAR - NIGHT'},
+                {'type': 'dialogue', 'content': 'SCENE_B_UNIQUE_DIALOGUE_UPDATED'}
+            ]
+        }
+        res_b = self.client_a.post(url_b, data=json.dumps(payload_b), content_type='application/json')
+        self.assertEqual(res_b.status_code, 200)
+        data_b = res_b.json()
+        self.assertEqual(data_b['status'], 'ok')
+        self.assertEqual(data_b['clean_location'], 'CAR')
+
+        # Verify Scene B has only its updated content
+        sc_b_elements = list(sc_b.elements.order_by('order').values_list('content', flat=True))
+        self.assertIn('SCENE_B_UNIQUE_DIALOGUE_UPDATED', sc_b_elements)
+        self.assertNotIn('SCENE_A_UNIQUE_LYRICS', sc_b_elements)
+
+        # Verify Scene A remains completely unchanged
+        sc_a.refresh_from_db()
+        sc_a_elements = list(sc_a.elements.order_by('order').values_list('content', flat=True))
+        self.assertIn('SCENE_A_UNIQUE_LYRICS', sc_a_elements)
+        self.assertNotIn('SCENE_B_UNIQUE_DIALOGUE_UPDATED', sc_a_elements)
+
+    def test_02_canvas_and_save_target_integrity_guard_contract(self):
+        """
+        Test 2 — Canvas and Save Target Mismatch:
+        Verify that editor.js implements the canvas-to-save integrity guard:
+        stamps loadedSceneId on canvas, checks match before save, aborts if mismatch,
+        and does not schedule retry loops on integrity violations.
+        """
+        import os
+        from django.conf import settings
+        editor_js_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'editor.js')
+        with open(editor_js_path, 'r', encoding='utf-8') as f:
+            js = f.read()
+
+        # Canvas dataset loadedSceneId stamp
+        self.assertIn('this.pageContainer.dataset.loadedSceneId = String(scene.id);', js)
+        self.assertIn('this.pageContainer.dataset.loadedSceneId = String(data.scene.id);', js)
+        self.assertIn("this.pageContainer.dataset.loadedSceneId = '';", js)
+
+        # Integrity check in saveCurrentScene
+        self.assertIn('const canvasLoadedId = this.pageContainer && this.pageContainer.dataset ? Number(this.pageContainer.dataset.loadedSceneId) : null;', js)
+        self.assertIn('if (canvasLoadedId !== targetSceneId)', js)
+        self.assertIn('Data integrity violation: Canvas loaded scene', js)
+        self.assertIn("this.setSaveStatus('error', 'Integrity error: scene mismatch. Save aborted.');", js)
+
+        # Rejection before fetch and retry suppression
+        self.assertIn('const isIntegrityError = err && err.message && err.message.includes(\'Data integrity violation\');', js)
+        self.assertIn('if (!isIntegrityError) {', js)
+
+    def test_03_rapid_navigation_and_read_mode_decoupling(self):
+        """
+        Test 3 — Rapid Navigation and Autosave:
+        Verify that editor.js decouples Read Mode viewing from Edit Mode currentSceneId.
+        Scrolling or clicking in Read Mode modifies readModeActiveSceneId without touching currentSceneId.
+        Entering Edit Mode via FAB verifies canvas matches target before enabling edit mode.
+        """
+        import os
+        from django.conf import settings
+        editor_js_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'editor.js')
+        with open(editor_js_path, 'r', encoding='utf-8') as f:
+            js = f.read()
+
+        # State initialization
+        self.assertIn('this.readModeActiveSceneId = Number(config.currentSceneId);', js)
+        self.assertIn('this._isEnteringEditMode = false;', js)
+
+        # Read mode scroll observer sets readModeActiveSceneId
+        self.assertIn('this.readModeActiveSceneId = Number(sceneId);', js)
+
+        # Read mode sidebar click sets readModeActiveSceneId without mutating currentSceneId
+        self.assertIn('// In Read Mode: smooth scroll to stable scene anchor without altering edit canvas currentSceneId', js)
+
+        # Floating edit FAB transition guard
+        self.assertIn('const targetSceneId = Number(this.readModeActiveSceneId || visibleSceneId || this.currentSceneId);', js)
+        self.assertIn('await this.switchScene(targetSceneId);', js)
+        self.assertIn('if (!verifiedLoadedId || verifiedLoadedId !== targetSceneId || Number(this.currentSceneId) !== targetSceneId)', js)
+        self.assertIn('this.setEditorMode(\'edit\');', js)
+
+    def test_04_location_synchronization_immediate_and_persisted(self):
+        """
+        Test 4 — Location Synchronization:
+        Verify that:
+        - api_save_scene returns clean_location
+        - changing location from HOUSE to CAR updates DB clean_location
+        - editor.js updates .scene-nav-location in syncHeading and input listener
+        - editor.js synchronizes in-memory tree and sidebar with result.clean_location
+        """
+        import os
+        from django.conf import settings
+        editor_js_path = os.path.join(settings.BASE_DIR, 'static', 'js', 'editor.js')
+        with open(editor_js_path, 'r', encoding='utf-8') as f:
+            js = f.read()
+
+        # Selector mismatch fix (.scene-nav-location)
+        self.assertIn('.scene-nav-location', js)
+        self.assertIn('item.innerText = displayLoc;', js)
+        self.assertIn('treeItem.clean_location = locVal;', js)
+        self.assertIn('treeItem.clean_location = result.clean_location;', js)
+
+        # Backend API test: House to Car
+        sc1 = Scene.objects.create(
+            script=self.script_a,
+            scene_number=1,
+            heading='INT. HOUSE - DAY',
+            order=0
+        )
+        sc2 = Scene.objects.create(
+            script=self.script_a,
+            scene_number=2,
+            heading='EXT. OFFICE - NIGHT',
+            order=1
+        )
+        resequence_script_scenes(self.script_a)
+
+        url = reverse('api_save_scene', kwargs={'script_id': self.script_a.id, 'scene_id': sc1.id})
+        payload = {
+            'heading': 'INT. CAR - DAY',
+            'transition': 'CUT TO',
+            'elements': [
+                {'type': 'scene_heading', 'content': 'INT. CAR - DAY'},
+                {'type': 'action', 'content': 'Car driving along the coast.'}
+            ]
+        }
+        res = self.client_a.post(url, data=json.dumps(payload), content_type='application/json')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['clean_location'], 'CAR')
+
+        sc1.refresh_from_db()
+        self.assertEqual(sc1.clean_location, 'CAR')
+
+        # Verify other scene unaffected
+        sc2.refresh_from_db()
+        self.assertEqual(sc2.clean_location, 'OFFICE')
+
+    def test_05_identical_locations_multiple_scenes_content_isolation(self):
+        """
+        Test 5 — Identical Locations, Independent Content:
+        Create several scenes sharing 'Car' as their location with unique text.
+        Verify switching, saving, and querying never transfers text between scenes.
+        """
+        s1 = Scene.objects.create(script=self.script_a, scene_number=1, heading='INT. CAR - MORNING', order=0)
+        ScriptElement.objects.create(scene=s1, element_type='action', content='CAR_1_EXCLUSIVE_TEXT', order=0)
+
+        s2 = Scene.objects.create(script=self.script_a, scene_number=2, heading='INT. CAR - AFTERNOON', order=1)
+        ScriptElement.objects.create(scene=s2, element_type='action', content='CAR_2_EXCLUSIVE_TEXT', order=0)
+
+        s3 = Scene.objects.create(script=self.script_a, scene_number=3, heading='EXT. CAR - RAIN', order=2)
+        ScriptElement.objects.create(scene=s3, element_type='action', content='CAR_3_EXCLUSIVE_TEXT', order=0)
+
+        resequence_script_scenes(self.script_a)
+
+        # Save updates to s2
+        url_s2 = reverse('api_save_scene', kwargs={'script_id': self.script_a.id, 'scene_id': s2.id})
+        res_s2 = self.client_a.post(url_s2, data=json.dumps({
+            'heading': 'INT. CAR - AFTERNOON',
+            'transition': 'CUT TO',
+            'elements': [
+                {'type': 'scene_heading', 'content': 'INT. CAR - AFTERNOON'},
+                {'type': 'action', 'content': 'CAR_2_EXCLUSIVE_TEXT_MODIFIED'}
+            ]
+        }), content_type='application/json')
+        self.assertEqual(res_s2.status_code, 200)
+
+        # Refresh and verify isolation across all 3 scenes
+        s1.refresh_from_db()
+        s2.refresh_from_db()
+        s3.refresh_from_db()
+
+        self.assertEqual(s1.clean_location, 'CAR')
+        self.assertEqual(s2.clean_location, 'CAR')
+        self.assertEqual(s3.clean_location, 'CAR')
+
+        s1_texts = list(s1.elements.values_list('content', flat=True))
+        s2_texts = list(s2.elements.values_list('content', flat=True))
+        s3_texts = list(s3.elements.values_list('content', flat=True))
+
+        self.assertIn('CAR_1_EXCLUSIVE_TEXT', s1_texts)
+        self.assertNotIn('CAR_2_EXCLUSIVE_TEXT_MODIFIED', s1_texts)
+        self.assertNotIn('CAR_3_EXCLUSIVE_TEXT', s1_texts)
+
+        self.assertIn('CAR_2_EXCLUSIVE_TEXT_MODIFIED', s2_texts)
+        self.assertNotIn('CAR_1_EXCLUSIVE_TEXT', s2_texts)
+        self.assertNotIn('CAR_3_EXCLUSIVE_TEXT', s2_texts)
+
+        self.assertIn('CAR_3_EXCLUSIVE_TEXT', s3_texts)
+        self.assertNotIn('CAR_1_EXCLUSIVE_TEXT', s3_texts)
+        self.assertNotIn('CAR_2_EXCLUSIVE_TEXT_MODIFIED', s3_texts)
+
+    def test_06_backend_ownership_and_scoping_security(self):
+        """
+        Test 6 — Backend Ownership and Scene Identification:
+        Ensure scenes cannot be updated by unauthorized users or mismatched scripts.
+        """
+        sc_a = Scene.objects.create(
+            script=self.script_a,
+            scene_number=1,
+            heading='INT. PRIVATE ROOM - NIGHT',
+            order=0
+        )
+        ScriptElement.objects.create(scene=sc_a, element_type='action', content='CONFIDENTIAL_CONTENT', order=0)
+
+        # User B attempts to save to User A's scene
+        url_cross_user = reverse('api_save_scene', kwargs={'script_id': self.script_a.id, 'scene_id': sc_a.id})
+        res_cross_user = self.client_b.post(url_cross_user, data=json.dumps({
+            'heading': 'INT. HACKED - NIGHT',
+            'transition': 'CUT TO',
+            'elements': [{'type': 'action', 'content': 'ATTACK'}]
+        }), content_type='application/json')
+        # User B does not own script_a -> 404
+        self.assertEqual(res_cross_user.status_code, 404)
+
+        # User A attempts with wrong script ID
+        url_wrong_script = reverse('api_save_scene', kwargs={'script_id': self.script_b.id, 'scene_id': sc_a.id})
+        res_wrong_script = self.client_a.post(url_wrong_script, data=json.dumps({
+            'heading': 'INT. MISMATCH - NIGHT',
+            'transition': 'CUT TO',
+            'elements': [{'type': 'action', 'content': 'MISMATCH'}]
+        }), content_type='application/json')
+        self.assertEqual(res_wrong_script.status_code, 404)
+
+        # Verify original content completely untouched
+        sc_a.refresh_from_db()
+        self.assertEqual(sc_a.heading, 'INT. PRIVATE ROOM - NIGHT')
+        self.assertIn('CONFIDENTIAL_CONTENT', list(sc_a.elements.values_list('content', flat=True)))

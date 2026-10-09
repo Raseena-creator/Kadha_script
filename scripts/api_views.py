@@ -136,6 +136,7 @@ def api_save_scene(request, script_id, scene_id):
             'display_number_formatted': scene.display_number_formatted,
             'full_display_heading': scene.full_display_heading,
             'clean_heading': scene.clean_heading,
+            'clean_location': scene.clean_location or 'Location',
             'heading': scene.heading,
             'transition': scene.transition or 'CUT TO',
             'updated_at': script.updated_at.strftime('%H:%M:%S'),
