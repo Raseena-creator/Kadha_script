@@ -76,7 +76,12 @@
         <!-- Quick Stats -->
         <div class="row g-3 text-center">
             <div class="col-sm-3 col-6">
-                <span class="fs-4 fw-bold text-dark d-block">{{ script.scene_count }}</span>
+                <span class="fs-4 fw-bold text-dark d-block">
+                    {{ script.primary_scene_count }}
+                    {% if script.sub_scene_count > 0 %}
+                    <small class="fs-6 text-muted fw-normal">(+{{ script.sub_scene_count }} sub)</small>
+                    {% endif %}
+                </span>
                 <span class="text-muted small text-uppercase">Scenes</span>
             </div>
             <div class="col-sm-3 col-6">

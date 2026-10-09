@@ -54,10 +54,13 @@
                 <span class="ks-project-title font-malayalam" id="script-title-{{ script.id }}">
                     {{ script.title }}
                 </span>
-                <span class="ks-project-scenes" data-scenes="{% with count=script.num_scenes|default:script.scene_count %}{{ count }}{% endwith %}">
-                    {% with count=script.num_scenes|default:script.scene_count %}
+                <span class="ks-project-scenes" data-scenes="{% with count=script.num_scenes|default:script.primary_scene_count %}{{ count }}{% endwith %}">
+                    {% with count=script.num_scenes|default:script.primary_scene_count %}
                         {{ count }} {% if count == 1 %}SCENE{% else %}SCENES{% endif %}
                     {% endwith %}
+                    {% if script.sub_scene_count > 0 %}
+                        <span class="text-muted small ms-1">({{ script.sub_scene_count }} Sub-scene{{ script.sub_scene_count|pluralize }})</span>
+                    {% endif %}
                 </span>
             </a>
             <div class="ks-project-actions dropdown ms-2">

@@ -30,6 +30,8 @@ class KadhaEditor {
         this.sceneCountEl = document.getElementById('statSceneCount');
         this.sidebarSceneCountEl = document.getElementById('sidebarSceneCount');
         this.offcanvasSceneCountEl = document.getElementById('offcanvasSceneCount');
+        this.sidebarSceneHeadingTextEl = document.getElementById('sidebarSceneHeadingText');
+        this.offcanvasSceneHeadingTextEl = document.getElementById('offcanvasSceneHeadingText');
         this.currentTypeEl = document.getElementById('statCurrentType');
 
         // Modals
@@ -1325,11 +1327,17 @@ class KadhaEditor {
         if (!tree) return;
         this.scenesTree = tree;
 
-        let totalSceneCount = 0;
+        let primaryCount = 0;
+        let subCount = 0;
         const htmlChunks = [];
-
         tree.forEach((sc) => {
-            totalSceneCount++;
+            if (!sc.is_intercut) {
+                if (sc.is_sub_scene) {
+                    subCount++;
+                } else {
+                    primaryCount++;
+                }
+            }
             const isActive = Number(sc.id) === Number(this.currentSceneId);
             const isSub = Boolean(sc.is_sub_scene);
             const navId = sc.nav_identifier || sc.scene_identifier || `Scene ${sc.scene_number || ''}`;
@@ -1385,9 +1393,30 @@ class KadhaEditor {
             this.bindSceneItemEvents(this.offcanvasScenesList);
         }
 
-        if (this.sidebarSceneCountEl) this.sidebarSceneCountEl.innerText = totalSceneCount;
-        if (this.offcanvasSceneCountEl) this.offcanvasSceneCountEl.innerText = totalSceneCount;
-        if (this.sceneCountEl) this.sceneCountEl.innerText = `${totalSceneCount} scenes`;
+        this.updateNavHeadingCounts(primaryCount, subCount);
+        if (this.sceneCountEl) {
+            this.sceneCountEl.innerText = subCount > 0 ? `${primaryCount} (${subCount} sub)` : `${primaryCount}`;
+        }
+    }
+
+    updateNavHeadingCounts(primaryCount, subCount) {
+        if (this.sidebarSceneHeadingTextEl) {
+            this.sidebarSceneHeadingTextEl.innerHTML = subCount > 0
+                ? `Scenes (<span id="sidebarSceneCount">${primaryCount}</span>) · Sub-scenes (<span id="sidebarSubSceneCount">${subCount}</span>)`
+                : `Scenes (<span id="sidebarSceneCount">${primaryCount}</span>)`;
+            this.sidebarSceneCountEl = document.getElementById('sidebarSceneCount');
+        } else if (this.sidebarSceneCountEl) {
+            this.sidebarSceneCountEl.innerText = primaryCount;
+        }
+
+        if (this.offcanvasSceneHeadingTextEl) {
+            this.offcanvasSceneHeadingTextEl.innerHTML = subCount > 0
+                ? `Scenes (<span id="offcanvasSceneCount">${primaryCount}</span>) · Sub-scenes (<span id="offcanvasSubSceneCount">${subCount}</span>)`
+                : `Scenes (<span id="offcanvasSceneCount">${primaryCount}</span>)`;
+            this.offcanvasSceneCountEl = document.getElementById('offcanvasSceneCount');
+        } else if (this.offcanvasSceneCountEl) {
+            this.offcanvasSceneCountEl.innerText = primaryCount;
+        }
     }
 
     bindSceneItemEvents(container) {
@@ -2205,9 +2234,17 @@ class KadhaEditor {
         if (this.wordCountEl) this.wordCountEl.innerText = stats.word_count;
         if (this.charCountEl) this.charCountEl.innerText = stats.char_count;
         if (this.pageCountEl) this.pageCountEl.innerText = `~${stats.estimated_pages} pgs`;
-        if (this.sceneCountEl) this.sceneCountEl.innerText = `${stats.scene_count} scenes`;
-        if (this.sidebarSceneCountEl) this.sidebarSceneCountEl.innerText = stats.scene_count;
-        if (this.offcanvasSceneCountEl) this.offcanvasSceneCountEl.innerText = stats.scene_count;
+        if (this.sceneCountEl) {
+            const primary = stats.primary_scene_count !== undefined ? stats.primary_scene_count : stats.scene_count;
+            const sub = stats.sub_scene_count !== undefined ? stats.sub_scene_count : 0;
+            this.sceneCountEl.innerText = sub > 0 ? `${primary} (${sub} sub)` : `${primary}`;
+        }
+        if (stats.primary_scene_count !== undefined) {
+            this.updateNavHeadingCounts(stats.primary_scene_count, stats.sub_scene_count || 0);
+        } else if (this.sidebarSceneCountEl) {
+            this.sidebarSceneCountEl.innerText = stats.scene_count;
+            if (this.offcanvasSceneCountEl) this.offcanvasSceneCountEl.innerText = stats.scene_count;
+        }
     }
 
     // ----------------------------------------------------

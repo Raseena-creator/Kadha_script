@@ -47,7 +47,15 @@ class Script(models.Model):
 
     @property
     def scene_count(self):
-        return self.scenes.count()
+        return self.scenes.filter(is_intercut=False).count()
+
+    @property
+    def primary_scene_count(self):
+        return self.scenes.filter(parent_scene__isnull=True, is_intercut=False).count()
+
+    @property
+    def sub_scene_count(self):
+        return self.scenes.filter(parent_scene__isnull=False, is_intercut=False).count()
 
     @property
     def word_count(self):
@@ -128,6 +136,11 @@ class Scene(models.Model):
     @property
     def is_sub_scene(self) -> bool:
         return self.parent_scene_id is not None
+
+    @property
+    def is_actual_scene(self) -> bool:
+        """True if this is an actual scene or sub-scene, not a navigation/transition entry."""
+        return not self.is_intercut
 
     @property
     def duplicate_suffix(self) -> str:

@@ -14,13 +14,19 @@ def dashboard_view(request):
     user_scripts = Script.objects.filter(user=user)
     
     total_scripts = user_scripts.count()
-    total_scenes = Scene.objects.filter(script__user=user).count()
+    total_scenes = Scene.objects.filter(script__user=user, is_intercut=False).count()
+    total_primary_scenes = Scene.objects.filter(script__user=user, parent_scene__isnull=True, is_intercut=False).count()
+    total_sub_scenes = Scene.objects.filter(script__user=user, parent_scene__isnull=False, is_intercut=False).count()
     
-    scripts = user_scripts.annotate(num_scenes=Count('scenes')).order_by('-updated_at')
+    scripts = user_scripts.annotate(
+        num_scenes=Count('scenes', filter=Q(scenes__parent_scene__isnull=True, scenes__is_intercut=False))
+    ).order_by('-updated_at')
 
     return render(request, 'core/dashboard.html', {
         'total_scripts': total_scripts,
         'total_scenes': total_scenes,
+        'total_primary_scenes': total_primary_scenes,
+        'total_sub_scenes': total_sub_scenes,
         'scripts': scripts,
     })
 

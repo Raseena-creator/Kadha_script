@@ -660,3 +660,246 @@ class DashboardScriptManagementAndSceneDropdownTests(TestCase):
         self.assertEqual(elements[2]['content'], '(പുഞ്ചിരിയോടെ)')
         self.assertEqual(elements[3]['content'], 'എല്ലാം ശരിയാകും.')
         self.assertEqual(elements[4]['content'], 'CUT TO:')
+
+
+class SceneMetricsSeparationTests(TestCase):
+    """Batch 2A: Scene Metrics separation tests."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username='metric_user', password='password123')
+        self.client = Client()
+        self.client.login(username='metric_user', password='password123')
+        self.script = Script.objects.create(
+            user=self.user,
+            title='Metrics Screenplay',
+            genre='Drama',
+            script_type='Feature Film'
+        )
+
+    def test_case_1_only_primary_scenes(self):
+        """Case 1: 3 primary scenes, 0 sub-scenes -> primary=3, sub=0, total=3."""
+        for i in range(1, 4):
+            Scene.objects.create(script=self.script, scene_number=i, heading=f'INT. SCENE {i} - DAY', order=i-1)
+
+        self.assertEqual(self.script.primary_scene_count, 3)
+        self.assertEqual(self.script.sub_scene_count, 0)
+        self.assertEqual(self.script.scene_count, 3)
+
+    def test_case_2_primary_and_sub_scenes(self):
+        """Case 2: 3 primary scenes, 2 sub-scenes -> primary=3, sub=2, total=5 (primary count is NOT 5)."""
+        s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1', order=0)
+        s2 = Scene.objects.create(script=self.script, scene_number=2, heading='INT. SCENE 2', order=1)
+        s3 = Scene.objects.create(script=self.script, scene_number=3, heading='INT. SCENE 3', order=4)
+
+        # 2 sub-scenes under s2
+        Scene.objects.create(script=self.script, parent_scene=s2, scene_number=2, heading='INT. SCENE 2.A', order=2)
+        Scene.objects.create(script=self.script, parent_scene=s2, scene_number=2, heading='INT. SCENE 2.B', order=3)
+
+        self.assertEqual(self.script.primary_scene_count, 3)
+        self.assertEqual(self.script.sub_scene_count, 2)
+        self.assertEqual(self.script.scene_count, 5)
+
+    def test_case_3_multiple_sub_scenes_under_one_parent(self):
+        """Case 3: Scene 1 has 3 sub-scenes (1.A, 1.B, 1.C), Scene 2 has 0 -> primary=2, sub=3."""
+        s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1', order=0)
+        Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.A', order=1)
+        Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.B', order=2)
+        Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.C', order=3)
+        Scene.objects.create(script=self.script, scene_number=2, heading='INT. SCENE 2', order=4)
+
+        self.assertEqual(self.script.primary_scene_count, 2)
+        self.assertEqual(self.script.sub_scene_count, 3)
+        self.assertEqual(self.script.scene_count, 5)
+
+    def test_case_4_delete_sub_scene_decreases_sub_count_only(self):
+        """Case 4: Deleting a sub-scene decreases sub_scene_count, preserves primary_scene_count."""
+        s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1', order=0)
+        sub_1a = Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.A', order=1)
+        sub_1b = Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.B', order=2)
+        Scene.objects.create(script=self.script, scene_number=2, heading='INT. SCENE 2', order=3)
+
+        self.assertEqual(self.script.primary_scene_count, 2)
+        self.assertEqual(self.script.sub_scene_count, 2)
+
+        # Delete sub_1a
+        sub_1a.delete()
+
+        self.assertEqual(self.script.primary_scene_count, 2)
+        self.assertEqual(self.script.sub_scene_count, 1)
+        self.assertEqual(self.script.scene_count, 3)
+
+    def test_case_5_duplicate_and_intercut_compatibility(self):
+        """Case 5: Duplicate scenes count as actual scenes; intercut navigation entries do not increase totals."""
+        s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1', order=0)
+        # Duplicate of s1 (primary duplicate, parent_scene=None)
+        s1_dup = Scene.objects.create(
+            script=self.script,
+            scene_number=1,
+            heading='INT. SCENE 1',
+            is_duplicate=True,
+            duplicate_number=1,
+            parent_scene=None,
+            order=1
+        )
+        # Intercut scene linked to s1 (parent_scene=None, navigation/transition entry)
+        s1_intercut = Scene.objects.create(
+            script=self.script,
+            scene_number=1,
+            heading='INT. SCENE 1',
+            is_intercut=True,
+            intercut_source=s1,
+            parent_scene=None,
+            order=2
+        )
+        # Sub-scene under s1
+        sub_1a = Scene.objects.create(
+            script=self.script,
+            parent_scene=s1,
+            scene_number=1,
+            heading='INT. SCENE 1.A',
+            order=3
+        )
+
+        # Primary scenes (parent_scene is None, is_intercut=False): s1, s1_dup = 2
+        self.assertEqual(self.script.primary_scene_count, 2)
+        # Sub-scenes (parent_scene is not None, is_intercut=False): sub_1a = 1
+        self.assertEqual(self.script.sub_scene_count, 1)
+        # Total scenes = 3 (s1_intercut does not increase any total)
+        self.assertEqual(self.script.scene_count, 3)
+
+    def test_api_script_stats_includes_primary_and_sub_counts(self):
+        """API endpoints return both primary_scene_count and sub_scene_count in script_stats."""
+        s1 = Scene.objects.create(script=self.script, scene_number=1, heading='INT. SCENE 1', order=0)
+        Scene.objects.create(script=self.script, parent_scene=s1, scene_number=1, heading='INT. SCENE 1.A', order=1)
+
+        res = self.client.get(f'/scripts/api/{self.script.id}/scenes/{s1.id}/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        stats = data['script_stats']
+        self.assertEqual(stats['scene_count'], 2)
+        self.assertEqual(stats['primary_scene_count'], 1)
+        self.assertEqual(stats['sub_scene_count'], 1)
+
+    def test_scene_navigation_heading_rendering(self):
+        """Scene navigation heading renders 'Scenes (2) · Sub-scenes (1)' when sub-scenes exist, and 'Scenes (3)' when none."""
+        # Case A: 3 primary scenes, 0 sub-scenes
+        script1 = Script.objects.create(user=self.user, title='Script Primary Only', genre='Drama', script_type='Feature Film')
+        for i in range(1, 4):
+            Scene.objects.create(script=script1, scene_number=i, heading=f'INT. SCENE {i}', order=i-1)
+
+        res1 = self.client.get(f'/scripts/{script1.id}/editor/')
+        self.assertEqual(res1.status_code, 200)
+        content1 = res1.content.decode('utf-8')
+        # Sidebar & offcanvas headings contain 'Scenes (3)' and NOT 'Sub-scenes'
+        self.assertIn('Scenes (<span id="sidebarSceneCount">3</span>)', content1)
+        self.assertNotIn('sidebarSubSceneCount', content1)
+        self.assertNotIn('offcanvasSubSceneCount', content1)
+
+        # Case B: Add 1 sub-scene -> 2 primary, 1 sub-scene
+        script2 = Script.objects.create(user=self.user, title='Script With Sub', genre='Drama', script_type='Feature Film')
+        sc1 = Scene.objects.create(script=script2, scene_number=1, heading='INT. SCENE 1', order=0)
+        sc2 = Scene.objects.create(script=script2, scene_number=2, heading='INT. SCENE 2', order=1)
+        Scene.objects.create(script=script2, parent_scene=sc2, scene_number=2, heading='INT. SCENE 2.A', order=2)
+
+        res2 = self.client.get(f'/scripts/{script2.id}/editor/')
+        self.assertEqual(res2.status_code, 200)
+        content2 = res2.content.decode('utf-8')
+        self.assertIn('Scenes (<span id="sidebarSceneCount">2</span>) · Sub-scenes (<span id="sidebarSubSceneCount">1</span>)', content2)
+        self.assertIn('Scenes (<span id="offcanvasSceneCount">2</span>) · Sub-scenes (<span id="offcanvasSubSceneCount">1</span>)', content2)
+
+    def test_subscene_from_and_cutback_to_do_not_increase_totals(self):
+        """
+        Subscene From and Cut Back To are navigation/transition entries and must NOT increase
+        primary, sub-scene, or total actual scene counts, but MUST remain present in scenes_tree.
+        Example from specification:
+        - Scene 1: INT. HOUSE - NIGHT
+        - Scene 1.A: INT. HOUSE - CONTINUOUS
+        - Subscene From
+        - Cut Back To
+        - Scene 2: EXT. STREET - DAY
+        - Scene 3: INT. OFFICE - DAY
+        Expected totals: Primary = 3, Sub = 1, Total = 4.
+        """
+        from scripts.services.scene_service import (
+            create_sub_scene_2,
+            create_intercut_scene,
+            serialize_scenes_hierarchy,
+            resequence_script_scenes
+        )
+
+        test_script = Script.objects.create(user=self.user, title='Transition Test Script', genre='Drama')
+        sc1 = Scene.objects.create(script=test_script, scene_number=1, heading='INT. HOUSE - NIGHT', order=0)
+        sc1_a = Scene.objects.create(script=test_script, parent_scene=sc1, scene_number=1, heading='INT. HOUSE - CONTINUOUS', order=1)
+        sc2 = Scene.objects.create(script=test_script, scene_number=2, heading='EXT. STREET - DAY', order=2)
+        sc3 = Scene.objects.create(script=test_script, scene_number=3, heading='INT. OFFICE - DAY', order=3)
+        resequence_script_scenes(test_script)
+
+        # Insert 'Subscene From' (source sc1, after sc1_a)
+        sub_from = create_sub_scene_2(test_script, source_scene_id=sc1.id, current_scene_id=sc1_a.id)
+        # Insert 'Cut Back To' (source sc1, after sub_from)
+        cut_back = create_intercut_scene(test_script, source_scene_id=sc1.id, current_scene_id=sub_from.id)
+
+        test_script.refresh_from_db()
+        self.assertEqual(test_script.primary_scene_count, 3)
+        self.assertEqual(test_script.sub_scene_count, 1)
+        self.assertEqual(test_script.scene_count, 4)
+
+        # Check API returns same correct counts
+        res = self.client.get(f'/scripts/api/{test_script.id}/scenes/tree/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        stats = data['script_stats']
+        self.assertEqual(stats['primary_scene_count'], 3)
+        self.assertEqual(stats['sub_scene_count'], 1)
+        self.assertEqual(stats['scene_count'], 4)
+
+        # Verify all 6 entries exist in scenes_tree for navigation
+        tree = data['scenes_tree']
+        self.assertEqual(len(tree), 6)
+        tree_ids = [item['id'] for item in tree]
+        self.assertIn(sub_from.id, tree_ids)
+        self.assertIn(cut_back.id, tree_ids)
+
+        # Verify is_intercut flag is serialized
+        sub_from_item = next(item for item in tree if item['id'] == sub_from.id)
+        cut_back_item = next(item for item in tree if item['id'] == cut_back.id)
+        self.assertTrue(sub_from_item['is_intercut'])
+        self.assertTrue(cut_back_item['is_intercut'])
+
+        # Verify editor HTML rendering reflects correct heading with 3 primary scenes and 1 sub-scene
+        editor_res = self.client.get(f'/scripts/{test_script.id}/editor/')
+        self.assertEqual(editor_res.status_code, 200)
+        html = editor_res.content.decode('utf-8')
+        self.assertIn('Scenes (<span id="sidebarSceneCount">3</span>) · Sub-scenes (<span id="sidebarSubSceneCount">1</span>)', html)
+        self.assertIn('Scenes: <strong id="statSceneCount">3 (1 sub)</strong>', html)
+
+    def test_screenplay_ending_at_scene_50_reports_50_primary_scenes(self):
+        """
+        If the final actual scene is Scene 50, the primary scene total should be 50,
+        regardless of how many navigation/transition entries appear in the screenplay.
+        """
+        script_50 = Script.objects.create(user=self.user, title='50 Scenes Screenplay', genre='Thriller')
+        scenes = []
+        for i in range(1, 51):
+            scenes.append(Scene.objects.create(script=script_50, scene_number=i, heading=f'INT. LOCATION {i} - DAY', order=i-1))
+
+        # Add 10 transition/navigation entries (5 Subscene From + 5 Cut Back To) interspersed
+        from scripts.services.scene_service import create_sub_scene_2, create_intercut_scene
+        for i in range(5):
+            create_sub_scene_2(script_50, source_scene_id=scenes[i].id, current_scene_id=scenes[i*10].id)
+            create_intercut_scene(script_50, source_scene_id=scenes[i].id, current_scene_id=scenes[i*10+5].id)
+
+        script_50.refresh_from_db()
+        self.assertEqual(script_50.primary_scene_count, 50)
+        self.assertEqual(script_50.sub_scene_count, 0)
+        self.assertEqual(script_50.scene_count, 50)
+
+        # Editor API verification
+        res = self.client.get(f'/scripts/api/{script_50.id}/scenes/tree/')
+        self.assertEqual(res.status_code, 200)
+        stats = res.json()['script_stats']
+        self.assertEqual(stats['primary_scene_count'], 50)
+        self.assertEqual(stats['sub_scene_count'], 0)
+        self.assertEqual(stats['scene_count'], 50)
+        # All 60 entries are in scenes_tree
+        self.assertEqual(len(res.json()['scenes_tree']), 60)

@@ -75,6 +75,8 @@ def api_get_scene(request, script_id, scene_id):
             'word_count': script.word_count,
             'char_count': script.char_count,
             'scene_count': script.scene_count,
+            'primary_scene_count': script.primary_scene_count,
+            'sub_scene_count': script.sub_scene_count,
             'estimated_pages': script.estimated_pages,
         }
     })
@@ -141,6 +143,8 @@ def api_save_scene(request, script_id, scene_id):
                 'word_count': script.word_count,
                 'char_count': script.char_count,
                 'scene_count': script.scene_count,
+                'primary_scene_count': script.primary_scene_count,
+                'sub_scene_count': script.sub_scene_count,
                 'estimated_pages': script.estimated_pages,
             }
         })
@@ -485,6 +489,8 @@ def api_get_scenes_tree(request, script_id):
             'word_count': script.word_count,
             'char_count': script.char_count,
             'scene_count': script.scene_count,
+            'primary_scene_count': script.primary_scene_count,
+            'sub_scene_count': script.sub_scene_count,
             'estimated_pages': script.estimated_pages,
         }
     })
