@@ -2498,7 +2498,7 @@ class KadhaEditor {
                                 <strong>Choose an active parent scene:</strong>
                             </label>
                         </div>
-                        <div class="mt-2 ms-4" id="parentSelectWrapper_${escapeHtml(sc.id)}" style="display: none;">
+                        <div class="mt-2 ms-2 ms-md-4" id="parentSelectWrapper_${escapeHtml(sc.id)}" style="display: none;">
                             ${activeMainScenes.length > 0 ? `
                                 <select class="form-select form-select-sm" id="parentSelect_${escapeHtml(sc.id)}">
                                     ${parentOptionsHtml}
@@ -2524,7 +2524,8 @@ class KadhaEditor {
 
             return `
                 <div class="card border rounded-3 p-3 bg-light shadow-sm scene-trash-item" id="trashedSceneCard_${escapeHtml(sc.id)}">
-                    <div class="d-flex align-items-start justify-content-between gap-3">
+                    <!-- Desktop / Tablet Presentation (>= 768px) - Exact HEAD Layout -->
+                    <div class="d-none d-md-flex align-items-start justify-content-between gap-3">
                         <div class="flex-grow-1 min-w-0">
                             <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
                                 ${sceneBadge}
@@ -2549,6 +2550,34 @@ class KadhaEditor {
                                 <span>Restore</span>
                             </button>
                             <span class="small text-muted" style="font-size: 0.72rem;">Safe Recovery</span>
+                        </div>
+                    </div>
+
+                    <!-- Mobile Presentation (< 768px) - Approved Mobile Stacked Layout -->
+                    <div class="d-md-none d-flex flex-column align-items-stretch justify-content-between gap-3">
+                        <div class="flex-grow-1 min-w-0 w-100">
+                            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                                ${sceneBadge}
+                                ${typeBadges}
+                                <span class="font-screenplay fw-bold text-dark text-break fs-6" title="${escapeHtml(rawHeading)}">${escapeHtml(rawHeading)}</span>
+                            </div>
+                            ${parentInfoHtml}
+                            ${parentChoiceControls}
+                            <div class="mt-2 text-break">
+                                ${deletedAtText}
+                            </div>
+                        </div>
+
+                        <!-- Action Button -->
+                        <div class="flex-shrink-0 d-flex flex-column align-items-stretch gap-1 w-100 mt-2">
+                            <button type="button" class="btn btn-sm btn-success px-3 d-inline-flex align-items-center justify-content-center gap-1 btn-restore-scene w-100"
+                                data-scene-id="${escapeHtml(sc.id)}"
+                                data-is-sub="${isSub}"
+                                data-requires-parent="${requiresParentChoice}">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                                <span>Restore</span>
+                            </button>
+                            <span class="small text-muted text-center" style="font-size: 0.72rem;">Safe Recovery</span>
                         </div>
                     </div>
                 </div>
