@@ -999,3 +999,39 @@ class Batch3DC1SubSceneLetteringTests(TestCase):
         self.assertEqual(main_2.display_number, 'Scene 1')
         self.assertEqual(sub_2a.display_number, 'Scene 1.A')
         self.assertEqual(sub_2b.display_number, 'Scene 1.B')
+
+    def test_f_scene_trash_scene_numbers_api(self):
+        """Test F: Trashed scenes endpoint returns exact original numbers and parent scene numbers."""
+        main_1 = Scene.objects.create(script=self.script, heading='INT. SCENE 1 - DAY', order=0, is_deleted=False)
+        sub_1a = Scene.objects.create(script=self.script, heading='SUB 1A', parent_scene=main_1, order=1, is_deleted=False)
+        sub_1b = Scene.objects.create(script=self.script, heading='SUB 1B', parent_scene=main_1, order=2, is_deleted=False)
+        main_2 = Scene.objects.create(script=self.script, heading='INT. SCENE 2 - DAY', order=3, is_deleted=False)
+        resequence_script_scenes(self.script)
+
+        # Trash sub_1a
+        res = self.client.post(reverse('api_delete_scene', args=[self.script.id, sub_1a.id]))
+        self.assertEqual(res.status_code, 200)
+
+        # Trash main_2
+        res2 = self.client.post(reverse('api_delete_scene', args=[self.script.id, main_2.id]))
+        self.assertEqual(res2.status_code, 200)
+
+        # Query Scene Trash API
+        trash_res = self.client.get(reverse('api_get_trashed_scenes', args=[self.script.id]))
+        self.assertEqual(trash_res.status_code, 200)
+        data = trash_res.json()
+        self.assertEqual(data['status'], 'ok')
+        trashed_map = {item['id']: item for item in data['trashed_scenes']}
+
+        # Verify trashed sub-scene
+        trashed_sub = trashed_map[sub_1a.id]
+        self.assertEqual(trashed_sub['scene_number'], 'Scene 1.A')
+        self.assertTrue(trashed_sub['is_sub_scene'])
+        self.assertEqual(trashed_sub['original_parent_scene_number'], 1)
+        self.assertEqual(trashed_sub['parent_status'], 'active')
+
+        # Verify trashed main scene
+        trashed_main = trashed_map[main_2.id]
+        self.assertEqual(trashed_main['scene_number'], 'Scene 2')
+        self.assertFalse(trashed_main['is_sub_scene'])
+        self.assertIsNone(trashed_main['original_parent_scene_number'])

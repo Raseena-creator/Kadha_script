@@ -43,9 +43,12 @@ class KadhaEditor {
         this.bsDeleteModal = this.deleteModalEl ? new bootstrap.Modal(this.deleteModalEl) : null;
         this.sceneSelectModalEl = document.getElementById('editorSceneSelectModal');
         this.bsSceneSelectModal = this.sceneSelectModalEl ? new bootstrap.Modal(this.sceneSelectModalEl) : null;
+        this.trashModalEl = document.getElementById('sceneTrashModal');
+        this.bsTrashModal = this.trashModalEl ? new bootstrap.Modal(this.trashModalEl) : null;
         this.pendingDeleteSceneId = null;
         this.sceneSelectMode = null;
         this.isCreatingScene = false;
+        this.isRestoringScene = false;
 
         // State Flags & Save Queue
         this.isDirty = false;
@@ -104,6 +107,8 @@ class KadhaEditor {
         this.setupReadModeScrollObserver();
         this.bindSuggestionPopupEvents();
         this.bindClipboardEvents();
+        this.bindSceneTrashEvents();
+        this.fetchSceneTrashCount();
     }
 
     // CSRF & Headers helper
@@ -1474,7 +1479,7 @@ class KadhaEditor {
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="${sc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-down" data-id="${sc.id}"><i class="bi bi-arrow-down me-2"></i>Move Down</button></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><button type="button" class="dropdown-item text-danger btn-action-delete" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-trash me-2"></i>Delete</button></li>
+                        <li><button type="button" class="dropdown-item text-danger btn-action-delete" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-trash me-2"></i>Move to Trash</button></li>
                     </ul>
                 </div>
             `;
@@ -2066,9 +2071,12 @@ class KadhaEditor {
         const warningEl = document.getElementById('editorDeleteWarning');
         if (warningEl) {
             warningEl.innerText = isSub
-                ? 'This will permanently delete this sub-scene. Other scenes will not be affected.'
-                : 'This will permanently delete this scene and all of its sub-scenes. This action cannot be undone.';
+                ? 'This will move this sub-scene to Trash. It can be restored later.'
+                : 'This will move this scene and all of its sub-scenes to Trash. They can be restored later.';
         }
+
+        const submitBtnText = document.getElementById('btnEditorSubmitDeleteText');
+        if (submitBtnText) submitBtnText.innerText = 'Move to Trash';
 
         if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
             this.bsOffcanvas.hide();
@@ -2086,7 +2094,7 @@ class KadhaEditor {
         const submitBtnText = document.getElementById('btnEditorSubmitDeleteText');
 
         if (submitBtn) submitBtn.disabled = true;
-        if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Deleting...';
+        if (submitBtnText) submitBtnText.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Moving to Trash...';
 
         try {
             await this.flushSave();
@@ -2097,23 +2105,23 @@ class KadhaEditor {
         } catch (err) {
             console.error('Save failed before deleting scene:', err);
             if (submitBtn) submitBtn.disabled = false;
-            if (submitBtnText) submitBtnText.innerText = 'Delete Scene';
+            if (submitBtnText) submitBtnText.innerText = 'Move to Trash';
             alert('Could not save the current scene. Scene deletion was cancelled to protect your unsaved writing. Please retry once saved.');
             return;
         }
 
         try {
-            this.setSaveStatus('saving', 'Deleting scene...');
+            this.setSaveStatus('saving', 'Moving scene to Trash...');
             const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${sceneId}/delete/`, {
                 method: 'POST',
                 headers: this.getHeaders(),
             });
             const data = await res.json();
             if (!res.ok || data.status !== 'ok') {
-                alert(data.message || 'Cannot delete scene');
+                alert(data.message || 'Cannot move scene to Trash');
                 this.setSaveStatus('saved', 'Saved ✓');
                 if (submitBtn) submitBtn.disabled = false;
-                if (submitBtnText) submitBtnText.innerText = 'Delete Scene';
+                if (submitBtnText) submitBtnText.innerText = 'Move to Trash';
                 return;
             }
 
@@ -2123,6 +2131,9 @@ class KadhaEditor {
             }
 
             this.renderScenesTree(data.scenes_tree);
+            // Refresh trash count badge immediately
+            this.fetchSceneTrashCount();
+
             if (Number(sceneId) === Number(this.currentSceneId) && data.fallback_scene_id) {
                 if (this.editorMode === 'read') {
                     this.currentSceneId = Number(data.fallback_scene_id);
@@ -2135,11 +2146,11 @@ class KadhaEditor {
                 await this.loadCurrentScene();
             }
         } catch (err) {
-            alert('Failed to delete scene: ' + err.message);
-            this.setSaveStatus('error', 'Error deleting scene');
+            alert('Failed to move scene to Trash: ' + err.message);
+            this.setSaveStatus('error', 'Error moving scene to Trash');
         } finally {
             if (submitBtn) submitBtn.disabled = false;
-            if (submitBtnText) submitBtnText.innerText = 'Delete Scene';
+            if (submitBtnText) submitBtnText.innerText = 'Move to Trash';
             this.pendingDeleteSceneId = null;
         }
     }
@@ -2261,6 +2272,514 @@ class KadhaEditor {
 
         const btnTbSub = document.getElementById('btnToolbarAddSubScene');
         if (btnTbSub) btnTbSub.addEventListener('click', () => this.openSubSceneModal(this.currentSceneId));
+    }
+
+    // ----------------------------------------------------
+    // SCENE TRASH (BATCH 3D-D)
+    // ----------------------------------------------------
+    bindSceneTrashEvents() {
+        // Any button with .btn-open-scene-trash or #btnTopOpenSceneTrash / #btnNavOpenSceneTrash
+        document.querySelectorAll('.btn-open-scene-trash').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.openSceneTrashModal();
+            });
+        });
+
+        const retryBtn = document.getElementById('btnRetryLoadTrash');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                this.openSceneTrashModal();
+            });
+        }
+    }
+
+    async fetchSceneTrashCount() {
+        try {
+            const res = await fetch(`/scripts/api/${this.scriptId}/trash/scenes/`, {
+                headers: this.getHeaders()
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.status === 'ok') {
+                const count = data.total_trashed !== undefined ? data.total_trashed : (data.trashed_scenes ? data.trashed_scenes.length : 0);
+                this.updateTrashCountBadges(count);
+            }
+        } catch (e) {
+            console.error('Failed to fetch Scene Trash count:', e);
+        }
+    }
+
+    updateTrashCountBadges(count) {
+        document.querySelectorAll('.scene-trash-count').forEach(el => {
+            el.innerText = count;
+        });
+        const modalBadge = document.getElementById('sceneTrashModalCountBadge');
+        if (modalBadge) {
+            modalBadge.innerText = count;
+        }
+    }
+
+    async openSceneTrashModal() {
+        if (!this.trashModalEl) return;
+        const modal = bootstrap.Modal.getOrCreateInstance(this.trashModalEl);
+        modal.show();
+
+        const loadingEl = document.getElementById('sceneTrashLoadingState');
+        const emptyEl = document.getElementById('sceneTrashEmptyState');
+        const errorEl = document.getElementById('sceneTrashErrorState');
+        const listEl = document.getElementById('sceneTrashList');
+        const alertArea = document.getElementById('sceneTrashAlertArea');
+        const statsEl = document.getElementById('sceneTrashFooterStats');
+
+        if (loadingEl) loadingEl.style.display = 'block';
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (errorEl) errorEl.style.display = 'none';
+        if (listEl) {
+            listEl.style.display = 'none';
+            listEl.innerHTML = '';
+        }
+        if (alertArea) {
+            alertArea.style.display = 'none';
+            alertArea.innerHTML = '';
+        }
+        if (statsEl) statsEl.innerText = '';
+
+        try {
+            const res = await fetch(`/scripts/api/${this.scriptId}/trash/scenes/`, {
+                headers: this.getHeaders()
+            });
+
+            if (!res.ok) {
+                let errText = 'Failed to load Scene Trash (HTTP ' + res.status + ')';
+                try {
+                    const errData = await res.json();
+                    if (errData.message) errText = errData.message;
+                } catch (_) {}
+                throw new Error(errText);
+            }
+
+            const data = await res.json();
+            if (data.status !== 'ok') {
+                throw new Error(data.message || 'Error loading trashed scenes');
+            }
+
+            if (loadingEl) loadingEl.style.display = 'none';
+            const trashedScenes = data.trashed_scenes || [];
+            this.updateTrashCountBadges(trashedScenes.length);
+
+            if (trashedScenes.length === 0) {
+                if (emptyEl) emptyEl.style.display = 'block';
+                if (statsEl) statsEl.innerText = '0 scenes in Trash';
+            } else {
+                if (listEl) {
+                    listEl.style.display = 'flex';
+                    this.renderTrashItems(trashedScenes);
+                }
+                if (statsEl) {
+                    statsEl.innerText = `${trashedScenes.length} trashed scene${trashedScenes.length === 1 ? '' : 's'}`;
+                }
+            }
+        } catch (err) {
+            if (loadingEl) loadingEl.style.display = 'none';
+            if (errorEl) {
+                errorEl.style.display = 'block';
+                const msgEl = document.getElementById('sceneTrashErrorMessage');
+                if (msgEl) msgEl.innerText = err.message || 'Failed to load Scene Trash.';
+            }
+        }
+    }
+
+    renderTrashItems(trashedScenes) {
+        const listEl = document.getElementById('sceneTrashList');
+        if (!listEl) return;
+
+        // Collect all active main scenes from current screenplay for the parent dropdown
+        const activeMainScenes = [];
+        if (Array.isArray(this.scenesTree)) {
+            this.scenesTree.forEach(s => {
+                if (!s.is_sub_scene) {
+                    activeMainScenes.push({
+                        id: s.id,
+                        number: s.display_number || s.nav_identifier || `Scene ${s.order}`,
+                        heading: s.clean_heading || s.heading || 'UNTITLED SCENE'
+                    });
+                }
+            });
+        }
+
+        const escapeHtml = (str) => {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        };
+
+        const itemsHtml = trashedScenes.map(sc => {
+            const isSub = Boolean(sc.is_sub_scene);
+            const isIntercut = Boolean(sc.is_intercut);
+            const parentStatus = sc.parent_status; // 'active', 'trashed', 'missing', or null
+            const intercutStatus = sc.intercut_source_status; // 'active', 'trashed', 'missing', or null
+
+            // Badge for Scene Number / Identifier
+            let sceneDisplay = 'Scene number unavailable';
+            if (sc.scene_number && String(sc.scene_number).trim() !== '' && String(sc.scene_number).trim() !== '0' && String(sc.scene_number).trim() !== 'Scene 0') {
+                const rawNum = String(sc.scene_number).trim();
+                sceneDisplay = rawNum.startsWith('Scene ') ? rawNum : `Scene ${rawNum}`;
+            }
+            const sceneBadge = `<span class="badge bg-secondary-subtle text-dark border font-screenplay fs-6 px-2 py-1">${escapeHtml(sceneDisplay)}</span>`;
+
+            // Type Badges
+            let typeBadges = '';
+            if (isSub) {
+                typeBadges += `<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle me-1"><i class="bi bi-diagram-3 me-1"></i>Sub-scene</span>`;
+            } else {
+                typeBadges += `<span class="badge bg-primary-subtle text-primary border border-primary-subtle me-1"><i class="bi bi-camera-video me-1"></i>Main Scene</span>`;
+            }
+
+            if (isIntercut) {
+                let intercutBadgeClass = 'bg-info-subtle text-info border-info-subtle';
+                let intercutStatusText = 'Intercut';
+                if (intercutStatus === 'active') {
+                    intercutStatusText = 'Intercut (Source Active)';
+                } else if (intercutStatus === 'trashed') {
+                    intercutBadgeClass = 'bg-danger-subtle text-danger border-danger-subtle';
+                    intercutStatusText = 'Intercut (Source Trashed)';
+                } else if (intercutStatus === 'missing') {
+                    intercutBadgeClass = 'bg-secondary-subtle text-secondary border-secondary-subtle';
+                    intercutStatusText = 'Intercut (Source Missing)';
+                }
+                typeBadges += `<span class="badge ${intercutBadgeClass} border me-1"><i class="bi bi-arrow-left-right me-1"></i>${escapeHtml(intercutStatusText)}</span>`;
+            }
+
+            // Parent status info
+            let parentInfoHtml = '';
+            let requiresParentChoice = false;
+
+            if (isSub) {
+                const parentNumDisplay = sc.original_parent_scene_number ? `Scene ${sc.original_parent_scene_number}` : '';
+                if (parentStatus === 'active') {
+                    const parentDisplay = parentNumDisplay || 'Original Parent';
+                    parentInfoHtml = `<div class="small text-muted mt-1 d-flex align-items-center gap-1"><i class="bi bi-link-45deg text-success"></i> Parent: <span class="badge bg-success-subtle text-success border border-success-subtle">${escapeHtml(parentDisplay)} (Active)</span></div>`;
+                } else if (parentStatus === 'trashed') {
+                    requiresParentChoice = true;
+                    const parentLabel = parentNumDisplay ? ` (${parentNumDisplay})` : '';
+                    parentInfoHtml = `<div class="small text-danger mt-1 d-flex align-items-center gap-1"><i class="bi bi-exclamation-triangle-fill text-warning"></i> Original parent${escapeHtml(parentLabel)} is in Trash. Restoration requires selecting how to restore.</div>`;
+                } else {
+                    requiresParentChoice = true;
+                    const parentLabel = parentNumDisplay ? ` (${parentNumDisplay})` : '';
+                    parentInfoHtml = `<div class="small text-muted mt-1 d-flex align-items-center gap-1"><i class="bi bi-question-circle-fill text-secondary"></i> Original parent${escapeHtml(parentLabel)} is unavailable. Restoration requires selecting how to restore.</div>`;
+                }
+            }
+
+            // Options container for subscenes needing parent resolution
+            let parentChoiceControls = '';
+            if (isSub && requiresParentChoice) {
+                const parentOptionsHtml = activeMainScenes.map(p => {
+                    const optText = `${p.number}: ${p.heading}`;
+                    return `<option value="${escapeHtml(p.id)}">${escapeHtml(optText)}</option>`;
+                }).join('');
+
+                parentChoiceControls = `
+                    <div class="mt-2 p-2 bg-white rounded border small" id="restoreOptions_${escapeHtml(sc.id)}">
+                        <div class="fw-semibold text-dark mb-1">Choose Restoration Target:</div>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input restore-choice-radio" type="radio" name="restoreChoice_${escapeHtml(sc.id)}" id="restoreAsMain_${escapeHtml(sc.id)}" value="main_scene" checked>
+                            <label class="form-check-label text-dark" for="restoreAsMain_${escapeHtml(sc.id)}">
+                                <strong>Restore as Main Scene</strong> (promotes sub-scene to an independent scene)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input restore-choice-radio" type="radio" name="restoreChoice_${escapeHtml(sc.id)}" id="restoreAsParent_${escapeHtml(sc.id)}" value="specified_parent" ${activeMainScenes.length === 0 ? 'disabled' : ''}>
+                            <label class="form-check-label text-dark" for="restoreAsParent_${escapeHtml(sc.id)}">
+                                <strong>Choose an active parent scene:</strong>
+                            </label>
+                        </div>
+                        <div class="mt-2 ms-4" id="parentSelectWrapper_${escapeHtml(sc.id)}" style="display: none;">
+                            ${activeMainScenes.length > 0 ? `
+                                <select class="form-select form-select-sm" id="parentSelect_${escapeHtml(sc.id)}">
+                                    ${parentOptionsHtml}
+                                </select>
+                            ` : `
+                                <span class="text-danger small">No active main scenes available to attach to.</span>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Deleted timestamp
+            let deletedAtText = '';
+            if (sc.deleted_at) {
+                try {
+                    const dt = new Date(sc.deleted_at);
+                    deletedAtText = `<span class="small text-muted" title="${escapeHtml(sc.deleted_at)}"><i class="bi bi-clock-history me-1"></i>Moved to Trash ${escapeHtml(dt.toLocaleDateString())} ${escapeHtml(dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>`;
+                } catch (_) {}
+            }
+
+            const rawHeading = sc.heading || 'UNTITLED SCENE';
+
+            return `
+                <div class="card border rounded-3 p-3 bg-light shadow-sm scene-trash-item" id="trashedSceneCard_${escapeHtml(sc.id)}">
+                    <div class="d-flex align-items-start justify-content-between gap-3">
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                                ${sceneBadge}
+                                ${typeBadges}
+                                <span class="font-screenplay fw-bold text-dark text-truncate fs-6" title="${escapeHtml(rawHeading)}">${escapeHtml(rawHeading)}</span>
+                            </div>
+                            ${parentInfoHtml}
+                            ${parentChoiceControls}
+                            <div class="mt-2">
+                                ${deletedAtText}
+                            </div>
+                        </div>
+
+                        <!-- Action Button -->
+                        <div class="flex-shrink-0 d-flex flex-column align-items-end gap-1">
+                            <button type="button" class="btn btn-sm btn-success px-3 d-inline-flex align-items-center gap-1 btn-restore-scene"
+                                id="btnRestoreScene_${escapeHtml(sc.id)}"
+                                data-scene-id="${escapeHtml(sc.id)}"
+                                data-is-sub="${isSub}"
+                                data-requires-parent="${requiresParentChoice}">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                                <span>Restore</span>
+                            </button>
+                            <span class="small text-muted" style="font-size: 0.72rem;">Safe Recovery</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        listEl.innerHTML = itemsHtml;
+
+        // Bind Radio Toggle for Parent Select Dropdowns
+        trashedScenes.forEach(sc => {
+            const isSub = Boolean(sc.is_sub_scene);
+            const requiresParentChoice = isSub && (sc.parent_status === 'trashed' || sc.parent_status === 'missing');
+            if (requiresParentChoice) {
+                const radioMain = document.getElementById(`restoreAsMain_${sc.id}`);
+                const radioParent = document.getElementById(`restoreAsParent_${sc.id}`);
+                const selectWrapper = document.getElementById(`parentSelectWrapper_${sc.id}`);
+
+                if (radioMain && radioParent && selectWrapper) {
+                    radioMain.addEventListener('change', () => {
+                        if (radioMain.checked) selectWrapper.style.display = 'none';
+                    });
+                    radioParent.addEventListener('change', () => {
+                        if (radioParent.checked) selectWrapper.style.display = 'block';
+                    });
+                }
+            }
+        });
+
+        // Bind Restore Button Clicks
+        listEl.querySelectorAll('.btn-restore-scene').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const sceneId = btn.dataset.sceneId;
+                const requiresParent = btn.dataset.requiresParent === 'true';
+
+                let payload = {};
+                if (requiresParent) {
+                    const radioParent = document.getElementById(`restoreAsParent_${sceneId}`);
+                    if (radioParent && radioParent.checked) {
+                        const selectEl = document.getElementById(`parentSelect_${sceneId}`);
+                        const chosenParentId = selectEl ? selectEl.value : null;
+                        if (!chosenParentId) {
+                            alert('Please select an active parent scene.');
+                            return;
+                        }
+                        payload = {
+                            restore_as: 'specified_parent',
+                            target_parent_id: parseInt(chosenParentId, 10)
+                        };
+                    } else {
+                        payload = {
+                            restore_as: 'main_scene'
+                        };
+                    }
+                } else {
+                    payload = {
+                        restore_as: 'auto'
+                    };
+                }
+
+                await this.restoreScene(sceneId, payload, btn);
+            });
+        });
+    }
+
+    async restoreScene(sceneId, payload, btnEl) {
+        if (this.isRestoringScene) return;
+        this.isRestoringScene = true;
+
+        const originalBtnHtml = btnEl ? btnEl.innerHTML : 'Restore';
+        if (btnEl) {
+            btnEl.disabled = true;
+            btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Restoring...';
+        }
+
+        const alertArea = document.getElementById('sceneTrashAlertArea');
+        if (alertArea) {
+            alertArea.style.display = 'none';
+            alertArea.innerHTML = '';
+        }
+
+        try {
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${sceneId}/restore/`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json().catch(() => null);
+
+            if (!res.ok || !data || data.status !== 'ok') {
+                let errMsg = 'Failed to restore scene';
+                if (data && data.message) {
+                    errMsg = data.message;
+                } else if (res.status === 400) {
+                    errMsg = 'Cannot restore scene: invalid restoration parameters.';
+                } else if (res.status === 403) {
+                    errMsg = 'Permission denied: you do not have permission to restore this scene.';
+                } else if (res.status === 404) {
+                    errMsg = 'Scene or screenplay not found.';
+                } else if (res.status === 405) {
+                    errMsg = 'Incorrect HTTP method.';
+                } else if (res.status >= 500) {
+                    errMsg = 'Server error occurred while restoring the scene. Please try again.';
+                }
+                throw new Error(errMsg);
+            }
+
+            // Successful restore!
+            // 1. Remove the scene card from the trash list
+            const cardEl = document.getElementById(`trashedSceneCard_${sceneId}`);
+            if (cardEl) {
+                cardEl.remove();
+            }
+
+            // 2. Refresh active Scene Navigator and stats
+            if (data.scenes_tree) {
+                this.renderScenesTree(data.scenes_tree);
+            }
+            if (data.script_stats) {
+                this.updateStats(data.script_stats);
+            }
+
+            // 3. Refresh trash count badge
+            await this.fetchSceneTrashCount();
+
+            // 4. Check if trash list is now empty
+            const remainingCards = document.querySelectorAll('.scene-trash-item');
+            const emptyEl = document.getElementById('sceneTrashEmptyState');
+            const statsEl = document.getElementById('sceneTrashFooterStats');
+            if (remainingCards.length === 0) {
+                if (emptyEl) emptyEl.style.display = 'block';
+                if (statsEl) statsEl.innerText = '0 scenes in Trash';
+            } else if (statsEl) {
+                statsEl.innerText = `${remainingCards.length} trashed scene${remainingCards.length === 1 ? '' : 's'}`;
+            }
+
+            // 5. Show intercut fallback notice or success alert
+            if (alertArea) {
+                alertArea.innerHTML = '';
+                if (data.intercut_fallback) {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-warning alert-dismissible fade show py-2 px-3 small d-flex align-items-center gap-2 mb-3';
+                    alertDiv.setAttribute('role', 'alert');
+
+                    const icon = document.createElement('i');
+                    icon.className = 'bi bi-exclamation-triangle-fill text-warning flex-shrink-0 fs-6';
+                    alertDiv.appendChild(icon);
+
+                    const contentDiv = document.createElement('div');
+                    const strong = document.createElement('strong');
+                    strong.textContent = 'Intercut Notice: ';
+                    contentDiv.appendChild(strong);
+                    contentDiv.appendChild(document.createTextNode('The scene was restored, but its original intercut source is no longer available. It was restored as a normal scene.'));
+                    alertDiv.appendChild(contentDiv);
+
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'btn-close';
+                    closeBtn.setAttribute('data-bs-dismiss', 'alert');
+                    closeBtn.setAttribute('aria-label', 'Close');
+                    alertDiv.appendChild(closeBtn);
+
+                    alertArea.appendChild(alertDiv);
+                    alertArea.style.display = 'block';
+                } else {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-success alert-dismissible fade show py-2 px-3 small d-flex align-items-center gap-2 mb-3';
+                    alertDiv.setAttribute('role', 'alert');
+
+                    const icon = document.createElement('i');
+                    icon.className = 'bi bi-check-circle-fill text-success flex-shrink-0 fs-6';
+                    alertDiv.appendChild(icon);
+
+                    const contentDiv = document.createElement('div');
+                    contentDiv.textContent = data.message || 'Scene restored successfully!';
+                    alertDiv.appendChild(contentDiv);
+
+                    const closeBtn = document.createElement('button');
+                    closeBtn.type = 'button';
+                    closeBtn.className = 'btn-close';
+                    closeBtn.setAttribute('data-bs-dismiss', 'alert');
+                    closeBtn.setAttribute('aria-label', 'Close');
+                    alertDiv.appendChild(closeBtn);
+
+                    alertArea.appendChild(alertDiv);
+                    alertArea.style.display = 'block';
+                }
+            }
+
+            // If in edit mode and restoring might have added a scene, make sure read mode syncs if needed
+            if (this.editorMode === 'read' && data.restored_scene_id) {
+                // If the user desires to scroll to the restored scene:
+                const restoredEl = document.getElementById(`read-scene-${data.restored_scene_id}`);
+                if (restoredEl) {
+                    restoredEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
+        } catch (err) {
+            console.error('Scene restore error:', err);
+            if (alertArea) {
+                alertArea.innerHTML = '';
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show py-2 px-3 small d-flex align-items-center gap-2 mb-3';
+                alertDiv.setAttribute('role', 'alert');
+
+                const icon = document.createElement('i');
+                icon.className = 'bi bi-exclamation-octagon-fill text-danger flex-shrink-0 fs-6';
+                alertDiv.appendChild(icon);
+
+                const contentDiv = document.createElement('div');
+                contentDiv.textContent = err.message || 'An error occurred while restoring the scene.';
+                alertDiv.appendChild(contentDiv);
+
+                const closeBtn = document.createElement('button');
+                closeBtn.type = 'button';
+                closeBtn.className = 'btn-close';
+                closeBtn.setAttribute('data-bs-dismiss', 'alert');
+                closeBtn.setAttribute('aria-label', 'Close');
+                alertDiv.appendChild(closeBtn);
+
+                alertArea.appendChild(alertDiv);
+                alertArea.style.display = 'block';
+            }
+            if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.innerHTML = originalBtnHtml;
+            }
+        } finally {
+            this.isRestoringScene = false;
+        }
     }
 
     // ----------------------------------------------------
