@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_http_methods
-from django.db import transaction
+from django.db import transaction, models
 from django.utils import timezone
 from .models import Script, Scene, ScriptElement, Character
 from .services.scene_service import (
@@ -15,19 +15,26 @@ from .services.scene_service import (
     duplicate_scene,
     move_scene,
     serialize_scenes_hierarchy,
+    restore_scene_to_script,
 )
 
 
-def get_user_script(user, script_id):
-    """Enforce strict ownership: user can only access their own scripts."""
-    return get_object_or_404(Script, id=script_id, user=user)
+def get_user_script(user, script_id, allow_deleted=False):
+    """
+    Enforce strict user ownership and active status for editor APIs.
+    Rejects trashed screenplays by default.
+    When allow_deleted=True, permits access to trashed screenplays still owned by user.
+    """
+    if allow_deleted:
+        return get_object_or_404(Script, id=script_id, user=user)
+    return get_object_or_404(Script, id=script_id, user=user, is_deleted=False)
 
 
 @login_required
 @require_http_methods(["GET"])
 def api_get_scene(request, script_id, scene_id):
     script = get_user_script(request.user, script_id)
-    scene = get_object_or_404(Scene, id=scene_id, script=script)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
 
     elements_data = []
     for elem in scene.elements.all().order_by('order', 'id'):
@@ -87,7 +94,7 @@ def api_get_scene(request, script_id, scene_id):
 def api_save_scene(request, script_id, scene_id):
     """Atomic auto-save endpoint for scene heading and elements."""
     script = get_user_script(request.user, script_id)
-    scene = get_object_or_404(Scene, id=scene_id, script=script)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
 
     try:
         data = json.loads(request.body)
@@ -208,7 +215,7 @@ def api_insert_scene(request, script_id):
     summary = data.get('summary', '').strip()
 
     if reference_scene_id:
-        get_object_or_404(Scene, id=reference_scene_id, script=script)
+        get_object_or_404(Scene, id=reference_scene_id, script=script, is_deleted=False)
 
     new_scene = insert_scene_relative(
         script,
@@ -244,7 +251,7 @@ def api_insert_scene(request, script_id):
 def api_create_sub_scene(request, script_id, parent_scene_id):
     """Creates a sub-scene (e.g. Scene 3A) under a parent scene."""
     script = get_user_script(request.user, script_id)
-    parent_scene = get_object_or_404(Scene, id=parent_scene_id, script=script)
+    parent_scene = get_object_or_404(Scene, id=parent_scene_id, script=script, is_deleted=False)
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -293,9 +300,9 @@ def api_create_sub_scene_2(request, script_id):
     if not source_scene_id:
         return JsonResponse({'status': 'error', 'message': 'Source scene ID is required'}, status=400)
 
-    get_object_or_404(Scene, id=source_scene_id, script=script)
+    get_object_or_404(Scene, id=source_scene_id, script=script, is_deleted=False)
     if current_scene_id:
-        get_object_or_404(Scene, id=current_scene_id, script=script)
+        get_object_or_404(Scene, id=current_scene_id, script=script, is_deleted=False)
 
     new_sub = create_sub_scene_2(script, source_scene_id=source_scene_id, current_scene_id=current_scene_id)
 
@@ -336,9 +343,9 @@ def api_create_intercut(request, script_id):
     if not source_scene_id:
         return JsonResponse({'status': 'error', 'message': 'Source scene ID is required'}, status=400)
 
-    get_object_or_404(Scene, id=source_scene_id, script=script)
+    get_object_or_404(Scene, id=source_scene_id, script=script, is_deleted=False)
     if current_scene_id:
-        get_object_or_404(Scene, id=current_scene_id, script=script)
+        get_object_or_404(Scene, id=current_scene_id, script=script, is_deleted=False)
 
     new_scene = create_intercut_scene(script, source_scene_id=source_scene_id, current_scene_id=current_scene_id)
 
@@ -369,7 +376,7 @@ def api_create_intercut(request, script_id):
 def api_move_scene(request, script_id, scene_id):
     """Moves a scene or sub-scene up or down among its immediate siblings."""
     script = get_user_script(request.user, script_id)
-    scene = get_object_or_404(Scene, id=scene_id, script=script)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
 
     try:
         data = json.loads(request.body) if request.body else {}
@@ -392,7 +399,7 @@ def api_move_scene(request, script_id, scene_id):
 @require_http_methods(["POST"])
 def api_duplicate_scene(request, script_id, scene_id):
     script = get_user_script(request.user, script_id)
-    source_scene = get_object_or_404(Scene, id=scene_id, script=script)
+    source_scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
 
     new_scene = duplicate_scene(script, source_scene)
 
@@ -418,33 +425,71 @@ def api_duplicate_scene(request, script_id, scene_id):
 @require_http_methods(["POST"])
 def api_delete_scene(request, script_id, scene_id):
     script = get_user_script(request.user, script_id)
-    scene = get_object_or_404(Scene, id=scene_id, script=script)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
 
-    # Don't delete if it's the last remaining main scene and there are no other scenes
-    if script.scenes.count() <= 1:
+    # Calculate active scenes that would be soft-deleted by this operation
+    if scene.is_sub_scene:
+        scenes_to_delete = [scene]
+    else:
+        # Main scene soft-deletes itself and all its active sub-scenes
+        scenes_to_delete = [scene] + list(scene.sub_scenes.filter(is_deleted=False))
+
+    total_active_scenes = script.scenes.filter(is_deleted=False).count()
+    if total_active_scenes <= len(scenes_to_delete):
         return JsonResponse({
             'status': 'error',
             'message': 'Cannot delete the only scene in the script. You can edit its contents instead.'
         }, status=400)
 
-    # Determine a safe adjacent scene to switch to
+    # Determine a safe adjacent active scene to switch to
     ordered_scenes = script.get_ordered_scenes()
-    current_idx = -1
-    for i, s in enumerate(ordered_scenes):
-        if s.id == scene.id:
-            current_idx = i
-            break
+    deleting_ids = {s.id for s in scenes_to_delete}
+    active_surviving_scenes = [s for s in ordered_scenes if s.id not in deleting_ids]
 
     fallback_scene_id = None
-    if current_idx > 0:
-        fallback_scene_id = ordered_scenes[current_idx - 1].id
-    elif current_idx + 1 < len(ordered_scenes):
-        fallback_scene_id = ordered_scenes[current_idx + 1].id
+    if active_surviving_scenes:
+        # Find first surviving scene before the first deleting scene in order
+        target_order = scene.order
+        before_candidates = [s for s in active_surviving_scenes if s.order < target_order]
+        if before_candidates:
+            fallback_scene_id = before_candidates[-1].id
+        else:
+            fallback_scene_id = active_surviving_scenes[0].id
+
+    now = timezone.now()
 
     with transaction.atomic():
-        scene.delete()
+        for sc in scenes_to_delete:
+            sc.is_deleted = True
+            sc.deleted_at = now
+            sc.original_order = sc.order
+
+            if sc.is_sub_scene and sc.parent_scene:
+                sc.original_parent_uuid = sc.parent_scene.scene_uuid
+                sc.original_parent_scene_number = sc.parent_scene.scene_number
+                sc.original_parent_heading = sc.parent_scene.heading
+            else:
+                sc.original_parent_uuid = None
+                sc.original_parent_scene_number = None
+                sc.original_parent_heading = ''
+
+            if sc.is_intercut and sc.intercut_source:
+                sc.original_intercut_source_uuid = sc.intercut_source.scene_uuid
+            else:
+                sc.original_intercut_source_uuid = None
+
+            sc.save(update_fields=[
+                'is_deleted',
+                'deleted_at',
+                'original_order',
+                'original_parent_uuid',
+                'original_parent_scene_number',
+                'original_parent_heading',
+                'original_intercut_source_uuid',
+            ])
+
         resequence_script_scenes(script)
-        script.updated_at = timezone.now()
+        script.updated_at = now
         script.save(update_fields=['updated_at'])
 
     return JsonResponse({
@@ -466,9 +511,12 @@ def api_reorder_scenes(request, script_id):
 
     with transaction.atomic():
         for order_idx, sc_id in enumerate(scene_ids):
-            Scene.objects.filter(id=sc_id, script=script, parent_scene__isnull=True).update(
-                order=order_idx
-            )
+            Scene.objects.filter(
+                id=sc_id,
+                script=script,
+                parent_scene__isnull=True,
+                is_deleted=False
+            ).update(order=order_idx)
         resequence_script_scenes(script)
         script.updated_at = timezone.now()
         script.save(update_fields=['updated_at'])
@@ -503,3 +551,179 @@ def api_get_characters(request, script_id):
     script = get_user_script(request.user, script_id)
     names = list(script.characters.values_list('name', flat=True))
     return JsonResponse({'status': 'ok', 'characters': names})
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_get_trashed_scenes(request, script_id):
+    """
+    Lists soft-deleted scenes for an active screenplay belonging to the authenticated user.
+    Deterministic ordering: original_order asc (nulls last), then order, then id.
+    Excludes screenplay body text, elements, dialogue, notes.
+    Reports parent status (active, trashed, missing) and intercut source status (active, trashed, missing).
+    """
+    script = get_user_script(request.user, script_id, allow_deleted=False)
+
+    trashed_scenes = script.scenes.filter(is_deleted=True).order_by(
+        models.F('original_order').asc(nulls_last=True),
+        'order',
+        'id'
+    )
+
+    results = []
+    for sc in trashed_scenes:
+        # Determine parent status for sub-scenes
+        is_sub = sc.is_sub_scene or bool(sc.original_parent_uuid) or bool(sc.parent_scene_id)
+        parent_status = None
+        if is_sub:
+            parent_status = "missing"
+            if sc.original_parent_uuid:
+                if script.scenes.filter(scene_uuid=sc.original_parent_uuid, is_deleted=False, parent_scene__isnull=True).exists():
+                    parent_status = "active"
+                elif script.scenes.filter(scene_uuid=sc.original_parent_uuid, is_deleted=True).exists():
+                    parent_status = "trashed"
+            elif sc.parent_scene_id:
+                try:
+                    p = script.scenes.get(id=sc.parent_scene_id)
+                    if not p.is_deleted:
+                        parent_status = "active"
+                    else:
+                        parent_status = "trashed"
+                except Scene.DoesNotExist:
+                    parent_status = "missing"
+
+        # Determine intercut source status for intercut scenes
+        is_intercut_scene = sc.is_intercut or bool(sc.original_intercut_source_uuid) or bool(sc.intercut_source_id)
+        intercut_source_status = None
+        if is_intercut_scene:
+            intercut_source_status = "missing"
+            if sc.original_intercut_source_uuid:
+                if script.scenes.filter(scene_uuid=sc.original_intercut_source_uuid, is_deleted=False).exists():
+                    intercut_source_status = "active"
+                elif script.scenes.filter(scene_uuid=sc.original_intercut_source_uuid, is_deleted=True).exists():
+                    intercut_source_status = "trashed"
+            elif sc.intercut_source_id:
+                try:
+                    src = script.scenes.get(id=sc.intercut_source_id)
+                    if not src.is_deleted:
+                        intercut_source_status = "active"
+                    else:
+                        intercut_source_status = "trashed"
+                except Scene.DoesNotExist:
+                    intercut_source_status = "missing"
+
+        results.append({
+            'id': sc.id,
+            'scene_uuid': sc.scene_uuid,
+            'heading': sc.heading,
+            'scene_number': sc.display_number or (str(sc.scene_number) if sc.scene_number else ""),
+            'deleted_at': sc.deleted_at.isoformat() if sc.deleted_at else None,
+            'original_order': sc.original_order,
+            'is_sub_scene': is_sub,
+            'parent_scene_id': sc.parent_scene_id,
+            'original_parent_uuid': sc.original_parent_uuid,
+            'original_parent_scene_number': sc.original_parent_scene_number,
+            'original_parent_heading': sc.original_parent_heading,
+            'parent_status': parent_status,
+            'is_intercut': is_intercut_scene,
+            'intercut_source_id': sc.intercut_source_id,
+            'original_intercut_source_uuid': sc.original_intercut_source_uuid,
+            'intercut_source_status': intercut_source_status,
+        })
+
+    return JsonResponse({
+        'status': 'ok',
+        'total_trashed': len(results),
+        'trashed_scenes': results,
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_restore_scene(request, script_id, scene_id):
+    """
+    Restores a soft-deleted scene belonging to the specified active screenplay.
+    Rejects already-active scenes and scenes belonging to trashed screenplays.
+    Accepts JSON payload:
+      - restore_as: "auto" | "main_scene" | "specified_parent"
+      - target_parent_id: integer (required when restore_as == "specified_parent")
+    """
+    script = get_user_script(request.user, script_id, allow_deleted=False)
+    scene = get_object_or_404(Scene, id=scene_id, script=script)
+
+    if not scene.is_deleted:
+        return JsonResponse({
+            'status': 'error',
+            'message': f"Scene {scene_id} is already active."
+        }, status=400)
+
+    payload = {}
+    if request.body:
+        try:
+            payload = json.loads(request.body)
+            if not isinstance(payload, dict):
+                return JsonResponse({
+                    'status': 'error',
+                    'message': 'Request payload must be a JSON object.'
+                }, status=400)
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'Invalid JSON body.'
+            }, status=400)
+
+    restore_as = payload.get('restore_as', 'auto')
+    if restore_as not in ('auto', 'main_scene', 'specified_parent'):
+        return JsonResponse({
+            'status': 'error',
+            'message': f"Invalid restore_as option '{restore_as}'. Must be 'auto', 'main_scene', or 'specified_parent'."
+        }, status=400)
+
+    target_parent_id = payload.get('target_parent_id')
+    if restore_as == 'specified_parent':
+        if not target_parent_id:
+            return JsonResponse({
+                'status': 'error',
+                'message': 'target_parent_id is required when restore_as is specified_parent.'
+            }, status=400)
+        try:
+            target_parent_id = int(target_parent_id)
+        except (TypeError, ValueError):
+            return JsonResponse({
+                'status': 'error',
+                'message': 'target_parent_id must be a valid integer.'
+            }, status=400)
+
+    try:
+        restored_scene, intercut_fallback, message = restore_scene_to_script(
+            script=script,
+            scene=scene,
+            restore_as=restore_as,
+            target_parent_id=target_parent_id
+        )
+    except ValueError as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=400)
+    except Exception:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'An unexpected error occurred while restoring the scene.'
+        }, status=500)
+
+    return JsonResponse({
+        'status': 'ok',
+        'message': message,
+        'restored_scene_id': restored_scene.id,
+        'intercut_fallback': intercut_fallback,
+        'scenes_tree': serialize_scenes_hierarchy(script),
+        'script_stats': {
+            'word_count': script.word_count,
+            'char_count': script.char_count,
+            'scene_count': script.scene_count,
+            'primary_scene_count': script.primary_scene_count,
+            'sub_scene_count': script.sub_scene_count,
+            'estimated_pages': script.estimated_pages,
+        }
+    })

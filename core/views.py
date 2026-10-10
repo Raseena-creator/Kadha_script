@@ -11,15 +11,15 @@ def landing_view(request):
 @login_required
 def dashboard_view(request):
     user = request.user
-    user_scripts = Script.objects.filter(user=user)
+    user_scripts = Script.objects.filter(user=user, is_deleted=False)
     
     total_scripts = user_scripts.count()
-    total_scenes = Scene.objects.filter(script__user=user, is_intercut=False).count()
-    total_primary_scenes = Scene.objects.filter(script__user=user, parent_scene__isnull=True, is_intercut=False).count()
-    total_sub_scenes = Scene.objects.filter(script__user=user, parent_scene__isnull=False, is_intercut=False).count()
+    total_scenes = Scene.objects.filter(script__user=user, script__is_deleted=False, is_deleted=False, is_intercut=False).count()
+    total_primary_scenes = Scene.objects.filter(script__user=user, script__is_deleted=False, is_deleted=False, parent_scene__isnull=True, is_intercut=False).count()
+    total_sub_scenes = Scene.objects.filter(script__user=user, script__is_deleted=False, is_deleted=False, parent_scene__isnull=False, is_intercut=False).count()
     
     scripts = user_scripts.annotate(
-        num_scenes=Count('scenes', filter=Q(scenes__parent_scene__isnull=True, scenes__is_intercut=False))
+        num_scenes=Count('scenes', filter=Q(scenes__is_deleted=False, scenes__parent_scene__isnull=True, scenes__is_intercut=False))
     ).order_by('-updated_at')
 
     return render(request, 'core/dashboard.html', {
@@ -46,29 +46,29 @@ def global_search_view(request):
     }
 
     if query:
-        # Script title / description
+        # Script title / description (active scripts only)
         results['scripts'] = Script.objects.filter(
-            Q(user=user) &
+            Q(user=user, is_deleted=False) &
             (Q(title__icontains=query) | Q(description__icontains=query) | Q(author_name__icontains=query))
         )
-        # Scenes heading / summary
+        # Scenes heading / summary (active scenes in active scripts only)
         results['scenes'] = Scene.objects.filter(
-            Q(script__user=user) &
+            Q(script__user=user, script__is_deleted=False, is_deleted=False) &
             (Q(heading__icontains=query) | Q(summary__icontains=query))
         ).select_related('script')
-        # Script Elements (dialogue, action, character)
+        # Script Elements (dialogue, action, character) (active scenes in active scripts only)
         results['dialogues'] = ScriptElement.objects.filter(
-            Q(scene__script__user=user) &
+            Q(scene__script__user=user, scene__script__is_deleted=False, scene__is_deleted=False) &
             Q(content__icontains=query)
         ).select_related('scene', 'scene__script')[:30]
-        # Characters
+        # Characters (active scripts only)
         results['characters'] = Character.objects.filter(
-            Q(script__user=user) &
+            Q(script__user=user, script__is_deleted=False) &
             (Q(name__icontains=query) | Q(description__icontains=query))
         ).select_related('script')
-        # Notes
+        # Notes (active scripts only)
         results['notes'] = ScriptNote.objects.filter(
-            Q(script__user=user) &
+            Q(script__user=user, script__is_deleted=False) &
             (Q(title__icontains=query) | Q(content__icontains=query))
         ).select_related('script')
 

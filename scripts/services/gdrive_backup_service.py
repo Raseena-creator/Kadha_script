@@ -256,10 +256,15 @@ def run_daily_screenplay_backup(
             err = f"Script with ID {script_id} not found."
             logger.error(err)
             return {'success': False, 'error': err, 'date': date_str}
+
+        if script.is_deleted:
+            err = f"Cannot back up trashed screenplay '{script.title}' (ID: {script.id})."
+            logger.error(err)
+            return {'success': False, 'error': err, 'date': date_str}
     else:
-        script = Script.objects.order_by('-updated_at').first()
+        script = Script.objects.filter(is_deleted=False).order_by('-updated_at').first()
         if not script:
-            err = "No screenplay scripts found in the database to backup."
+            err = "No active screenplay scripts found in the database to backup."
             logger.warning(err)
             return {'success': False, 'error': err, 'date': date_str}
 

@@ -4,12 +4,14 @@ from . import views, api_views
 urlpatterns = [
     path('', views.script_list_view, name='script_list'),
     path('new/', views.script_create_view, name='script_create'),
+    path('trash/', views.script_trash_view, name='script_trash'),
     path('<int:script_id>/', views.script_detail_view, name='script_detail'),
     path('<int:script_id>/edit-info/', views.script_edit_metadata_view, name='script_edit_metadata'),
     path('<int:script_id>/rename/', views.script_rename_view, name='script_rename'),
     path('<int:script_id>/title-page/', views.script_title_page_view, name='script_title_page'),
     path('<int:script_id>/duplicate/', views.script_duplicate_view, name='script_duplicate'),
     path('<int:script_id>/delete/', views.script_delete_view, name='script_delete'),
+    path('<int:script_id>/restore/', views.script_restore_view, name='script_restore'),
     path('<int:script_id>/editor/', views.script_editor_view, name='script_editor'),
     path('<int:script_id>/scenes/', views.scenes_management_view, name='scenes_management'),
     path('<int:script_id>/characters/', views.character_management_view, name='character_management'),
@@ -34,4 +36,6 @@ urlpatterns = [
     path('api/<int:script_id>/scenes/<int:scene_id>/duplicate/', api_views.api_duplicate_scene, name='api_duplicate_scene'),
     path('api/<int:script_id>/scenes/reorder/', api_views.api_reorder_scenes, name='api_reorder_scenes'),
     path('api/<int:script_id>/characters/', api_views.api_get_characters, name='api_get_characters'),
+    path('api/<int:script_id>/trash/scenes/', api_views.api_get_trashed_scenes, name='api_get_trashed_scenes'),
+    path('api/<int:script_id>/scenes/<int:scene_id>/restore/', api_views.api_restore_scene, name='api_restore_scene'),
 ]

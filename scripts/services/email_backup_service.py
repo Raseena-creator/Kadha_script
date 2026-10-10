@@ -330,7 +330,7 @@ def run_daily_email_backup(
 
     if script_id is not None:
         try:
-            target_scripts = [Script.objects.get(id=script_id)]
+            target_script = Script.objects.get(id=script_id)
         except Script.DoesNotExist:
             err = f"Script with ID {script_id} does not exist."
             logger.error(err)
@@ -353,10 +353,35 @@ def run_daily_email_backup(
                     'error': err
                 }]
             }
+
+        if target_script.is_deleted:
+            err = f"Cannot back up trashed screenplay '{target_script.title}' (ID: {target_script.id})."
+            logger.error(err)
+            return {
+                'success': False,
+                'total_scripts': 0,
+                'successful_count': 0,
+                'skipped_count': 0,
+                'failed_count': 1,
+                'results': [{
+                    'success': False,
+                    'skipped': False,
+                    'script_id': target_script.id,
+                    'script_title': target_script.title,
+                    'filename': '',
+                    'date': date_str,
+                    'recipient': recipient_email or '',
+                    'pdf_size': 0,
+                    'local_path': None,
+                    'error': err
+                }]
+            }
+
+        target_scripts = [target_script]
     else:
-        target_scripts = list(Script.objects.all().order_by('-updated_at'))
+        target_scripts = list(Script.objects.filter(is_deleted=False).order_by('-updated_at'))
         if not target_scripts:
-            msg = "No scripts found in the database to back up."
+            msg = "No active scripts found in the database to back up."
             logger.warning(msg)
             return {
                 'success': True,

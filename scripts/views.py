@@ -2,9 +2,10 @@ import json
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import HttpResponse, Http404, JsonResponse
+from django.http import HttpResponse, Http404, JsonResponse, HttpResponseNotAllowed
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.text import slugify
 from .models import Script, Scene, ScriptElement, Character, ScriptNote, ScriptVersion, ScriptTitlePage
 from .forms import ScriptForm, CharacterForm, ScriptNoteForm, ScriptVersionForm, SceneForm, ScriptTitlePageForm
@@ -14,13 +15,19 @@ from .services.txt_export import generate_screenplay_txt
 from .services.version_service import create_version_snapshot, restore_version_snapshot
 
 
-def get_user_script(user, script_id):
-    """Enforce strict user ownership."""
-    return get_object_or_404(Script, id=script_id, user=user)
+def get_user_script(user, script_id, allow_deleted=False):
+    """
+    Enforce strict user ownership and active status.
+    By default, returns only active (non-deleted) screenplays owned by user.
+    When allow_deleted=True, permits access to trashed screenplays still owned by user.
+    """
+    if allow_deleted:
+        return get_object_or_404(Script, id=script_id, user=user)
+    return get_object_or_404(Script, id=script_id, user=user, is_deleted=False)
 
 @login_required
 def script_list_view(request):
-    scripts = Script.objects.filter(user=request.user).prefetch_related('scenes__elements', 'characters')
+    scripts = Script.objects.filter(user=request.user, is_deleted=False).prefetch_related('scenes__elements', 'characters')
     
     # Filtering
     query = request.GET.get('q', '').strip()
@@ -45,7 +52,25 @@ def script_list_view(request):
         'script_type': script_type,
         'genres': Script.GENRE_CHOICES,
         'script_types': Script.SCRIPT_TYPE_CHOICES,
-        'total_count': Script.objects.filter(user=request.user).count(),
+        'total_count': Script.objects.filter(user=request.user, is_deleted=False).count(),
+    })
+
+
+@login_required
+def script_trash_view(request):
+    """
+    Project Trash view.
+    Retrieves and displays soft-deleted screenplays owned by the current authenticated user.
+    Strictly read-only; active projects are never displayed.
+    """
+    trashed_scripts = Script.objects.filter(
+        user=request.user,
+        is_deleted=True
+    ).order_by('-deleted_at')
+
+    return render(request, 'scripts/script_trash.html', {
+        'trashed_scripts': trashed_scripts,
+        'total_trashed': trashed_scripts.count(),
     })
 
 
@@ -266,19 +291,65 @@ def script_delete_view(request, script_id):
     if request.method == 'POST':
         title = script.title
         with transaction.atomic():
-            script.delete()
+            script.is_deleted = True
+            script.deleted_at = timezone.now()
+            script.save(update_fields=['is_deleted', 'deleted_at'])
         if request.headers.get('x-requested-with') == 'XMLHttpRequest' or request.content_type == 'application/json':
-            total_scripts = Script.objects.filter(user=request.user).count()
-            total_scenes = Scene.objects.filter(script__user=request.user).count()
+            total_scripts = Script.objects.filter(user=request.user, is_deleted=False).count()
+            total_scenes = Scene.objects.filter(script__user=request.user, script__is_deleted=False, is_deleted=False, is_intercut=False).count()
             return JsonResponse({
                 'status': 'ok',
-                'message': f'Script "{title}" has been permanently deleted.',
+                'message': f'Script "{title}" moved to Trash.',
                 'total_scripts': total_scripts,
                 'total_scenes': total_scenes
             })
-        messages.success(request, f'Script "{title}" has been permanently deleted.')
+        messages.success(request, f'Script "{title}" moved to Trash.')
         return redirect('script_list')
     return render(request, 'scripts/script_confirm_delete.html', {'script': script})
+
+
+@login_required
+def script_restore_view(request, script_id):
+    """
+    Safely restores a soft-deleted screenplay owned by the authenticated user from Trash.
+    Accepts POST requests only.
+    Sets is_deleted=False and clears deleted_at.
+    Preserves all scenes, elements, characters, notes, title-page, versions, and backup logs.
+    Preserves scene Trash states (does not reactivate independently trashed scenes).
+    Checks for active screenplays with duplicate titles and displays an informative warning.
+    """
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    # Enforce strict user ownership, allowing retrieval of trashed scripts
+    script = get_user_script(request.user, script_id, allow_deleted=True)
+
+    # Reject already active screenplay
+    if not script.is_deleted:
+        messages.info(request, f'Script "{script.title}" is already active.')
+        return redirect('dashboard')
+
+    with transaction.atomic():
+        script.is_deleted = False
+        script.deleted_at = None
+        script.save(update_fields=['is_deleted', 'deleted_at'])
+
+    # Check if another active screenplay owned by this user has the exact same title
+    has_title_collision = Script.objects.filter(
+        user=request.user,
+        is_deleted=False,
+        title=script.title
+    ).exclude(id=script.id).exists()
+
+    if has_title_collision:
+        messages.warning(
+            request,
+            f'Screenplay "{script.title}" restored successfully. Note: You already have another active screenplay with the same title.'
+        )
+    else:
+        messages.success(request, f'Screenplay "{script.title}" restored successfully.')
+
+    return redirect('dashboard')
 
 
 @login_required

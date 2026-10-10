@@ -19,6 +19,8 @@ def resequence_script_scenes(script: Script):
     with transaction.atomic():
         # Top-level items: main scenes, duplicate main scenes, intercut main scenes, and intercut sub-scenes
         top_items = list(script.scenes.filter(
+            is_deleted=False
+        ).filter(
             models.Q(parent_scene__isnull=True) | models.Q(is_intercut=True)
         ).order_by('order', 'id'))
 
@@ -33,13 +35,13 @@ def resequence_script_scenes(script: Script):
 
             # If it's a main scene (not a sub-scene), append its standard (non-intercut) sub-scenes immediately after
             if not item.is_sub_scene:
-                for sub in item.sub_scenes.filter(is_intercut=False).order_by('order', 'id'):
+                for sub in item.sub_scenes.filter(is_deleted=False, is_intercut=False).order_by('order', 'id'):
                     if sub.id not in seen_ids:
                         ordered_scenes.append(sub)
                         seen_ids.add(sub.id)
 
-        # Include any remaining scenes if any
-        all_remaining = script.scenes.exclude(id__in=seen_ids).order_by('order', 'id')
+        # Include any remaining active scenes if any
+        all_remaining = script.scenes.filter(is_deleted=False).exclude(id__in=seen_ids).order_by('order', 'id')
         for rem in all_remaining:
             ordered_scenes.append(rem)
             seen_ids.add(rem.id)
@@ -52,7 +54,8 @@ def resequence_script_scenes(script: Script):
             if sc.parent_scene_id is None:
                 if sc.is_intercut and sc.intercut_source_id:
                     source = sc.intercut_source
-                    sc.scene_number = source.scene_number if source else sc.scene_number
+                    if source and not source.is_deleted:
+                        sc.scene_number = source.scene_number
                     sc.duplicate_number = 0
                 elif not sc.is_duplicate and not sc.is_intercut:
                     current_base_num += 1
@@ -68,9 +71,9 @@ def resequence_script_scenes(script: Script):
             sc.save(update_fields=['scene_number', 'order', 'is_duplicate', 'duplicate_number'])
 
         # 2. Resequence sub-scenes for each parent scene
-        parents = script.scenes.filter(parent_scene__isnull=True)
+        parents = script.scenes.filter(is_deleted=False, parent_scene__isnull=True)
         for parent_sc in parents:
-            sub_scenes = list(parent_sc.sub_scenes.all().order_by('order', 'id'))
+            sub_scenes = list(parent_sc.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
             sub_dup_counts = {}
             current_sub_letter_idx = 0
             has_non_dup = False
@@ -99,7 +102,7 @@ def duplicate_scene(script: Script, source_scene: Scene) -> Scene:
     - If duplicating a main scene with sub-scenes, duplicates all sub-scenes and their elements.
     """
     with transaction.atomic():
-        all_scenes = list(script.scenes.all().order_by('order', 'id'))
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
         try:
             ref_idx = [s.id for s in all_scenes].index(source_scene.id)
             insert_order = ref_idx + 1
@@ -113,7 +116,7 @@ def duplicate_scene(script: Script, source_scene: Scene) -> Scene:
 
         if source_scene.is_sub_scene and source_scene.parent_scene:
             parent = source_scene.parent_scene
-            siblings = list(parent.sub_scenes.all().order_by('order', 'id'))
+            siblings = list(parent.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
 
             base_letter = source_scene.sub_letter
             existing_dups = [s for s in siblings if s.sub_letter == base_letter and s.is_duplicate]
@@ -152,7 +155,7 @@ def duplicate_scene(script: Script, source_scene: Scene) -> Scene:
 
         else:
             base_scene_number = source_scene.scene_number
-            main_scenes = list(script.scenes.filter(parent_scene__isnull=True).order_by('order', 'id'))
+            main_scenes = list(script.scenes.filter(is_deleted=False, parent_scene__isnull=True).order_by('order', 'id'))
 
             existing_dups = [s for s in main_scenes if s.scene_number == base_scene_number and s.is_duplicate]
             next_dup_num = len(existing_dups) + 1
@@ -182,8 +185,8 @@ def duplicate_scene(script: Script, source_scene: Scene) -> Scene:
             if elements_to_create:
                 ScriptElement.objects.bulk_create(elements_to_create)
 
-            # If source_scene has sub-scenes, clone each sub-scene and its elements under new_main
-            for sub_sc in source_scene.sub_scenes.all().order_by('order', 'id'):
+            # If source_scene has sub-scenes, clone each active sub-scene and its elements under new_main
+            for sub_sc in source_scene.sub_scenes.filter(is_deleted=False).order_by('order', 'id'):
                 new_cloned_sub = Scene.objects.create(
                     script=script,
                     parent_scene=new_main,
@@ -228,11 +231,11 @@ def insert_scene_relative(script: Script, reference_scene_id: int = None, positi
         ref_scene = None
         if reference_scene_id:
             try:
-                ref_scene = script.scenes.get(id=reference_scene_id)
+                ref_scene = script.scenes.get(id=reference_scene_id, is_deleted=False)
             except Scene.DoesNotExist:
                 ref_scene = None
 
-        all_scenes = list(script.scenes.all().order_by('order', 'id'))
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
 
         if ref_scene:
             try:
@@ -291,15 +294,15 @@ def create_sub_scene(script: Script, parent_scene_id: int, heading: str = 'INT. 
     summary = (summary or '').strip()
 
     with transaction.atomic():
-        parent = script.scenes.get(id=parent_scene_id)
-        if parent.parent_scene:
+        parent = script.scenes.get(id=parent_scene_id, is_deleted=False)
+        if parent.parent_scene and not parent.parent_scene.is_deleted:
             parent = parent.parent_scene
 
-        # Find the last sub-scene of this parent or the parent itself
-        last_sub = parent.sub_scenes.all().order_by('-order', '-id').first()
+        # Find the last active sub-scene of this parent or the parent itself
+        last_sub = parent.sub_scenes.filter(is_deleted=False).order_by('-order', '-id').first()
         ref_scene = last_sub if last_sub else parent
 
-        all_scenes = list(script.scenes.all().order_by('order', 'id'))
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
         try:
             ref_idx = [s.id for s in all_scenes].index(ref_scene.id)
             target_order = ref_idx + 1
@@ -339,14 +342,14 @@ def create_sub_scene_2(script: Script, source_scene_id: int, current_scene_id: i
     Heading is copied from source_scene.
     """
     with transaction.atomic():
-        source_scene = script.scenes.get(id=source_scene_id)
-        parent = source_scene.parent_scene if source_scene.parent_scene else source_scene
+        source_scene = script.scenes.get(id=source_scene_id, is_deleted=False)
+        parent = source_scene.parent_scene if (source_scene.parent_scene and not source_scene.parent_scene.is_deleted) else source_scene
 
-        all_scenes = list(script.scenes.all().order_by('order', 'id'))
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
         current_scene = None
         if current_scene_id:
             try:
-                current_scene = script.scenes.get(id=current_scene_id)
+                current_scene = script.scenes.get(id=current_scene_id, is_deleted=False)
             except Scene.DoesNotExist:
                 current_scene = None
 
@@ -396,13 +399,13 @@ def create_intercut_scene(script: Script, source_scene_id: int, current_scene_id
     Displays as 'Scene X : HEADING'.
     """
     with transaction.atomic():
-        source_scene = script.scenes.get(id=source_scene_id)
+        source_scene = script.scenes.get(id=source_scene_id, is_deleted=False)
 
-        all_scenes = list(script.scenes.all().order_by('order', 'id'))
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
         current_scene = None
         if current_scene_id:
             try:
-                current_scene = script.scenes.get(id=current_scene_id)
+                current_scene = script.scenes.get(id=current_scene_id, is_deleted=False)
             except Scene.DoesNotExist:
                 current_scene = None
 
@@ -454,15 +457,15 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
     """
     with transaction.atomic():
         try:
-            scene = script.scenes.get(id=scene_id)
+            scene = script.scenes.get(id=scene_id, is_deleted=False)
         except Scene.DoesNotExist:
             return False
 
         if scene.is_sub_scene and not scene.is_intercut:
             # Standard sub-scene: move within parent's sub-scenes only
-            if not scene.parent_scene:
+            if not scene.parent_scene or scene.parent_scene.is_deleted:
                 return False
-            siblings = list(scene.parent_scene.sub_scenes.filter(is_intercut=False).order_by('order', 'id'))
+            siblings = list(scene.parent_scene.sub_scenes.filter(is_intercut=False, is_deleted=False).order_by('order', 'id'))
             try:
                 idx = siblings.index(scene)
             except ValueError:
@@ -489,6 +492,8 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
             # Main scene, intercut scene, or intercut sub-scene:
             # Moves across top-level blocks in screenplay flow.
             top_items = list(script.scenes.filter(
+                is_deleted=False
+            ).filter(
                 models.Q(parent_scene__isnull=True) | models.Q(is_intercut=True)
             ).order_by('order', 'id'))
 
@@ -520,13 +525,13 @@ def move_scene(script: Script, scene_id: int, direction: str) -> bool:
 
                 # If it's a main scene (not a sub-scene), append its standard (non-intercut) sub-scenes immediately after
                 if not item.is_sub_scene:
-                    for sub in item.sub_scenes.filter(is_intercut=False).order_by('order', 'id'):
+                    for sub in item.sub_scenes.filter(is_intercut=False, is_deleted=False).order_by('order', 'id'):
                         if sub.id not in seen_ids:
                             ordered_scenes.append(sub)
                             seen_ids.add(sub.id)
 
-            # Include any remaining scenes if any exist (safety fallback)
-            all_remaining = script.scenes.exclude(id__in=seen_ids).order_by('order', 'id')
+            # Include any remaining active scenes if any exist (safety fallback)
+            all_remaining = script.scenes.filter(is_deleted=False).exclude(id__in=seen_ids).order_by('order', 'id')
             for rem in all_remaining:
                 ordered_scenes.append(rem)
                 seen_ids.add(rem.id)
@@ -547,7 +552,7 @@ def serialize_scenes_hierarchy(script: Script) -> list:
     """
     Returns a structured list of scenes for navigation, sidebars, and mobile menus.
     """
-    ordered_scenes = list(script.scenes.all().prefetch_related('parent_scene', 'elements').order_by('order', 'id'))
+    ordered_scenes = list(script.scenes.filter(is_deleted=False).prefetch_related('parent_scene', 'elements').order_by('order', 'id'))
     result = []
     
     for sc in ordered_scenes:
@@ -575,3 +580,186 @@ def serialize_scenes_hierarchy(script: Script) -> list:
         })
 
     return result
+
+
+def restore_scene_to_script(
+    script: Script,
+    scene: Scene,
+    restore_as: str = 'auto',
+    target_parent_id: int = None
+) -> tuple[Scene, bool, str]:
+    """
+    Safely restores a soft-deleted scene to an active screenplay.
+
+    Parent Resolution:
+    - If scene was a sub-scene:
+      - If restore_as == 'main_scene': detach parent_scene (restore as a top-level main scene).
+      - If restore_as == 'specified_parent': attach to target_parent_id (must be an active main scene in this script).
+      - Otherwise (restore_as in ['auto', 'original_parent']):
+        - Try to resolve original parent:
+          - If original_parent_uuid is present: search active main scenes by scene_uuid.
+          - If not found or not unique: search by parent_scene_id if active.
+          - If original parent is active: attach to it.
+          - If original parent is trashed, missing, or ambiguous: raise ValueError requiring writer choice.
+    - If scene was a main scene:
+      - parent_scene remains None. Sub-scenes in trash remain in trash.
+
+    Intercut Resolution:
+    - If scene was an intercut:
+      - Try to resolve original source:
+        - If original_intercut_source_uuid is present: search active scenes by scene_uuid.
+        - Fallback: check intercut_source_id if active.
+        - If source is active and unambiguous: preserve intercut_source.
+        - If source is trashed, missing, or ambiguous: fallback to normal scene (is_intercut=False, intercut_source=None)
+          and report intercut_fallback=True.
+
+    Ordering & Resequencing:
+    - Positions the restored scene at original_order if valid, shifting existing active scenes >= target_order by +1.
+    - If original_order is None or out of bounds, appends at the end.
+    - Atomically runs resequence_script_scenes(script).
+
+    Returns:
+    (restored_scene, intercut_fallback_occurred, message)
+    """
+    with transaction.atomic():
+        # Lock scene record to prevent race conditions
+        scene = Scene.objects.select_for_update().get(id=scene.id, script=script)
+
+        if not scene.is_deleted:
+            raise ValueError(f"Scene {scene.id} is already active.")
+
+        intercut_fallback = False
+        message_notes = []
+
+        # 1. Parent Resolution for Sub-scenes
+        if scene.original_parent_uuid or scene.parent_scene_id or scene.is_sub_scene:
+            if restore_as == 'main_scene':
+                scene.parent_scene = None
+                message_notes.append("restored as a main scene")
+            elif restore_as == 'specified_parent':
+                if not target_parent_id:
+                    raise ValueError("Target parent ID is required when restore_as is 'specified_parent'.")
+                try:
+                    target_parent = script.scenes.get(id=target_parent_id, is_deleted=False)
+                except Scene.DoesNotExist:
+                    raise ValueError(f"Specified parent scene ID {target_parent_id} does not exist or is not active.")
+                if target_parent.parent_scene_id is not None:
+                    raise ValueError("Target parent cannot be a sub-scene; it must be an active main scene.")
+                scene.parent_scene = target_parent
+                message_notes.append(f"attached to main scene {target_parent.display_number or target_parent.scene_number}")
+            elif restore_as == 'auto':
+                # Automatic / original parent resolution
+                resolved_parent = None
+
+                # Search by UUID first if present
+                if scene.original_parent_uuid:
+                    parent_matches = list(script.scenes.filter(
+                        scene_uuid=scene.original_parent_uuid,
+                        is_deleted=False,
+                        parent_scene__isnull=True
+                    ))
+                    if len(parent_matches) == 1:
+                        resolved_parent = parent_matches[0]
+                    elif len(parent_matches) > 1:
+                        raise ValueError(
+                            "Original parent resolution is ambiguous (multiple active scenes match original UUID). "
+                            "Please choose whether to restore as a main scene or select an active parent."
+                        )
+                elif scene.parent_scene_id:
+                    # Fallback to parent_scene_id ONLY if original_parent_uuid is missing
+                    try:
+                        candidate_parent = script.scenes.get(id=scene.parent_scene_id)
+                        if not candidate_parent.is_deleted and candidate_parent.parent_scene_id is None:
+                            resolved_parent = candidate_parent
+                    except Scene.DoesNotExist:
+                        resolved_parent = None
+
+                if resolved_parent:
+                    scene.parent_scene = resolved_parent
+                    message_notes.append(f"restored under parent scene {resolved_parent.display_number or resolved_parent.scene_number}")
+                else:
+                    # Check if original parent is in trash or completely missing
+                    is_parent_trashed = False
+                    if scene.original_parent_uuid:
+                        is_parent_trashed = script.scenes.filter(scene_uuid=scene.original_parent_uuid, is_deleted=True).exists()
+                    elif scene.parent_scene_id:
+                        is_parent_trashed = script.scenes.filter(id=scene.parent_scene_id, is_deleted=True).exists()
+
+                    parent_state_str = "in Trash" if is_parent_trashed else "missing"
+                    raise ValueError(
+                        f"Original parent scene is {parent_state_str}. "
+                        "Please choose whether to restore as a main scene or attach to an active main scene."
+                    )
+            else:
+                raise ValueError(f"Invalid restore_as option: '{restore_as}'. Must be 'auto', 'main_scene', or 'specified_parent'.")
+        else:
+            scene.parent_scene = None
+
+        # 2. Intercut Source Resolution
+        if scene.is_intercut or scene.original_intercut_source_uuid or scene.intercut_source_id:
+            resolved_source = None
+
+            if scene.original_intercut_source_uuid:
+                source_matches = list(script.scenes.filter(
+                    scene_uuid=scene.original_intercut_source_uuid,
+                    is_deleted=False
+                ))
+                if len(source_matches) == 1:
+                    resolved_source = source_matches[0]
+                elif len(source_matches) > 1:
+                    # Ambiguous UUID matches
+                    resolved_source = None
+            elif scene.intercut_source_id:
+                try:
+                    cand_source = script.scenes.get(id=scene.intercut_source_id)
+                    if not cand_source.is_deleted:
+                        resolved_source = cand_source
+                except Scene.DoesNotExist:
+                    resolved_source = None
+
+            if resolved_source and resolved_source.id != scene.id:
+                scene.is_intercut = True
+                scene.intercut_source = resolved_source
+            else:
+                # Revert to normal scene
+                scene.is_intercut = False
+                scene.intercut_source = None
+                intercut_fallback = True
+                message_notes.append("intercut source could not be resolved, restored as a normal scene")
+
+        # 3. Order Placement
+        all_active_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
+
+        target_order = None
+        if scene.original_order is not None and 0 <= scene.original_order <= len(all_active_scenes):
+            target_order = scene.original_order
+        else:
+            target_order = len(all_active_scenes)
+
+        # Shift active scenes at or after target_order by +1
+        for act_sc in all_active_scenes:
+            if act_sc.order >= target_order:
+                act_sc.order += 1
+                act_sc.save(update_fields=['order'])
+
+        # 4. Update Scene State
+        scene.is_deleted = False
+        scene.deleted_at = None
+        scene.order = target_order
+        scene.save(update_fields=[
+            'is_deleted',
+            'deleted_at',
+            'order',
+            'parent_scene',
+            'is_intercut',
+            'intercut_source'
+        ])
+
+        # 5. Resequence Screenplay
+        resequence_script_scenes(script)
+        scene.refresh_from_db()
+        script.updated_at = timezone.now()
+        script.save(update_fields=['updated_at'])
+
+        summary_msg = f"Scene restored successfully ({', '.join(message_notes)})." if message_notes else "Scene restored successfully."
+        return scene, intercut_fallback, summary_msg

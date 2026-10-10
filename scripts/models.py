@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 import math
+import uuid
 
 class Script(models.Model):
     GENRE_CHOICES = [
@@ -33,6 +34,17 @@ class Script(models.Model):
     script_type = models.CharField(max_length=50, choices=SCRIPT_TYPE_CHOICES, default='Short Film')
     author_name = models.CharField(max_length=150, blank=True)
     language = models.CharField(max_length=50, default='Malayalam')
+    is_deleted = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Designates whether this screenplay is in the Trash."
+    )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Timestamp when the screenplay was moved to Trash."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,6 +52,8 @@ class Script(models.Model):
         ordering = ['-updated_at']
         indexes = [
             models.Index(fields=['user', '-updated_at']),
+            models.Index(fields=['user', 'is_deleted', '-updated_at']),
+            models.Index(fields=['is_deleted', 'deleted_at']),
         ]
 
     def __str__(self):
@@ -47,20 +61,20 @@ class Script(models.Model):
 
     @property
     def scene_count(self):
-        return self.scenes.filter(is_intercut=False).count()
+        return self.scenes.filter(is_deleted=False, is_intercut=False).count()
 
     @property
     def primary_scene_count(self):
-        return self.scenes.filter(parent_scene__isnull=True, is_intercut=False).count()
+        return self.scenes.filter(is_deleted=False, parent_scene__isnull=True, is_intercut=False).count()
 
     @property
     def sub_scene_count(self):
-        return self.scenes.filter(parent_scene__isnull=False, is_intercut=False).count()
+        return self.scenes.filter(is_deleted=False, parent_scene__isnull=False, is_intercut=False).count()
 
     @property
     def word_count(self):
         total_words = 0
-        for scene in self.scenes.all():
+        for scene in self.scenes.filter(is_deleted=False).prefetch_related('elements'):
             for elem in scene.elements.all():
                 if elem.content:
                     total_words += len(elem.content.split())
@@ -69,7 +83,7 @@ class Script(models.Model):
     @property
     def char_count(self):
         total_chars = 0
-        for scene in self.scenes.all():
+        for scene in self.scenes.filter(is_deleted=False).prefetch_related('elements'):
             for elem in scene.elements.all():
                 if elem.content:
                     total_chars += len(elem.content)
@@ -84,10 +98,20 @@ class Script(models.Model):
 
     def get_ordered_scenes(self):
         """
-        Returns all scenes in logical screenplay reading order:
+        Returns all active scenes in logical screenplay reading order:
         Ordered by (order, id).
+        Excludes trashed scenes and trashed sub-scenes.
         """
-        return list(self.scenes.all().prefetch_related('elements', 'parent_scene', 'sub_scenes__elements').order_by('order', 'id'))
+        active_sub_scenes_qs = Scene.objects.filter(is_deleted=False).prefetch_related('elements').order_by('order', 'id')
+        return list(
+            self.scenes.filter(is_deleted=False)
+            .prefetch_related(
+                'elements',
+                'parent_scene',
+                models.Prefetch('sub_scenes', queryset=active_sub_scenes_qs)
+            )
+            .order_by('order', 'id')
+        )
 
 
 def _sub_scene_letter(idx: int) -> str:
@@ -123,6 +147,49 @@ class Scene(models.Model):
     summary = models.TextField(blank=True)
     transition = models.CharField(max_length=100, default='CUT TO', blank=True)
     order = models.PositiveIntegerField(default=0)
+    is_deleted = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Designates whether this scene is in the Trash."
+    )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Timestamp when the scene was moved to Trash."
+    )
+    scene_uuid = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        db_index=True,
+        help_text="Persistent, immutable UUID for version snapshot and identity tracking."
+    )
+    original_order = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Preserved order position before being moved to Trash."
+    )
+    original_parent_scene_number = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Preserved scene_number of parent scene when trashed."
+    )
+    original_parent_heading = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Preserved heading of parent scene when trashed."
+    )
+    original_parent_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="Preserved scene_uuid of parent scene when trashed."
+    )
+    original_intercut_source_uuid = models.UUIDField(
+        null=True,
+        blank=True,
+        help_text="Preserved scene_uuid of intercut source scene when trashed."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -131,6 +198,8 @@ class Scene(models.Model):
         indexes = [
             models.Index(fields=['script', 'order']),
             models.Index(fields=['parent_scene', 'order']),
+            models.Index(fields=['script', 'is_deleted', 'order']),
+            models.Index(fields=['is_deleted', 'deleted_at']),
         ]
 
     @property
@@ -154,7 +223,10 @@ class Scene(models.Model):
     def sub_letter(self) -> str:
         if not self.parent_scene:
             return ''
-        siblings = list(self.parent_scene.sub_scenes.all().order_by('order', 'id'))
+        if not self.is_deleted:
+            siblings = list(self.parent_scene.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
+        else:
+            siblings = list(self.parent_scene.sub_scenes.all().order_by('order', 'id'))
         letter_idx = 0
         assigned_letter = 'A'
         for s in siblings:
@@ -312,6 +384,7 @@ class Character(models.Model):
     def dialogue_count(self):
         return ScriptElement.objects.filter(
             scene__script=self.script,
+            scene__is_deleted=False,
             element_type='character',
             content__iexact=self.name
         ).count()
