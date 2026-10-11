@@ -724,6 +724,8 @@
     font-family: 'Inter', 'Noto Sans Malayalam', sans-serif;
     font-size: 13.5px;
     color: #744210;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* Autocomplete Suggestion Popup */
@@ -1365,6 +1367,8 @@ body.editor-edit-mode #btnExitEditMode {
 .read-element-block.element-type-note .element-content {
     font-size: 13.5px;
     color: #713f12;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* ==========================================================================

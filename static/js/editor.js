@@ -717,16 +717,31 @@ class KadhaEditor {
                 }
             }
 
-            // Enter key screenplay flow logic
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.handleEnterKey(block, editable);
-                return;
+            // Enter key handling (Notes support multiline notepad behavior)
+            if (e.key === 'Enter') {
+                if (block.dataset.type === 'note') {
+                    e.preventDefault();
+                    this.handleNoteEnter(block, editable);
+                    return;
+                }
+                if (!e.shiftKey) {
+                    e.preventDefault();
+                    this.handleEnterKey(block, editable);
+                    return;
+                }
             }
 
-            // Tab key element type cycling
+            // Tab key handling (Notes insert 2 spaces indent instead of cycling screenplay types)
             if (e.key === 'Tab') {
                 e.preventDefault();
+                if (block.dataset.type === 'note') {
+                    if (!e.shiftKey) {
+                        document.execCommand('insertText', false, '  ');
+                        this.markDirty();
+                        this.calculateLiveStats();
+                    }
+                    return;
+                }
                 this.cycleElementType(block, e.shiftKey ? -1 : 1);
                 return;
             }
@@ -748,30 +763,54 @@ class KadhaEditor {
                 return;
             }
 
-            // Arrow Up / Down navigation between blocks
+            // Arrow Up / Down navigation between blocks (accounts for multiline cursor position)
             if (e.key === 'ArrowUp') {
                 const sel = window.getSelection();
-                if (sel && sel.anchorOffset === 0) {
-                    const prevBlock = block.previousElementSibling;
-                    if (prevBlock && prevBlock.classList.contains('script-element-block')) {
-                        e.preventDefault();
-                        const prevEditable = prevBlock.querySelector('.element-content:not(.d-none)') || prevBlock.querySelector('.element-content');
-                        if (prevEditable) {
-                            prevEditable.focus();
-                            this.setCursorToEnd(prevEditable);
+                if (sel && sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    let isAtStart = false;
+                    try {
+                        const preRange = document.createRange();
+                        preRange.setStart(editable, 0);
+                        preRange.setEnd(range.startContainer, range.startOffset);
+                        isAtStart = (preRange.toString().length === 0);
+                    } catch (err) {
+                        isAtStart = (sel.anchorOffset === 0);
+                    }
+                    if (isAtStart) {
+                        const prevBlock = block.previousElementSibling;
+                        if (prevBlock && prevBlock.classList.contains('script-element-block')) {
+                            e.preventDefault();
+                            const prevEditable = prevBlock.querySelector('.element-content:not(.d-none)') || prevBlock.querySelector('.element-content');
+                            if (prevEditable) {
+                                prevEditable.focus();
+                                this.setCursorToEnd(prevEditable);
+                            }
                         }
                     }
                 }
             } else if (e.key === 'ArrowDown') {
                 const sel = window.getSelection();
-                if (sel && sel.anchorOffset >= editable.innerText.length) {
-                    const nextBlock = block.nextElementSibling;
-                    if (nextBlock && nextBlock.classList.contains('script-element-block')) {
-                        e.preventDefault();
-                        const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
-                        if (nextEditable) {
-                            nextEditable.focus();
-                            this.setCursorToStart(nextEditable);
+                if (sel && sel.rangeCount > 0) {
+                    const range = sel.getRangeAt(0);
+                    let isAtEnd = false;
+                    try {
+                        const postRange = document.createRange();
+                        postRange.setStart(range.endContainer, range.endOffset);
+                        postRange.setEnd(editable, editable.childNodes.length);
+                        isAtEnd = (postRange.toString().length === 0);
+                    } catch (err) {
+                        isAtEnd = (sel.anchorOffset >= editable.innerText.length);
+                    }
+                    if (isAtEnd) {
+                        const nextBlock = block.nextElementSibling;
+                        if (nextBlock && nextBlock.classList.contains('script-element-block')) {
+                            e.preventDefault();
+                            const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
+                            if (nextEditable) {
+                                nextEditable.focus();
+                                this.setCursorToStart(nextEditable);
+                            }
                         }
                     }
                 }
@@ -779,18 +818,209 @@ class KadhaEditor {
         });
     }
 
+    // ----------------------------------------------------
+    // NOTES NOTEPAD BEHAVIOR (Batch 2, Step 2)
+    // ----------------------------------------------------
+    handleNoteEnter(block, editable) {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) {
+            document.execCommand('insertLineBreak');
+            this.markDirty();
+            this.calculateLiveStats();
+            return;
+        }
+
+        const range = sel.getRangeAt(0);
+
+        // Find the line container element within editable
+        let lineEl = range.startContainer;
+        while (lineEl && lineEl !== editable && lineEl.parentElement !== editable) {
+            lineEl = lineEl.parentElement;
+        }
+        if (lineEl === editable) {
+            lineEl = range.startContainer;
+        }
+
+        // Get text before and after cursor in this line element
+        let lineBefore = '';
+        let lineAfter = '';
+        try {
+            const preRange = document.createRange();
+            preRange.setStart(lineEl, 0);
+            preRange.setEnd(range.startContainer, range.startOffset);
+            lineBefore = preRange.toString();
+
+            const postRange = document.createRange();
+            postRange.setStart(range.endContainer, range.endOffset);
+            const endLen = (lineEl.nodeType === Node.TEXT_NODE) ? lineEl.length : lineEl.childNodes.length;
+            postRange.setEnd(lineEl, endLen);
+            lineAfter = postRange.toString();
+        } catch (err) {
+            lineBefore = '';
+            lineAfter = '';
+        }
+
+        const isAtEndOfLine = (lineAfter.trim() === '');
+
+        // 1. Empty list item: stop list continuation by clearing marker
+        const emptyBullet = lineBefore.match(/^(\s*[-•*]\s*)$/);
+        const emptyNumber = lineBefore.match(/^(\s*\d+\.\s*)$/);
+
+        if ((emptyBullet || emptyNumber) && isAtEndOfLine) {
+            if (lineEl && lineEl !== editable && lineEl.parentElement === editable) {
+                lineEl.innerHTML = '<br>';
+                const newRange = document.createRange();
+                newRange.setStart(lineEl, 0);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            } else {
+                editable.innerHTML = '<br>';
+                const newRange = document.createRange();
+                newRange.setStart(editable, 0);
+                newRange.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(newRange);
+            }
+            this.markDirty();
+            this.calculateLiveStats();
+            return;
+        }
+
+        // 2. Cursor at end of list item: continue list
+        if (isAtEndOfLine) {
+            const bulletMatch = lineBefore.match(/^(\s*)([-•*])\s+(.+)$/);
+            const numberMatch = lineBefore.match(/^(\s*)(\d+)\.\s+(.+)$/);
+
+            if (bulletMatch) {
+                const indent = bulletMatch[1];
+                const marker = bulletMatch[2];
+                document.execCommand('insertText', false, '\n' + indent + marker + ' ');
+                this.markDirty();
+                this.calculateLiveStats();
+                return;
+            }
+
+            if (numberMatch) {
+                const indent = numberMatch[1];
+                const currentNum = parseInt(numberMatch[2], 10);
+                const nextNum = currentNum + 1;
+                document.execCommand('insertText', false, '\n' + indent + nextNum + '. ');
+                this.markDirty();
+                this.calculateLiveStats();
+                return;
+            }
+        }
+
+        // 3. Ordinary line break
+        document.execCommand('insertLineBreak');
+        this.markDirty();
+        this.calculateLiveStats();
+    }
+
     handleEnterKey(block, editable) {
         const currentType = block.dataset.type;
         const currentText = editable.innerText.trim();
+
+        if (currentType === 'note') {
+            this.handleNoteEnter(block, editable);
+            return;
+        }
+
+        // ----------------------------------------------------
+        // ACTION PARAGRAPH SPLITTING (Batch 2, Step 1)
+        // ----------------------------------------------------
+        if (currentType === 'action') {
+            const sel = window.getSelection();
+            let leftText = '';
+            let rightText = '';
+            let hasSelectionRange = false;
+            let isCollapsed = true;
+
+            if (sel && sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                if (editable.contains(range.startContainer) && editable.contains(range.endContainer)) {
+                    hasSelectionRange = true;
+                    isCollapsed = range.collapsed;
+
+                    try {
+                        const preRange = document.createRange();
+                        preRange.setStart(editable, 0);
+                        preRange.setEnd(range.startContainer, range.startOffset);
+                        leftText = preRange.toString();
+
+                        const postRange = document.createRange();
+                        postRange.setStart(range.endContainer, range.endOffset);
+                        postRange.setEnd(editable, editable.childNodes.length);
+                        rightText = postRange.toString();
+                    } catch (err) {
+                        hasSelectionRange = false;
+                    }
+                }
+            }
+
+            if (!hasSelectionRange) {
+                leftText = editable.innerText;
+                rightText = '';
+                isCollapsed = true;
+            }
+
+            const cleanLeft = leftText.trimEnd();
+            const cleanRight = rightText.trimStart();
+
+            // Case B: Cursor at the beginning with no text selection
+            if (isCollapsed && cleanLeft === '' && cleanRight !== '') {
+                const emptyBlock = this.createElementBlock('action', '');
+                this.pageContainer.insertBefore(emptyBlock, block);
+                document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                block.classList.add('focused');
+                this.activeElementBlock = block;
+                editable.focus();
+                this.setCursorToStart(editable);
+                this.hideSuggestionPopup();
+                this.markDirty();
+                this.calculateLiveStats();
+                return;
+            }
+
+            // Case C: Cursor at the end (or action block was already empty)
+            if (isCollapsed && cleanRight === '') {
+                const newBlock = this.createElementBlock('action', '', block);
+                const newEditable = newBlock.querySelector('.element-content:not(.d-none)') || newBlock.querySelector('.element-content');
+                if (newEditable) {
+                    newEditable.focus();
+                    this.setCursorToStart(newEditable);
+                }
+                this.markDirty();
+                this.calculateLiveStats();
+                this.showSuggestionPopup(newBlock, [{ type: 'character', label: '+ Character' }]);
+                return;
+            }
+
+            // Case A (Cursor in middle) and Case D (Text selection replaced with split)
+            editable.innerText = cleanLeft;
+            const newBlock = this.createElementBlock('action', cleanRight, block);
+            const newEditable = newBlock.querySelector('.element-content:not(.d-none)') || newBlock.querySelector('.element-content');
+            if (newEditable) {
+                newEditable.focus();
+                this.setCursorToStart(newEditable);
+            }
+            this.markDirty();
+            this.calculateLiveStats();
+
+            if (cleanRight === '') {
+                this.showSuggestionPopup(newBlock, [{ type: 'character', label: '+ Character' }]);
+            } else {
+                this.hideSuggestionPopup();
+            }
+            return;
+        }
 
         let nextType = 'action';
         let suggestions = [];
 
         if (currentType === 'scene_heading') {
             nextType = 'action';
-        } else if (currentType === 'action') {
-            nextType = 'action';
-            suggestions = [{ type: 'character', label: '+ Character' }];
         } else if (currentType === 'character') {
             nextType = 'dialogue';
             suggestions = [{ type: 'parenthetical', label: '+ Parenthetical' }];
@@ -811,8 +1041,6 @@ class KadhaEditor {
         } else if (currentType === 'transition') {
             nextType = 'action';
         } else if (currentType === 'shot') {
-            nextType = 'action';
-        } else if (currentType === 'note') {
             nextType = 'action';
         }
 
@@ -1194,6 +1422,9 @@ class KadhaEditor {
                     content = contentEl ? contentEl.innerText.replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim() : 'INT. LOCATION - DAY';
                     sceneHeading = content || 'INT. LOCATION - DAY';
                 }
+            } else if (type === 'note') {
+                const contentEl = block.querySelector('.element-content');
+                content = contentEl ? contentEl.innerText.replace(/\r\n/g, '\n').trimEnd() : '';
             } else {
                 const contentEl = block.querySelector('.element-content');
                 content = contentEl ? contentEl.innerText.trim() : '';
@@ -4203,7 +4434,100 @@ class KadhaEditor {
         }).join('\n');
     }
 
+    isBlockFullySelected(block, range) {
+        if (!block || !range) return false;
+
+        if (block.dataset && block.dataset.type === 'scene_heading') {
+            // For scene heading in edit mode with builder:
+            // If selection is inside heading-location-input, it is partial text of the location
+            if (block.querySelector('.scene-heading-builder')) {
+                const locInput = block.querySelector('.heading-location-input');
+                if (locInput && (document.activeElement === locInput || locInput.contains(range.startContainer))) {
+                    return false;
+                }
+            }
+        }
+
+        const ed = block.querySelector('.element-content:not(.d-none)') ||
+                   block.querySelector('.element-content, .read-scene-identifier, .heading-location-input');
+        if (!ed) return false;
+
+        if (ed.tagName === 'INPUT' || ed.tagName === 'TEXTAREA') {
+            const start = ed.selectionStart ?? 0;
+            const end = ed.selectionEnd ?? ed.value.length;
+            return (start === 0 && end === ed.value.length);
+        }
+
+        let hasBefore = false;
+        try {
+            if (ed.contains(range.startContainer)) {
+                const preRange = document.createRange();
+                preRange.setStart(ed, 0);
+                preRange.setEnd(range.startContainer, range.startOffset);
+                hasBefore = preRange.toString().length > 0;
+            } else {
+                hasBefore = (range.comparePoint(ed, 0) < 0);
+            }
+        } catch (err) {
+            hasBefore = true;
+        }
+
+        let hasAfter = false;
+        try {
+            if (ed.contains(range.endContainer)) {
+                const postRange = document.createRange();
+                postRange.setStart(range.endContainer, range.endOffset);
+                postRange.setEnd(ed, ed.childNodes.length);
+                hasAfter = postRange.toString().length > 0;
+            } else {
+                hasAfter = (range.comparePoint(ed, ed.childNodes.length) > 0);
+            }
+        } catch (err) {
+            hasAfter = true;
+        }
+
+        return !hasBefore && !hasAfter;
+    }
+
+    extractBlockPartialText(block, range, isFirst, isLast) {
+        if (!block || !range) return '';
+
+        const ed = block.querySelector('.element-content:not(.d-none)') ||
+                   block.querySelector('.element-content, .read-scene-identifier, .heading-location-input');
+        if (!ed) return '';
+
+        if (ed.tagName === 'INPUT' || ed.tagName === 'TEXTAREA') {
+            const start = ed.selectionStart ?? 0;
+            const end = ed.selectionEnd ?? ed.value.length;
+            return ed.value.substring(start, end);
+        }
+
+        try {
+            const subRange = document.createRange();
+            if (isFirst && ed.contains(range.startContainer)) {
+                subRange.setStart(range.startContainer, range.startOffset);
+            } else {
+                subRange.setStart(ed, 0);
+            }
+
+            if (isLast && ed.contains(range.endContainer)) {
+                subRange.setEnd(range.endContainer, range.endOffset);
+            } else {
+                subRange.setEnd(ed, ed.childNodes.length);
+            }
+            return subRange.toString();
+        } catch (err) {
+            return '';
+        }
+    }
+
     handleCopy(e) {
+        const activeEl = document.activeElement;
+        if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+            this.lastCopiedPayload = null;
+            return;
+        }
+
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
 
@@ -4229,15 +4553,22 @@ class KadhaEditor {
 
             if (selectedBlocks.length === 0) return;
 
-            // If user selected partial text inside a single action/dialogue block, let browser copy plain text inline
-            if (selectedBlocks.length === 1) {
-                const singleBlock = selectedBlocks[0];
-                const ed = singleBlock.querySelector('.element-content:not(.d-none)') || singleBlock.querySelector('.element-content');
-                const fullText = (ed ? ed.innerText : '').trim();
-                const selText = sel.toString().trim();
-                if (selText && selText !== fullText && (singleBlock.dataset.type === 'action' || singleBlock.dataset.type === 'dialogue')) {
-                    return;
+            // Check if this is a complete-block selection or a partial-text selection
+            const isComplete = selectedBlocks.every(block => this.isBlockFullySelected(block, range));
+
+            if (!isComplete) {
+                const parts = selectedBlocks.map((block, idx) => {
+                    return this.extractBlockPartialText(block, range, idx === 0, idx === selectedBlocks.length - 1);
+                });
+                const partialText = parts.join('\n');
+
+                this.lastCopiedPayload = null;
+
+                if (e.clipboardData) {
+                    e.preventDefault();
+                    e.clipboardData.setData('text/plain', partialText);
                 }
+                return;
             }
 
             selectedBlocks.forEach(block => {
@@ -4271,6 +4602,23 @@ class KadhaEditor {
             });
 
             if (selectedItems.length === 0) return;
+
+            const isComplete = selectedItems.every(item => this.isBlockFullySelected(item, range));
+
+            if (!isComplete) {
+                const parts = selectedItems.map((item, idx) => {
+                    return this.extractBlockPartialText(item, range, idx === 0, idx === selectedItems.length - 1);
+                });
+                const partialText = parts.join('\n');
+
+                this.lastCopiedPayload = null;
+
+                if (e.clipboardData) {
+                    e.preventDefault();
+                    e.clipboardData.setData('text/plain', partialText);
+                }
+                return;
+            }
 
             selectedItems.forEach(item => {
                 if (item.classList.contains('read-scene-heading')) {
