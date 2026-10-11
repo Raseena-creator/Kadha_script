@@ -42,6 +42,7 @@
 
         <!-- Right Side Nav -->
         <div class="d-flex align-items-center gap-2">
+            {% block navbar_right %}
             {% if user.is_authenticated %}
                 <!-- Global Search Form -->
                 <form action="{% url 'global_search' %}" method="GET" class="d-none d-lg-flex position-relative me-2">
@@ -81,6 +82,7 @@
                 <a href="{% url 'login' %}" class="btn-outline-ks btn-sm">Sign In</a>
                 <a href="{% url 'register' %}" class="btn-primary-ks btn-sm">Get Started</a>
             {% endif %}
+            {% endblock navbar_right %}
         </div>
     </nav>
 

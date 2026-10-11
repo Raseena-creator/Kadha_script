@@ -1805,3 +1805,152 @@ body.editor-edit-mode #btnExitEditMode {
     color: #c85a32;
     border-color: #eecfbf;
 }
+
+/* ==========================================================================
+   MOBILE NAVIGATION & EDITOR TOOLBAR UX (max-width: 767.98px)
+   ========================================================================== */
+
+/* Consistent navbar button sizing and alignment across viewports */
+.editor-nav-btn {
+    height: 36px;
+    min-height: 36px;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+/* Screenplay Title Styling */
+.navbar-screenplay-title {
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1a1918;
+    letter-spacing: -0.2px;
+    white-space: normal;
+    word-break: break-word;
+    display: inline-block;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+@media (max-width: 767.98px) {
+    /* Issue 1 & 3: Mobile Top Navigation Alignment, Sizing & Spacing */
+    .editor-navbar-left {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: visible !important;
+    }
+
+    #btnEditorHome {
+        width: 36px;
+        min-width: 36px;
+        flex-shrink: 0;
+    }
+
+    .navbar-screenplay-title {
+        font-size: 0.94rem !important;
+        line-height: 1.2;
+    }
+
+    .btn-nav-scenes {
+        padding: 0.28rem 0.75rem !important;
+        font-size: 0.84rem !important;
+        min-height: 36px !important;
+        height: 36px !important;
+        flex-shrink: 0;
+    }
+
+    #btnMobileEditorMenu {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+    }
+
+    /* Issue 2 & 4: Compact Editor Toolbars on Mobile */
+    .editor-top-toolbars-pinned {
+        background-color: #ffffff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    /* Scene toolbar (Row 1): reduced padding, tight inline scroll */
+    .editor-toolbar.editor-scene-toolbar {
+        padding: 0.25rem 0.5rem;
+        gap: 0.35rem;
+        border-bottom: 1px solid #eee9de;
+    }
+
+    .editor-scene-toolbar-left {
+        gap: 0.35rem;
+    }
+
+    .editor-scene-buttons-group {
+        gap: 0.3rem;
+        padding-right: 0.75rem;
+    }
+
+    .btn-scene-control {
+        font-size: 0.74rem;
+        padding: 0.22rem 0.55rem;
+        border-radius: 5px;
+    }
+
+    .editor-scene-toolbar-right .btn {
+        padding: 0.22rem 0.45rem;
+        font-size: 0.8rem;
+    }
+
+    /* Element formatting toolbar (Row 2): compact, smooth horizontal scroll with right padding */
+    .editor-element-bar {
+        padding: 0.22rem 0.5rem;
+        background-color: #fbf9f5;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .toolbar-elements-group {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.28rem;
+        padding-right: 1.5rem; /* Ensures the last item (Transition/Note) is never clipped */
+    }
+
+    .btn-element {
+        font-size: 0.74rem;
+        padding: 0.22rem 0.52rem;
+        border-radius: 5px;
+    }
+
+    /* Ensure editor canvas has appropriate spacing under compact toolbars */
+    .editor-canvas-container {
+        padding: 1rem 0.5rem 5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .btn-nav-scenes {
+        padding: 0.28rem 0.55rem !important;
+        font-size: 0.8rem !important;
+    }
+    .navbar-screenplay-title {
+        font-size: 0.88rem !important;
+    }
+}
+
+@media (max-width: 360px) {
+    /* Very narrow screens (e.g., 320px) */
+    .navbar-screenplay-title {
+        font-size: 0.82rem !important;
+        line-height: 1.15;
+    }
+
+    .btn-nav-scenes span {
+        display: none; /* Show icon only if space is critically tight on 320px screens */
+    }
+
+    .btn-nav-scenes {
+        padding: 0.28rem 0.5rem !important;
+        width: 36px;
+        min-width: 36px;
+        justify-content: center;
+    }
+}

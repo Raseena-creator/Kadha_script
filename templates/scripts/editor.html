@@ -35,30 +35,116 @@
 {% endblock %}
 
 {% block navbar_left %}
-<div class="d-flex align-items-center gap-2 flex-nowrap overflow-hidden">
+<div class="d-flex align-items-center gap-2 gap-sm-3 flex-nowrap editor-navbar-left">
     <!-- Home Button (replaces Pen Icon, navigates to Dashboard/Home) -->
-    <a href="{% url 'dashboard' %}" class="btn btn-sm btn-outline-ks d-flex align-items-center justify-content-center p-0" style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px;" title="Dashboard (Home)" id="btnEditorHome">
+    <a href="{% url 'dashboard' %}" class="btn btn-sm btn-outline-ks d-flex align-items-center justify-content-center p-0 editor-nav-btn" title="Dashboard (Home)" id="btnEditorHome">
         <i class="bi bi-house-door-fill fs-5"></i>
     </a>
 
-    <!-- Screenplay Name (replaces KadhaScript Brand Text) -->
-    <span class="navbar-screenplay-title text-truncate font-screenplay" title="{{ script.title }}" style="max-width: clamp(130px, 30vw, 360px);">
+    <!-- Screenplay Name (replaces KadhaScript Brand Text, shows full title) -->
+    <span class="navbar-screenplay-title font-screenplay" title="{{ script.title }}" id="navbarScreenplayTitle">
         {{ script.title }}
     </span>
 
     <!-- Scenes Button in Main Navbar (opens existing editor Scenes UI directly) -->
-    <button type="button" class="btn btn-primary-ks btn-nav-scenes" id="btnNavScenes" title="Scenes List & Order" data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" aria-controls="scenesOffcanvas">
+    <button type="button" class="btn btn-primary-ks btn-nav-scenes editor-nav-btn" id="btnNavScenes" title="Scenes List & Order" data-bs-toggle="offcanvas" data-bs-target="#scenesOffcanvas" aria-controls="scenesOffcanvas">
         <i class="bi bi-list-ol fs-5"></i>
         <span>Scenes</span>
     </button>
 
-    <!-- Scene Trash Button in Main Navbar -->
-    <button type="button" class="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1 btn-open-scene-trash" id="btnNavOpenSceneTrash" title="Scene Trash" style="height: 36px; border-radius: 8px;">
+    <!-- Scene Trash Button in Main Navbar (Desktop/Tablet >= 768px) -->
+    <button type="button" class="btn btn-sm btn-outline-danger d-none d-md-inline-flex align-items-center gap-1 btn-open-scene-trash editor-nav-btn" id="btnNavOpenSceneTrash" title="Scene Trash">
         <i class="bi bi-trash"></i>
-        <span class="d-none d-sm-inline">Trash</span> (<span class="scene-trash-count">0</span>)
+        <span>Trash</span> (<span class="scene-trash-count">0</span>)
     </button>
 </div>
 {% endblock navbar_left %}
+
+{% block navbar_right %}
+<!-- Desktop / Tablet (> 767px) Navigation Actions -->
+<div class="d-none d-md-flex align-items-center gap-2">
+    {% if user.is_authenticated %}
+        <!-- Global Search Form (Desktop >= 992px) -->
+        <form action="{% url 'global_search' %}" method="GET" class="d-none d-lg-flex position-relative me-2">
+            <input type="search" name="q" class="form-control form-control-sm pe-4 font-malayalam" placeholder="Search scripts, dialogues... (/)" value="{{ request.GET.q|default:'' }}" style="width: 220px; border-radius: 20px;">
+            <button type="submit" class="btn btn-sm position-absolute end-0 top-50 translate-middle-y text-muted border-0 bg-transparent" aria-label="Search">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+
+        <div class="dropdown ms-1">
+            <button class="btn btn-sm btn-outline-ks dropdown-toggle d-flex align-items-center gap-1 editor-nav-btn" type="button" data-bs-toggle="dropdown" aria-label="User Profile">
+                <i class="bi bi-person-circle"></i>
+                <span class="d-none d-lg-inline">{{ user.profile.pen_name|default:user.username }}</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end shadow-sm border">
+                <li>
+                    <div class="px-3 py-2 border-bottom">
+                        <strong class="d-block text-truncate">{{ user.profile.pen_name|default:user.username }}</strong>
+                        <small class="text-muted">{{ user.email }}</small>
+                    </div>
+                </li>
+                <li><a class="dropdown-item py-2" href="{% url 'profile' %}"><i class="bi bi-person me-2"></i>Writer Profile</a></li>
+                <li><a class="dropdown-item py-2" href="{% url 'settings' %}"><i class="bi bi-gear me-2"></i>Preferences</a></li>
+                <li><a class="dropdown-item py-2" href="{% url 'script_trash' %}"><i class="bi bi-trash me-2 text-muted"></i>Trash</a></li>
+                <li><hr class="dropdown-divider my-1"></li>
+                <li>
+                    <form action="{% url 'logout' %}" method="POST" class="d-inline w-100">
+                        {% csrf_token %}
+                        <button type="submit" class="dropdown-item text-danger py-2 border-0 bg-transparent w-100 text-start">
+                            <i class="bi bi-box-arrow-right me-2"></i>Sign Out
+                        </button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Mobile (<= 767px) Compact Action Menu -->
+<div class="d-flex d-md-none align-items-center ms-2 ms-sm-3">
+    <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary d-flex align-items-center justify-content-center p-0 editor-nav-btn"
+            type="button" id="btnMobileEditorMenu" data-bs-toggle="dropdown" aria-expanded="false" aria-label="More navigation options">
+            <i class="bi bi-three-dots-vertical fs-5"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end shadow-sm border" aria-labelledby="btnMobileEditorMenu">
+            {% if user.is_authenticated %}
+            <li>
+                <div class="px-3 py-2 border-bottom">
+                    <strong class="d-block text-truncate">{{ user.profile.pen_name|default:user.username }}</strong>
+                    <small class="text-muted">{{ user.email }}</small>
+                </div>
+            </li>
+            {% endif %}
+            <li>
+                <button type="button" class="dropdown-item py-2 d-flex align-items-center justify-content-between btn-open-scene-trash" id="btnMobileDropdownTrash">
+                    <span><i class="bi bi-trash me-2 text-danger"></i>Scene Trash</span>
+                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle scene-trash-count">0</span>
+                </button>
+            </li>
+            <li><hr class="dropdown-divider my-1"></li>
+            <li><a class="dropdown-item py-2" href="{% url 'global_search' %}"><i class="bi bi-search me-2 text-primary"></i>Search Scripts</a></li>
+            <li><a class="dropdown-item py-2" href="{% url 'dashboard' %}"><i class="bi bi-grid-1x2 me-2 text-primary"></i>Dashboard</a></li>
+            <li><a class="dropdown-item py-2" href="{% url 'script_list' %}"><i class="bi bi-collection-play me-2 text-info"></i>My Scripts</a></li>
+            {% if user.is_authenticated %}
+            <li><a class="dropdown-item py-2" href="{% url 'profile' %}"><i class="bi bi-person me-2"></i>Writer Profile</a></li>
+            <li><a class="dropdown-item py-2" href="{% url 'settings' %}"><i class="bi bi-gear me-2"></i>Preferences</a></li>
+            <li><a class="dropdown-item py-2" href="{% url 'script_trash' %}"><i class="bi bi-archive me-2 text-muted"></i>Screenplay Trash</a></li>
+            <li><hr class="dropdown-divider my-1"></li>
+            <li>
+                <form action="{% url 'logout' %}" method="POST" class="d-inline w-100">
+                    {% csrf_token %}
+                    <button type="submit" class="dropdown-item text-danger py-2 border-0 bg-transparent w-100 text-start">
+                        <i class="bi bi-box-arrow-right me-2"></i>Sign Out
+                    </button>
+                </form>
+            </li>
+            {% endif %}
+        </ul>
+    </div>
+</div>
+{% endblock navbar_right %}
 
 {% block content %}
 <div class="editor-layout" id="screenplayEditor" data-mode="read">
