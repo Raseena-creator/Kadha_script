@@ -4,18 +4,30 @@
 {% block title %}Screenplays — KadhaScript{% endblock %}
 
 {% block content %}
-<div class="container py-4" style="max-width: 860px;">
+<div class="container px-3 px-sm-4 py-3 py-md-4 dashboard-container" style="max-width: 860px;">
 
     <!-- Top Action Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4 pb-2">
-        <div>
-            <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.5px;">Screenplays</h2>
+    <div class="dashboard-header mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="dashboard-heading fw-bold mb-0 text-dark">Screenplays</h1>
+            </div>
+            <div class="dashboard-header-actions d-flex align-items-center gap-2">
+                <!-- Trash button: compact icon-only on mobile, icon+text on md+ -->
+                <a href="{% url 'script_trash' %}" class="btn btn-outline-secondary btn-dashboard-trash d-inline-flex align-items-center justify-content-center" id="btnDashboardTrash" title="Trash" aria-label="View Trash">
+                    <i class="bi bi-trash"></i>
+                    <span class="d-none d-md-inline ms-1">Trash</span>
+                </a>
+                <!-- Desktop New Screenplay button -->
+                <a href="{% url 'script_create' %}" class="btn-primary-ks d-none d-md-inline-flex" id="btnNewScriptDesktop">
+                    <i class="bi bi-plus-lg"></i> New Screenplay
+                </a>
+            </div>
         </div>
-        <div class="d-flex align-items-center gap-2">
-            <a href="{% url 'script_trash' %}" class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" title="View Trash">
-                <i class="bi bi-trash"></i> Trash
-            </a>
-            <a href="{% url 'script_create' %}" class="btn-primary-ks">
+
+        <!-- Mobile-only full-width + New Screenplay button -->
+        <div class="d-block d-md-none mt-3">
+            <a href="{% url 'script_create' %}" class="btn-primary-ks btn-mobile-new-script w-100 justify-content-center py-2" id="btnNewScriptMobile">
                 <i class="bi bi-plus-lg"></i> New Screenplay
             </a>
         </div>
@@ -33,57 +45,70 @@
         {% endif %}
     </div>
 
-    <!-- Minimalist Project Metrics -->
-    <div class="ks-metrics-bar d-flex align-items-center justify-content-between mb-4">
-        <div class="d-flex align-items-center gap-4 flex-wrap">
-            <div class="ks-metric-item">
-                <span class="ks-metric-label">Total Projects</span>
-                <span class="ks-metric-value" id="totalProjectsCount">{{ total_scripts }}</span>
-            </div>
-            <div class="vr opacity-25 d-none d-sm-block"></div>
-            <div class="ks-metric-item">
-                <span class="ks-metric-label">Total SCENES</span>
-                <span class="ks-metric-value" id="totalScenesCount">{{ total_scenes }}</span>
-            </div>
+    <!-- Statistics Section (Two separate stat cards arranged side-by-side on mobile) -->
+    <div class="dashboard-stats-grid mb-4" id="dashboardStatsSection">
+        <div class="dashboard-stat-card">
+            <span class="dashboard-stat-value font-screenplay" id="totalProjectsCount">{{ total_scripts }}</span>
+            <span class="dashboard-stat-label">PROJECTS</span>
+        </div>
+        <div class="dashboard-stat-card">
+            <span class="dashboard-stat-value font-screenplay" id="totalScenesCount">{{ total_scenes }}</span>
+            <span class="dashboard-stat-label">SCENES</span>
         </div>
     </div>
 
-    <!-- Clean Vertical Project List -->
+    <!-- Clean Two-Row Screenplay Cards -->
     {% if scripts %}
     <div class="ks-project-list" id="dashboardProjectsList">
         {% for script in scripts %}
         <div class="ks-project-item" data-id="{{ script.id }}" id="project-item-{{ script.id }}">
-            <a href="{% url 'script_editor' script.id %}" class="ks-project-link" title="Open {{ script.title }} in Screenplay Editor">
-                <span class="ks-project-title font-malayalam" id="script-title-{{ script.id }}">
-                    {{ script.title }}
-                </span>
-                <span class="ks-project-scenes" data-scenes="{% with count=script.num_scenes|default:script.primary_scene_count %}{{ count }}{% endwith %}">
-                    {% with count=script.num_scenes|default:script.primary_scene_count %}
-                        {{ count }} {% if count == 1 %}SCENE{% else %}SCENES{% endif %}
-                    {% endwith %}
-                    {% if script.sub_scene_count > 0 %}
-                        <span class="text-muted small ms-1">({{ script.sub_scene_count }} Sub-scene{{ script.sub_scene_count|pluralize }})</span>
-                    {% endif %}
-                </span>
-            </a>
-            <div class="ks-project-actions dropdown ms-2">
-                <button class="btn btn-sm btn-link p-0 border-0 dropdown-toggle project-action-btn" type="button"
-                    data-bs-toggle="dropdown" aria-expanded="false" title="Options for {{ script.title }}" aria-label="Options for {{ script.title }}">
-                    <i class="bi bi-three-dots-vertical"></i>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                    <li>
-                        <button type="button" class="dropdown-item btn-action-rename-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
-                            <i class="bi bi-pencil me-2 text-primary"></i>Rename
+            <div class="ks-project-card-main">
+                <!-- Row 1: Title and Options -->
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <a href="{% url 'script_editor' script.id %}" class="ks-project-link text-decoration-none flex-grow-1" title="Open {{ script.title }} in Screenplay Editor">
+                        <span class="ks-project-title font-malayalam" id="script-title-{{ script.id }}">
+                            {{ script.title }}
+                        </span>
+                    </a>
+                    <div class="ks-project-actions dropdown flex-shrink-0">
+                        <button class="btn btn-sm btn-link p-0 border-0 dropdown-toggle project-action-btn" type="button"
+                            data-bs-toggle="dropdown" aria-expanded="false" title="Options for {{ script.title }}" aria-label="Options for {{ script.title }}">
+                            <i class="bi bi-three-dots-vertical"></i>
                         </button>
-                    </li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li>
-                        <button type="button" class="dropdown-item text-danger btn-action-delete-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
-                            <i class="bi bi-trash me-2"></i>Delete
-                        </button>
-                    </li>
-                </ul>
+                        <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
+                            <li>
+                                <button type="button" class="dropdown-item btn-action-rename-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
+                                    <i class="bi bi-pencil me-2 text-primary"></i>Rename
+                                </button>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <button type="button" class="dropdown-item text-danger btn-action-delete-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
+                                    <i class="bi bi-trash me-2"></i>Delete
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Row 2: Metadata (Scenes count & Last updated) -->
+                <a href="{% url 'script_editor' script.id %}" class="ks-project-meta-link text-decoration-none d-block mt-2" title="Open {{ script.title }} in Screenplay Editor">
+                    <div class="ks-project-meta d-flex align-items-center flex-wrap gap-2 text-muted small">
+                        <span class="ks-project-scenes" data-scenes="{% with count=script.num_scenes|default:script.primary_scene_count %}{{ count }}{% endwith %}">
+                            <i class="bi bi-camera-reels me-1 text-muted"></i>
+                            {% with count=script.num_scenes|default:script.primary_scene_count %}
+                                {{ count }} {% if count == 1 %}Scene{% else %}Scenes{% endif %}
+                            {% endwith %}
+                            {% if script.sub_scene_count > 0 %}
+                                <span class="ms-1">· {{ script.sub_scene_count }} Sub-scene{{ script.sub_scene_count|pluralize }}</span>
+                            {% endif %}
+                        </span>
+                        <span class="ks-meta-dot opacity-50">·</span>
+                        <span class="ks-project-updated">
+                            <i class="bi bi-clock me-1 text-muted"></i>Updated {{ script.updated_at|timesince }} ago
+                        </span>
+                    </div>
+                </a>
             </div>
         </div>
         {% endfor %}

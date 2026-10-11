@@ -52,6 +52,25 @@ body {
     padding: 0.75rem 1.5rem;
 }
 
+@media (max-width: 576px) {
+    .ks-navbar {
+        padding: 0.65rem 1rem;
+    }
+}
+
+@media (max-width: 360px) {
+    .ks-navbar {
+        padding: 0.5rem 0.75rem;
+    }
+    .ks-brand {
+        font-size: 1.1rem;
+        gap: 0.35rem;
+    }
+    .ks-brand span.fs-6 {
+        display: none;
+    }
+}
+
 .ks-brand {
     font-weight: 700;
     font-size: 1.25rem;
@@ -260,94 +279,222 @@ body {
     margin-top: auto;
     background-color: var(--ks-surface);
     border-top: 1px solid var(--ks-border);
-    padding: 2rem 0;
+    padding: 1.75rem 0 calc(1.75rem + env(safe-area-inset-bottom, 0px));
     color: var(--ks-text-muted);
     font-size: 0.88rem;
 }
 
-/* Minimalist Project List */
+@media (max-width: 767.98px) {
+    .ks-footer {
+        padding: 1.5rem 0 calc(1.5rem + env(safe-area-inset-bottom, 0px));
+        text-align: center;
+    }
+}
+
+/* ==========================================================================
+   DASHBOARD REDESIGN & RESPONSIVE STYLES
+   ========================================================================== */
+.dashboard-container {
+    padding-bottom: 3.5rem !important;
+}
+
+.dashboard-heading {
+    font-size: 1.75rem;
+    letter-spacing: -0.5px;
+    line-height: 1.25;
+}
+
+@media (max-width: 576px) {
+    .dashboard-heading {
+        font-size: 1.5rem;
+    }
+}
+
+.btn-dashboard-trash {
+    border-color: var(--ks-border);
+    color: var(--ks-text-muted);
+    border-radius: var(--ks-radius);
+    padding: 0.45rem 0.85rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-dashboard-trash:hover,
+.btn-dashboard-trash:focus {
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+    color: #dc2626;
+}
+
+@media (max-width: 767.98px) {
+    .btn-dashboard-trash {
+        width: 42px;
+        height: 42px;
+        padding: 0;
+        border-radius: 8px;
+        font-size: 1.15rem;
+    }
+}
+
+.btn-mobile-new-script {
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 0.65rem 1rem;
+    border-radius: var(--ks-radius);
+    min-height: 44px;
+}
+
+/* Statistics Grid & Cards */
+.dashboard-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+}
+
+@media (min-width: 576px) {
+    .dashboard-stats-grid {
+        gap: 1rem;
+    }
+}
+
+.dashboard-stat-card {
+    background-color: #F4FBF9;
+    border: 1px solid rgba(42, 157, 143, 0.18);
+    border-radius: var(--ks-radius-lg, 12px);
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+@media (min-width: 768px) {
+    .dashboard-stat-card {
+        padding: 1.1rem 1.25rem;
+    }
+}
+
+.dashboard-stat-card:hover {
+    box-shadow: 0 2px 8px rgba(42, 157, 143, 0.12);
+}
+
+.dashboard-stat-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--ks-accent, #2A9D8F);
+    margin-bottom: 0.2rem;
+}
+
+@media (min-width: 768px) {
+    .dashboard-stat-value {
+        font-size: 1.85rem;
+    }
+}
+
+.dashboard-stat-label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #6B7280;
+}
+
+/* Screenplay Cards (Two-Row Structure) */
 .ks-project-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.85rem;
     margin: 0;
     padding: 0;
     list-style: none;
 }
 
 .ks-project-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.1rem 1.35rem;
-    background-color: var(--ks-surface);
-    border: 1px solid var(--ks-border);
-    border-radius: var(--ks-radius);
+    display: block;
+    padding: 1.15rem 1.25rem;
+    background-color: var(--ks-surface, #ffffff);
+    border: 1px solid var(--ks-border, #e6e1d6);
+    border-radius: var(--ks-radius-lg, 12px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
     text-decoration: none;
     color: var(--ks-text);
-    transition: all 0.15s ease;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+@media (max-width: 576px) {
+    .ks-project-item {
+        padding: 0.95rem 1rem;
+    }
 }
 
 .ks-project-item:hover {
-    background-color: var(--ks-surface-subtle);
-    border-color: var(--ks-accent);
-    transform: translateY(-1px);
-    box-shadow: var(--ks-shadow-sm);
+    background-color: #ffffff;
+    border-color: var(--ks-accent, #2A9D8F);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+.ks-project-link {
+    display: block;
     color: var(--ks-text);
+    text-decoration: none;
+    min-width: 0;
 }
 
 .ks-project-title {
-    font-size: 1.05rem;
+    font-size: 1.1rem;
     font-weight: 600;
+    line-height: 1.55;
     color: var(--ks-text);
     margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    display: block;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+    transition: color 0.15s ease;
 }
 
-.ks-project-item:hover .ks-project-title {
-    color: var(--ks-accent);
+@media (max-width: 576px) {
+    .ks-project-title {
+        font-size: 1.02rem;
+    }
+}
+
+.ks-project-item:hover .ks-project-title,
+.ks-project-link:hover .ks-project-title {
+    color: var(--ks-accent, #2A9D8F);
+}
+
+.ks-project-meta-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+.ks-project-meta {
+    font-size: 0.82rem;
+    color: #6B7280;
+    line-height: 1.4;
 }
 
 .ks-project-scenes {
     font-size: 0.82rem;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: var(--ks-text-muted);
-    text-transform: uppercase;
+    font-weight: 500;
+    color: #6B7280;
     white-space: nowrap;
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    flex-shrink: 0;
-    margin-left: 1rem;
 }
 
-.ks-project-item:hover .ks-project-scenes {
-    color: var(--ks-accent);
-}
-
-.ks-project-link {
-    display: flex;
+.ks-project-updated {
+    font-size: 0.82rem;
+    color: #6B7280;
+    white-space: nowrap;
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    flex-grow: 1;
-    min-width: 0;
-    text-decoration: none;
-    color: var(--ks-text);
-}
-
-.ks-project-link:hover .ks-project-title {
-    color: var(--ks-accent);
-}
-
-.ks-project-link:hover .ks-project-scenes {
-    color: var(--ks-accent);
 }
 
 .project-action-btn {
@@ -356,7 +503,7 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--ks-text-muted) !important;
     text-decoration: none !important;
     transition: background-color 0.15s ease, color 0.15s ease;
@@ -365,11 +512,11 @@ body {
 .project-action-btn:hover,
 .project-action-btn:focus,
 .project-action-btn[aria-expanded="true"] {
-    background-color: var(--ks-surface-subtle);
-    color: var(--ks-accent-hover) !important;
+    background-color: var(--ks-surface-subtle, #f5f2ea);
+    color: var(--ks-accent, #2A9D8F) !important;
 }
 
-/* Minimalist Stat Bar */
+/* Fallback Metric Classes */
 .ks-metrics-bar {
     display: flex;
     align-items: center;
