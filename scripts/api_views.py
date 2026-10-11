@@ -16,6 +16,7 @@ from .services.scene_service import (
     move_scene,
     serialize_scenes_hierarchy,
     restore_scene_to_script,
+    reorder_main_scene,
 )
 
 
@@ -66,10 +67,13 @@ def api_get_scene(request, script_id, scene_id):
             'intercut_source_id': scene.intercut_source_id,
             'scene_number': scene.scene_number,
             'scene_identifier': scene.scene_identifier,
+            'nav_identifier': scene.nav_identifier,
             'display_number': scene.display_number,
             'display_number_formatted': scene.display_number_formatted,
             'full_display_heading': scene.full_display_heading,
             'clean_heading': scene.clean_heading,
+            'clean_location': scene.clean_location or 'Location',
+            'action_preview': scene.action_preview,
             'heading': scene.heading,
             'transition': scene.transition or 'CUT TO',
             'summary': scene.summary,
@@ -101,8 +105,50 @@ def api_save_scene(request, script_id, scene_id):
     except json.JSONDecodeError:
         return JsonResponse({'status': 'error', 'message': 'Invalid JSON format'}, status=400)
 
+    if 'heading' in data and not data.get('heading', '').strip():
+        return JsonResponse({'status': 'error', 'message': 'Scene heading cannot be empty.'}, status=400)
+
+    # Validate target_scene_number if provided
+    target_scene_number = data.get('scene_number', None)
+    if target_scene_number is not None:
+        if isinstance(target_scene_number, bool) or isinstance(target_scene_number, float):
+            return JsonResponse({'status': 'error', 'message': 'Scene number must be a valid positive integer.'}, status=400)
+        try:
+            if isinstance(target_scene_number, str):
+                s_val = target_scene_number.strip()
+                if not s_val.isdigit():
+                    return JsonResponse({'status': 'error', 'message': 'Scene number must be a valid positive integer.'}, status=400)
+                target_scene_number = int(s_val)
+            else:
+                target_scene_number = int(target_scene_number)
+        except (ValueError, TypeError):
+            return JsonResponse({'status': 'error', 'message': 'Scene number must be a valid positive integer.'}, status=400)
+
+        if target_scene_number <= 0:
+            return JsonResponse({'status': 'error', 'message': 'Scene number must be a positive integer greater than zero.'}, status=400)
+
+        if scene.is_sub_scene:
+            return JsonResponse({'status': 'error', 'message': 'Sub-scenes cannot be renumbered as main scenes.'}, status=400)
+        if scene.is_intercut:
+            return JsonResponse({'status': 'error', 'message': 'Intercut scenes cannot be directly renumbered.'}, status=400)
+        if scene.is_duplicate:
+            return JsonResponse({'status': 'error', 'message': 'Duplicate scenes retain their base scene number and cannot be directly renumbered.'}, status=400)
+
+        total_main_scenes = script.scenes.filter(
+            is_deleted=False,
+            parent_scene__isnull=True,
+            is_intercut=False,
+            is_duplicate=False
+        ).count()
+
+        if target_scene_number > total_main_scenes:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Scene number cannot exceed the total number of main scenes ({total_main_scenes}).'
+            }, status=400)
+
     heading = data.get('heading', scene.heading).strip()
-    elements = data.get('elements', [])
+    elements = data.get('elements', None)
 
     try:
         with transaction.atomic():
@@ -114,22 +160,28 @@ def api_save_scene(request, script_id, scene_id):
                 scene.transition = data.get('transition', 'CUT TO').strip() or 'CUT TO'
             scene.save()
 
-            # Update or recreate elements
-            scene.elements.all().delete()
-            new_elements = []
-            for idx, elem in enumerate(elements):
-                el_type = elem.get('element_type', 'action')
-                el_content = elem.get('content', '')
-                new_elements.append(
-                    ScriptElement(
-                        scene=scene,
-                        element_type=el_type,
-                        content=el_content,
-                        order=idx
+            # Update or recreate elements only when explicitly provided
+            if elements is not None:
+                scene.elements.all().delete()
+                new_elements = []
+                for idx, elem in enumerate(elements):
+                    el_type = elem.get('element_type', 'action')
+                    el_content = elem.get('content', '')
+                    new_elements.append(
+                        ScriptElement(
+                            scene=scene,
+                            element_type=el_type,
+                            content=el_content,
+                            order=idx
+                        )
                     )
-                )
-            if new_elements:
-                ScriptElement.objects.bulk_create(new_elements)
+                if new_elements:
+                    ScriptElement.objects.bulk_create(new_elements)
+
+            # Reorder main scene if target_scene_number is provided
+            if target_scene_number is not None and not scene.is_sub_scene:
+                reorder_main_scene(script, scene, target_scene_number)
+                scene.refresh_from_db()
 
             # Touch script's updated_at
             script.updated_at = timezone.now()
@@ -138,12 +190,15 @@ def api_save_scene(request, script_id, scene_id):
         return JsonResponse({
             'status': 'ok',
             'scene_id': scene.id,
+            'scene_number': scene.scene_number,
             'scene_identifier': scene.scene_identifier,
+            'nav_identifier': scene.nav_identifier,
             'display_number': scene.display_number,
             'display_number_formatted': scene.display_number_formatted,
             'full_display_heading': scene.full_display_heading,
             'clean_heading': scene.clean_heading,
             'clean_location': scene.clean_location or 'Location',
+            'action_preview': scene.action_preview,
             'heading': scene.heading,
             'transition': scene.transition or 'CUT TO',
             'updated_at': script.updated_at.strftime('%H:%M:%S'),
@@ -154,7 +209,8 @@ def api_save_scene(request, script_id, scene_id):
                 'primary_scene_count': script.primary_scene_count,
                 'sub_scene_count': script.sub_scene_count,
                 'estimated_pages': script.estimated_pages,
-            }
+            },
+            'scenes_tree': serialize_scenes_hierarchy(script),
         })
     except Exception as e:
         return JsonResponse({
@@ -411,10 +467,18 @@ def api_duplicate_scene(request, script_id, scene_id):
             'is_sub_scene': new_scene.is_sub_scene,
             'is_duplicate': new_scene.is_duplicate,
             'duplicate_number': new_scene.duplicate_number,
+            'is_intercut': new_scene.is_intercut,
             'scene_number': new_scene.scene_number,
+            'scene_identifier': new_scene.scene_identifier,
+            'nav_identifier': new_scene.nav_identifier,
             'display_number': new_scene.display_number,
             'display_number_formatted': new_scene.display_number_formatted,
+            'full_display_heading': new_scene.full_display_heading,
+            'clean_heading': new_scene.clean_heading,
+            'clean_location': new_scene.clean_location or 'Location',
+            'action_preview': new_scene.action_preview,
             'heading': new_scene.heading,
+            'transition': new_scene.transition or 'CUT TO',
             'order': new_scene.order,
         },
         'scenes_tree': serialize_scenes_hierarchy(script),

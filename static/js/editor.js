@@ -41,6 +41,8 @@ class KadhaEditor {
         this.bsSubSceneModal = this.subSceneModalEl ? new bootstrap.Modal(this.subSceneModalEl) : null;
         this.deleteModalEl = document.getElementById('editorDeleteModal');
         this.bsDeleteModal = this.deleteModalEl ? new bootstrap.Modal(this.deleteModalEl) : null;
+        this.renameModalEl = document.getElementById('editorRenameModal');
+        this.bsRenameModal = this.renameModalEl ? new bootstrap.Modal(this.renameModalEl) : null;
         this.sceneSelectModalEl = document.getElementById('editorSceneSelectModal');
         this.bsSceneSelectModal = this.sceneSelectModalEl ? new bootstrap.Modal(this.sceneSelectModalEl) : null;
         this.trashModalEl = document.getElementById('sceneTrashModal');
@@ -144,8 +146,10 @@ class KadhaEditor {
             this.scenesTree = data.scenes_tree || [];
             this.currentSceneIsSub = Boolean(data.scene.is_sub_scene);
             this.currentMainSceneId = data.scene.parent_scene_id || data.scene.id;
-            this.currentSceneIntercutSourceId = data.scene.intercut_source_id || null;
-            this.currentSceneIdentifier = data.scene.scene_identifier || (data.scene.is_sub_scene ? 'Scene 1.A' : 'Scene 1');
+            const fallbackIdent = data.scene.nav_identifier
+                || data.scene.display_number
+                || (data.scene.scene_number ? ('Scene ' + data.scene.scene_number + (data.scene.is_sub_scene ? '.A' : '')) : (data.scene.is_sub_scene ? 'Sub-Scene' : 'Scene'));
+            this.currentSceneIdentifier = data.scene.scene_identifier || fallbackIdent;
             this.currentSceneTransition = (data.scene.transition || 'CUT TO').trim();
             const cleanHeading = (data.scene.clean_heading || data.scene.heading || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
             this.currentFullHeading = data.scene.full_display_heading || `${this.currentSceneIdentifier} : ${cleanHeading}`;
@@ -336,8 +340,10 @@ class KadhaEditor {
 
             const prefix = document.createElement('span');
             prefix.className = 'scene-prefix-label font-screenplay user-select-none';
-            prefix.contentEditable = 'false';
-            prefix.innerText = (this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1')) + ' :';
+            const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
+            const fallbackIdent = (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
+                || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
+            prefix.innerText = (this.currentSceneIdentifier || fallbackIdent) + ' :';
             lineWrapper.appendChild(prefix);
 
             const builder = document.createElement('div');
@@ -400,7 +406,10 @@ class KadhaEditor {
                     locationInput.classList.remove('is-invalid');
                 }
 
-                const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
+                const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
+                const currentIdent = this.currentSceneIdentifier
+                    || (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
+                    || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
                 const fullHeading = locVal ? `${currentIdent} : ${built}` : `${currentIdent} : UNTITLED SCENE`;
 
                 const targetSceneId = Number(this.currentSceneId);
@@ -419,7 +428,15 @@ class KadhaEditor {
                     treeItem.clean_location = locVal;
                     treeItem.clean_heading = built;
                     treeItem.heading = built;
+                    treeItem.full_display_heading = fullHeading;
                 }
+
+                const activeCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
+                activeCards.forEach(card => {
+                    card.querySelectorAll('.btn-action-insert-before, .btn-action-insert-after, .btn-action-add-sub, .btn-action-delete, .btn-action-rename').forEach(btn => {
+                        btn.dataset.heading = built;
+                    });
+                });
 
                 this.markDirty();
                 this.calculateLiveStats();
@@ -638,13 +655,28 @@ class KadhaEditor {
             if (block.dataset.type === 'scene_heading') {
                 const rawHeading = editable.innerText.trim();
                 const cleanHeading = rawHeading.replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
-                const currentIdent = this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
+                const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
+                const currentIdent = this.currentSceneIdentifier
+                    || (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
+                    || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
                 const fullHeading = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
-
                 const targetSceneId = Number(this.currentSceneId);
-                const m = cleanHeading.match(/^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*(.*?)(?:\s*-\s*([A-Za-z]+))?$/i);
-                const extractedLoc = m ? m[1].trim() : cleanHeading;
-                const displayLoc = extractedLoc || cleanHeading || 'Location';
+                const prefixStripped = cleanHeading.replace(/^(?:(?:INT\.\/EXT\.|EXT\.\/INT\.|INT\/EXT|EXT\/INT|INT\.|EXT\.|I\/E\.|INT|EXT)\s*[:\.\-\s]\s*)/i, '').trim();
+                const parts = prefixStripped.split(/\s+[-–—]\s+/).map(p => p.trim()).filter(Boolean);
+                const timeTokens = new Set([
+                    'DAY', 'NIGHT', 'DAWN', 'DUSK', 'MORNING', 'EVENING', 'AFTERNOON',
+                    'SUNSET', 'SUNRISE', 'CONTINUOUS', 'LATER', 'SAME TIME', 'MOMENTS LATER',
+                    'SAME', 'FLASHBACK', 'MAGIC HOUR', 'EARLY MORNING', 'LATE NIGHT',
+                    'RAIN', 'STORM', 'SNOW', 'FOG', 'WIND',
+                    'പകൽ', 'രാത്രി', 'പ്രഭാതം', 'സന്ധ്യ', 'തുടർച്ച', 'വൈകുന്നേരം', 'ഉച്ച', 'മഴ'
+                ]);
+                let displayLoc = cleanHeading;
+                if (parts.length > 1 && timeTokens.has(parts[parts.length - 1].toUpperCase())) {
+                    displayLoc = parts.slice(0, -1).join(' - ');
+                } else if (parts.length > 0) {
+                    displayLoc = parts.join(' - ');
+                }
+                displayLoc = displayLoc || cleanHeading || 'Location';
 
                 const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
                 activeSidebarLocs.forEach(item => {
@@ -1106,8 +1138,10 @@ class KadhaEditor {
 
             const prefix = document.createElement('span');
             prefix.className = 'scene-prefix-label font-screenplay user-select-none';
-            prefix.contentEditable = 'false';
-            prefix.innerText = (this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1')) + ' :';
+            const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
+            const fallbackIdent = (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
+                || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
+            prefix.innerText = (this.currentSceneIdentifier || fallbackIdent) + ' :';
             lineWrapper.appendChild(prefix);
 
             if (editable) {
@@ -1567,6 +1601,9 @@ class KadhaEditor {
 
         const saveVersion = this.changeVersion || 0;
         const payload = this.extractScenePayload();
+        this.sceneSaveCounters = this.sceneSaveCounters || {};
+        this.sceneSaveCounters[targetSceneId] = (this.sceneSaveCounters[targetSceneId] || 0) + 1;
+        const saveToken = this.sceneSaveCounters[targetSceneId];
 
         this.activeSavePromise = (async () => {
             try {
@@ -1586,25 +1623,113 @@ class KadhaEditor {
                     throw new Error(result.message || 'Save failed');
                 }
 
-                if ((this.changeVersion || 0) === saveVersion) {
-                    this.isDirty = false;
-                    this.setSaveStatus('saved', 'Saved ✓');
-                } else {
-                    this.isDirty = true;
-                    this.setSaveStatus('dirty', 'Unsaved changes');
+                const isLatestSaveForScene = (this.sceneSaveCounters[targetSceneId] === saveToken);
+                const isActiveScene = (Number(this.currentSceneId) === targetSceneId);
+                const hasNewerUnsavedEdits = isActiveScene && ((this.changeVersion || 0) !== saveVersion);
+
+                if (isActiveScene) {
+                    if (hasNewerUnsavedEdits) {
+                        this.isDirty = true;
+                        this.setSaveStatus('dirty', 'Unsaved changes');
+                    } else {
+                        this.isDirty = false;
+                        this.setSaveStatus('saved', 'Saved ✓');
+                    }
                 }
 
                 // Synchronize in-memory tree and sidebar with persisted location from server
-                if (result.clean_location) {
+                if (isLatestSaveForScene && !hasNewerUnsavedEdits) {
                     const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === Number(targetSceneId));
                     if (treeItem) {
-                        treeItem.clean_location = result.clean_location;
+                        if (result.clean_location) {
+                            treeItem.clean_location = result.clean_location;
+                        }
+                        if (result.clean_heading) {
+                            treeItem.clean_heading = result.clean_heading;
+                        }
+                        if (result.heading) {
+                            treeItem.heading = result.heading;
+                        }
+                        if (result.full_display_heading) {
+                            treeItem.full_display_heading = result.full_display_heading;
+                        }
+                        if (result.scene_identifier) {
+                            treeItem.scene_identifier = result.scene_identifier;
+                        }
+                        if (result.nav_identifier) {
+                            treeItem.nav_identifier = result.nav_identifier;
+                        }
+                        if (result.display_number) {
+                            treeItem.display_number = result.display_number;
+                        }
+                        if (result.display_number_formatted) {
+                            treeItem.display_number_formatted = result.display_number_formatted;
+                        }
+                        if (result.transition) {
+                            treeItem.transition = result.transition;
+                        }
                     }
+
                     const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
                     activeSidebarLocs.forEach(item => {
-                        item.innerText = result.clean_location;
-                        item.title = result.clean_location;
+                        item.innerText = result.clean_location || 'Location';
+                        item.title = result.clean_location || 'Location';
                     });
+
+                    const activeSidebarNumbers = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-number`);
+                    const navNumber = result.nav_identifier || result.scene_identifier;
+                    if (navNumber) {
+                        activeSidebarNumbers.forEach(item => {
+                            item.innerText = navNumber;
+                        });
+                    }
+
+                    if (result.action_preview !== undefined) {
+                        if (treeItem) {
+                            treeItem.action_preview = result.action_preview || '';
+                        }
+                        const sceneCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
+                        sceneCards.forEach(card => {
+                            const navItem = card.querySelector('.scene-nav-item');
+                            if (!navItem) return;
+                            let previewEl = navItem.querySelector('.scene-nav-action-preview');
+                            const previewText = (result.action_preview || '').trim();
+                            if (previewText) {
+                                if (!previewEl) {
+                                    previewEl = document.createElement('span');
+                                    previewEl.className = 'scene-nav-action-preview font-malayalam';
+                                    navItem.appendChild(previewEl);
+                                }
+                                previewEl.innerText = previewText;
+                                previewEl.title = previewText;
+                            } else if (previewEl) {
+                                previewEl.remove();
+                            }
+                        });
+                    }
+
+                    if (result.heading) {
+                        const sceneCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
+                        sceneCards.forEach(card => {
+                            card.querySelectorAll('.btn-action-insert-before, .btn-action-insert-after, .btn-action-add-sub, .btn-action-delete, .btn-action-rename').forEach(btn => {
+                                btn.dataset.heading = result.heading;
+                            });
+                        });
+                    }
+
+                    if (isActiveScene) {
+                        if (result.scene_identifier) {
+                            this.currentSceneIdentifier = result.scene_identifier;
+                        }
+                        if (result.full_display_heading) {
+                            this.currentFullHeading = result.full_display_heading;
+                        } else if (result.clean_heading) {
+                            this.currentFullHeading = `${this.currentSceneIdentifier} : ${result.clean_heading}`;
+                        }
+                        if (this.currentSelectorBadge && this.currentFullHeading) {
+                            this.currentSelectorBadge.innerText = this.currentFullHeading;
+                        }
+                    }
                 }
 
                 this.updateStats(result.script_stats);
@@ -1705,6 +1830,7 @@ class KadhaEditor {
                         <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${sc.id}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>${afterLabel}</button></li>
                         <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="${targetParentId}" data-heading="${escapedHeading}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li><hr class="dropdown-divider"></li>
+                        <li><button type="button" class="dropdown-item btn-action-rename" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-pencil me-2 text-warning"></i>Rename</button></li>
                         <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="${sc.id}"><i class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                         <li><button type="button" class="dropdown-item btn-action-dup" data-id="${sc.id}"><i class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="${sc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
@@ -1715,12 +1841,16 @@ class KadhaEditor {
                 </div>
             `;
 
+            const actionPreview = sc.action_preview ? sc.action_preview.trim() : '';
+            const escapedActionPreview = actionPreview.replace(/"/g, '&quot;');
+            const actionPreviewHtml = actionPreview ? `<span class="scene-nav-action-preview font-malayalam" title="${escapedActionPreview}">${actionPreview}</span>` : '';
+
             htmlChunks.push(`
                 <li class="scene-item ${isSub ? 'sub-scene-item' : ''} ${isActive ? 'active' : ''}" data-id="${sc.id}" data-parent="${sc.parent_scene_id || ''}">
                     <div class="scene-nav-item">
                         <span class="scene-nav-number font-screenplay">${navId}</span>
-                        <span class="scene-nav-separator">:</span>
                         <span class="scene-nav-location font-malayalam" title="${cleanLoc.replace(/"/g, '&quot;')}">${cleanLoc}</span>
+                        ${actionPreviewHtml}
                     </div>
                     ${actionsMenuHtml}
                 </li>
@@ -1863,6 +1993,17 @@ class KadhaEditor {
             if (addSubBtn) {
                 e.preventDefault();
                 this.openSubSceneModal(addSubBtn.dataset.id, addSubBtn.dataset.heading);
+                return;
+            }
+
+            // Rename Scene
+            const renameBtn = e.target.closest('.btn-action-rename');
+            if (renameBtn) {
+                e.preventDefault();
+                const isSub = renameBtn.dataset.isSub === 'true';
+                const heading = renameBtn.dataset.heading || '';
+                const badge = renameBtn.dataset.badge || (isSub ? 'Sub-Scene' : 'Scene');
+                this.openRenameModal(renameBtn.dataset.id, badge, heading, isSub);
                 return;
             }
 
@@ -2289,6 +2430,233 @@ class KadhaEditor {
         }
     }
 
+    openRenameModal(sceneId, badge = '', heading = '', isSub = false) {
+        const sId = parseInt(sceneId);
+        const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === sId);
+        const currentHeading = (treeItem && treeItem.heading) || heading || (isSub ? 'INT. SUB LOCATION - DAY' : 'INT. LOCATION - DAY');
+        const parsed = this.parseHeading(currentHeading);
+
+        const idInput = document.getElementById('editorRenameSceneId');
+        if (idInput) idInput.value = sId;
+
+        const badgeText = badge.startsWith('Scene') ? badge : (badge.includes('(Duplicate') ? badge : (isSub ? badge : `Scene ${badge}`));
+        const badgeEl = document.getElementById('editorRenameBadge');
+        if (badgeEl) badgeEl.innerText = badgeText || (isSub ? 'Sub-Scene' : 'Scene');
+
+        const currPreview = document.getElementById('editorRenameCurrentPreview');
+        if (currPreview) currPreview.innerText = currentHeading;
+
+        const intextEl = document.getElementById('editorRenameIntext');
+        if (intextEl) intextEl.value = parsed.intext || 'INT.';
+
+        const locEl = document.getElementById('editorRenameLocation');
+        if (locEl) locEl.value = parsed.location || '';
+
+        const timeEl = document.getElementById('editorRenameTime');
+        if (timeEl) timeEl.value = parsed.time || 'DAY';
+
+        const errEl = document.getElementById('editorRenameError');
+        if (errEl) {
+            errEl.classList.add('d-none');
+            errEl.innerText = '';
+        }
+
+        // Configure Scene Number input for main scenes
+        const numberGroupEl = document.getElementById('editorRenameNumberGroup');
+        const numberInput = document.getElementById('editorRenameSceneNumber');
+        const numberHint = document.getElementById('editorRenameTotalScenesHint');
+        const baseMainScenes = (this.scenesTree || []).filter(sc => !sc.is_sub_scene && !sc.is_intercut && !sc.is_duplicate);
+        const totalMainCount = baseMainScenes.length;
+
+        if (isSub) {
+            if (numberGroupEl) numberGroupEl.classList.add('d-none');
+        } else {
+            if (numberGroupEl) numberGroupEl.classList.remove('d-none');
+            const currentMainNum = (treeItem && treeItem.scene_number) ? treeItem.scene_number : 1;
+            if (numberInput) {
+                numberInput.value = currentMainNum;
+                numberInput.min = 1;
+                numberInput.max = totalMainCount || 1;
+            }
+            if (numberHint) {
+                numberHint.innerText = totalMainCount > 0 ? `(1 to ${totalMainCount})` : '';
+            }
+        }
+
+        const previewEl = document.getElementById('editorRenameFullPreview');
+        const updatePreview = () => {
+            let locVal = locEl ? locEl.value.trim() : '';
+            if (/^(?:INT|EXT)\.?\s+/i.test(locVal)) {
+                const p = this.parseHeading(locVal);
+                if (intextEl) intextEl.value = p.intext;
+                if (locEl) locEl.value = p.location;
+                if (timeEl) timeEl.value = p.time;
+                locVal = p.location;
+            }
+            const intextVal = intextEl ? intextEl.value : 'INT.';
+            const timeVal = timeEl ? timeEl.value : 'DAY';
+            const built = this.buildHeading(intextVal, locVal, timeVal);
+            if (previewEl) {
+                previewEl.innerText = built || `${intextVal} ${locVal || 'LOCATION'} - ${timeVal}`;
+            }
+        };
+
+        if (locEl) locEl.oninput = updatePreview;
+        if (intextEl) intextEl.onchange = updatePreview;
+        if (timeEl) timeEl.onchange = updatePreview;
+        updatePreview();
+
+        const submitBtn = document.getElementById('btnEditorSubmitRename');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Save';
+        }
+
+        if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+            this.bsOffcanvas.hide();
+        }
+        if (this.renameModalEl) {
+            const modal = bootstrap.Modal.getOrCreateInstance(this.renameModalEl);
+            modal.show();
+            setTimeout(() => { if (locEl) { locEl.focus(); locEl.select(); } }, 300);
+        }
+    }
+
+    async submitRenameScene(sceneId, newHeading, requestedSceneNum = null) {
+        const targetSceneId = parseInt(sceneId);
+        const submitBtn = document.getElementById('btnEditorSubmitRename');
+        const cancelBtn = document.getElementById('btnEditorCancelRename');
+        const errEl = document.getElementById('editorRenameError');
+
+        if (!newHeading || !newHeading.trim()) {
+            if (errEl) {
+                errEl.innerText = 'Please enter a valid scene location or heading.';
+                errEl.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Saving...';
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+
+        const isActiveScene = (Number(this.currentSceneId) === targetSceneId);
+
+        const payload = { heading: newHeading.trim() };
+        if (requestedSceneNum !== null && !isNaN(requestedSceneNum)) {
+            payload.scene_number = parseInt(requestedSceneNum, 10);
+        }
+        if (isActiveScene) {
+            const activePayload = this.extractScenePayload();
+            payload.elements = activePayload.elements;
+            if (activePayload.summary !== undefined) payload.summary = activePayload.summary;
+            if (activePayload.transition !== undefined) payload.transition = activePayload.transition;
+        }
+
+        try {
+            this.setSaveStatus('saving', 'Saving scene name...');
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${targetSceneId}/save/`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || `Server returned HTTP ${res.status}`);
+            }
+
+            const result = await res.json();
+            if (result.status !== 'ok') {
+                throw new Error(result.message || 'Failed to rename scene.');
+            }
+
+            // Synchronize authoritative scene tree if provided by server
+            if (result.scenes_tree && Array.isArray(result.scenes_tree)) {
+                this.renderScenesTree(result.scenes_tree);
+            } else {
+                // Synchronize in-memory tree fallback
+                const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === targetSceneId);
+                if (treeItem) {
+                    if (result.clean_location) treeItem.clean_location = result.clean_location;
+                    if (result.clean_heading) treeItem.clean_heading = result.clean_heading;
+                    if (result.heading) treeItem.heading = result.heading;
+                    if (result.full_display_heading) treeItem.full_display_heading = result.full_display_heading;
+                    if (result.scene_identifier) treeItem.scene_identifier = result.scene_identifier;
+                    if (result.nav_identifier) treeItem.nav_identifier = result.nav_identifier;
+                    if (result.scene_number) treeItem.scene_number = result.scene_number;
+                }
+
+                // Synchronize desktop & mobile cards
+                const activeSidebarLocs = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"] .scene-nav-location`);
+                activeSidebarLocs.forEach(item => {
+                    item.innerText = result.clean_location || 'Location';
+                    item.title = result.clean_location || 'Location';
+                });
+
+                const sceneCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
+                sceneCards.forEach(card => {
+                    card.querySelectorAll('.btn-action-insert-before, .btn-action-insert-after, .btn-action-add-sub, .btn-action-delete, .btn-action-rename').forEach(btn => {
+                        btn.dataset.heading = result.heading || newHeading;
+                    });
+                });
+            }
+
+            // If active scene, synchronize canvas heading block and selector badge
+            if (isActiveScene) {
+                this.currentSceneNumber = result.scene_number || this.currentSceneNumber;
+                this.currentSceneIdentifier = result.scene_identifier || this.currentSceneIdentifier;
+                this.currentFullHeading = result.full_display_heading || `${result.nav_identifier || this.currentSceneIdentifier} : ${result.clean_heading || newHeading}`;
+                if (this.currentSelectorBadge) {
+                    this.currentSelectorBadge.innerText = this.currentFullHeading;
+                }
+
+                if (this.pageContainer) {
+                    const parsed = this.parseHeading(result.heading || newHeading);
+                    const canvasLoc = this.pageContainer.querySelector('.heading-location-input');
+                    if (canvasLoc) canvasLoc.value = parsed.location;
+                    const canvasIntext = this.pageContainer.querySelector('.heading-intext-select');
+                    if (canvasIntext) canvasIntext.value = parsed.intext;
+                    const canvasTime = this.pageContainer.querySelector('.heading-time-select');
+                    if (canvasTime) canvasTime.value = parsed.time;
+                    const canvasEditable = this.pageContainer.querySelector('.script-element-block[data-type="scene_heading"] .element-content');
+                    if (canvasEditable) canvasEditable.innerText = result.heading || newHeading;
+                }
+
+                this.isDirty = false;
+                this.setSaveStatus('saved', 'Saved ✓');
+            } else {
+                this.setSaveStatus('saved', 'Renamed ✓');
+            }
+
+            if (result.script_stats) {
+                this.updateStats(result.script_stats);
+            }
+
+            // Close modal on success
+            if (this.renameModalEl) {
+                const modal = bootstrap.Modal.getInstance(this.renameModalEl);
+                if (modal) modal.hide();
+            }
+
+        } catch (err) {
+            console.error('Rename failed:', err);
+            this.setSaveStatus('error', 'Rename failed');
+            if (errEl) {
+                errEl.innerText = err.message || 'Failed to rename scene. Please check your connection and retry.';
+                errEl.classList.remove('d-none');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Save';
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+        }
+    }
+
     openDeleteModal(sceneId, badge = '', heading = '', isSub = false) {
         this.pendingDeleteSceneId = sceneId;
         const badgeText = badge.startsWith('Scene') ? badge : (badge.includes('(Duplicate') ? badge : `Scene ${badge}`);
@@ -2447,6 +2815,74 @@ class KadhaEditor {
                 const heading = this.buildHeading(intext, loc, time);
                 const summary = document.getElementById('editorSubSceneSummary').value.trim();
                 this.submitSubScene(parentId, heading, summary);
+            });
+        }
+
+        // Rename Scene Form Submit
+        const renameForm = document.getElementById('editorRenameForm');
+        if (renameForm) {
+            renameForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const sceneId = document.getElementById('editorRenameSceneId').value;
+                const intextEl = document.getElementById('editorRenameIntext');
+                const locEl = document.getElementById('editorRenameLocation');
+                const timeEl = document.getElementById('editorRenameTime');
+                const errEl = document.getElementById('editorRenameError');
+
+                const intext = intextEl ? intextEl.value : 'INT.';
+                const loc = locEl ? locEl.value.trim() : '';
+                const time = timeEl ? timeEl.value : 'DAY';
+
+                if (!loc) {
+                    if (errEl) {
+                        errEl.innerText = 'Please enter a scene location.';
+                        errEl.classList.remove('d-none');
+                    }
+                    if (locEl) locEl.focus();
+                    return;
+                }
+
+                // Check scene number if this is a main scene
+                let requestedSceneNum = null;
+                const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === Number(sceneId));
+                const isSub = treeItem ? Boolean(treeItem.is_sub_scene) : false;
+
+                if (!isSub) {
+                    const numberInput = document.getElementById('editorRenameSceneNumber');
+                    if (numberInput) {
+                        const numValStr = numberInput.value.trim();
+                        if (!numValStr || isNaN(numValStr) || !Number.isInteger(Number(numValStr))) {
+                            if (errEl) {
+                                errEl.innerText = 'Please enter a valid positive whole number for the scene.';
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        const numVal = parseInt(numValStr, 10);
+                        if (numVal <= 0) {
+                            if (errEl) {
+                                errEl.innerText = 'Scene number must be a positive integer greater than zero.';
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        const baseMainCount = (this.scenesTree || []).filter(sc => !sc.is_sub_scene && !sc.is_intercut && !sc.is_duplicate).length;
+                        if (baseMainCount > 0 && numVal > baseMainCount) {
+                            if (errEl) {
+                                errEl.innerText = `Scene number cannot exceed the total number of main scenes (${baseMainCount}).`;
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        requestedSceneNum = numVal;
+                    }
+                }
+
+                const heading = this.buildHeading(intext, loc, time);
+                this.submitRenameScene(sceneId, heading, requestedSceneNum);
             });
         }
 
@@ -4031,7 +4467,9 @@ class KadhaEditor {
             if (scMeta && scMeta.full_display_heading) {
                 headingEl.innerText = scMeta.full_display_heading;
             } else {
-                const currentIdent = (scMeta && scMeta.nav_identifier) || (scMeta && scMeta.scene_identifier) || this.currentSceneIdentifier || (this.currentSceneIsSub ? 'Scene 1.A' : 'Scene 1');
+                const currentIdent = (scMeta && (scMeta.nav_identifier || scMeta.scene_identifier || scMeta.display_number || (scMeta.scene_number ? 'Scene ' + scMeta.scene_number : '')))
+                    || this.currentSceneIdentifier
+                    || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
                 const cleanHeading = (payload.heading || (scMeta && scMeta.heading) || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
                 headingEl.innerText = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
             }

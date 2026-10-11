@@ -167,8 +167,10 @@
                 data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
                 <div class="scene-nav-item">
                     <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
-                    <span class="scene-nav-separator">:</span>
                     <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
+                    {% if sc.action_preview %}
+                    <span class="scene-nav-action-preview font-malayalam" title="{{ sc.action_preview }}">{{ sc.action_preview }}</span>
+                    {% endif %}
                 </div>
                 <div class="scene-item-actions dropdown">
                     <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle scene-action-btn" type="button"
@@ -188,6 +190,11 @@
                                 data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li>
                             <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-rename" data-id="{{ sc.id }}"
+                                data-badge="{{ sc.nav_identifier }}" data-is-sub="true"
+                                data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-pencil me-2 text-warning"></i>Rename</button>
                         </li>
                         <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
                                     class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
@@ -217,6 +224,11 @@
                                 data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li>
                             <hr class="dropdown-divider">
+                        </li>
+                        <li><button type="button" class="dropdown-item btn-action-rename" data-id="{{ sc.id }}"
+                                data-badge="{{ sc.nav_identifier }}" data-is-sub="false"
+                                data-heading="{{ sc.heading|escape }}"><i
+                                    class="bi bi-pencil me-2 text-warning"></i>Rename</button>
                         </li>
                         <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
                                     class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
@@ -262,8 +274,10 @@
                     data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
                     <div class="scene-nav-item">
                         <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
-                        <span class="scene-nav-separator">:</span>
                         <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
+                        {% if sc.action_preview %}
+                        <span class="scene-nav-action-preview font-malayalam" title="{{ sc.action_preview }}">{{ sc.action_preview }}</span>
+                        {% endif %}
                     </div>
                     <div class="scene-item-actions dropdown">
                         <button class="btn btn-sm btn-link text-muted p-0 border-0 dropdown-toggle scene-action-btn" type="button"
@@ -283,6 +297,11 @@
                                     data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                             <li>
                                 <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-rename" data-id="{{ sc.id }}"
+                                    data-badge="{{ sc.nav_identifier }}" data-is-sub="true"
+                                    data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-pencil me-2 text-warning"></i>Rename</button>
                             </li>
                             <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
                                         class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
@@ -312,6 +331,11 @@
                                     data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                             <li>
                                 <hr class="dropdown-divider">
+                            </li>
+                            <li><button type="button" class="dropdown-item btn-action-rename" data-id="{{ sc.id }}"
+                                    data-badge="{{ sc.nav_identifier }}" data-is-sub="false"
+                                    data-heading="{{ sc.heading|escape }}"><i
+                                        class="bi bi-pencil me-2 text-warning"></i>Rename</button>
                             </li>
                             <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="{{ sc.id }}"><i
                                         class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
@@ -955,6 +979,83 @@
                         <span id="btnEditorSubmitDeleteText">Move to Trash</span>
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Rename Scene Modal -->
+<div class="modal fade" id="editorRenameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border shadow-lg">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold text-dark" id="editorRenameModalTitle">
+                    <i class="bi bi-pencil me-1 text-warning"></i> Rename Scene
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-3">
+                <form id="editorRenameForm">
+                    <input type="hidden" id="editorRenameSceneId" value="">
+
+                    <!-- Scene identifier badge and preview -->
+                    <div class="p-2 mb-3 bg-light rounded border d-flex align-items-center gap-2">
+                        <span class="badge bg-secondary font-screenplay fs-6 px-2 py-1 flex-shrink-0"
+                            id="editorRenameBadge">Scene 1</span>
+                        <span class="fw-semibold text-truncate font-screenplay text-dark"
+                            id="editorRenameCurrentPreview">INT. LOCATION - DAY</span>
+                    </div>
+
+                    <div class="alert alert-danger py-2 px-3 small d-none mb-3" id="editorRenameError"></div>
+
+                    <!-- Dedicated Scene Number Field (Main Scenes Only) -->
+                    <div class="mb-3" id="editorRenameNumberGroup">
+                        <label for="editorRenameSceneNumber" class="form-label small fw-semibold text-muted d-flex justify-content-between align-items-center mb-1">
+                            <span>Scene Number / Position</span>
+                            <span class="text-muted fw-normal" id="editorRenameTotalScenesHint"></span>
+                        </label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-light text-muted font-screenplay">Scene</span>
+                            <input type="number" id="editorRenameSceneNumber" class="form-control font-screenplay"
+                                min="1" step="1" placeholder="e.g. 1">
+                        </div>
+                        <div class="form-text small text-muted mt-1">
+                            Changing the scene number moves this scene and automatically renumbers all affected main scenes.
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold text-muted">Scene Heading</label>
+                        <div class="d-flex gap-2">
+                            <select id="editorRenameIntext" class="form-select form-select-sm" style="width: 120px;"
+                                title="Interior / Exterior">
+                                <option value="INT.">Interior</option>
+                                <option value="EXT.">Exterior</option>
+                            </select>
+                            <input type="text" id="editorRenameLocation"
+                                class="form-control form-control-sm font-screenplay font-malayalam"
+                                placeholder="Enter location..." required>
+                            <select id="editorRenameTime" class="form-select form-select-sm" style="width: 110px;"
+                                title="Time of Day">
+                                <option value="DAY">Day</option>
+                                <option value="NIGHT">Night</option>
+                                <option value="DUSK">Dusk</option>
+                                <option value="DAWN">Dawn</option>
+                            </select>
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            Full heading: <span class="font-screenplay fw-semibold text-dark" id="editorRenameFullPreview"></span>
+                        </small>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-dismiss="modal" id="btnEditorCancelRename">Cancel</button>
+                        <button type="submit" class="btn-primary-ks btn-sm" id="btnEditorSubmitRename">
+                            <i class="bi bi-check2 me-1"></i>Save
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

@@ -280,9 +280,9 @@ class Scene(models.Model):
     @property
     def clean_location(self) -> str:
         """
-        Clean location for Scene Navigator:
-        strips INT./EXT. prefixes and trailing time if present.
-        e.g., 'INT. BEDROOM - DAY' -> 'BEDROOM'
+        Clean location for Scene Navigator and Scene Cards:
+        strips INT./EXT. prefixes and recognized trailing time-of-day segments.
+        Preserves multi-part locations (e.g. 'INT. CENTRAL JAIL - CORRIDOR - DAY' -> 'CENTRAL JAIL - CORRIDOR').
         """
         import re
         text = self.clean_heading or self.heading or ''
@@ -292,10 +292,43 @@ class Scene(models.Model):
             text,
             flags=re.IGNORECASE
         ).strip()
-        parts = re.split(r'\s+[-–—]\s+', cleaned)
-        if parts and parts[0].strip():
-            return parts[0].strip()
-        return cleaned or text or 'Scene'
+
+        parts = [p.strip() for p in re.split(r'\s+[-–—]\s+', cleaned) if p.strip()]
+        if not parts:
+            return cleaned or text or 'Scene'
+
+        TIME_TOKENS = {
+            'DAY', 'NIGHT', 'DAWN', 'DUSK', 'MORNING', 'EVENING', 'AFTERNOON',
+            'SUNSET', 'SUNRISE', 'CONTINUOUS', 'LATER', 'SAME TIME', 'MOMENTS LATER',
+            'SAME', 'FLASHBACK', 'MAGIC HOUR', 'EARLY MORNING', 'LATE NIGHT',
+            'RAIN', 'STORM', 'SNOW', 'FOG', 'WIND',
+            'പകൽ', 'രാത്രി', 'പ്രഭാതം', 'സന്ധ്യ', 'തുടർച്ച', 'വൈകുന്നേരം', 'ഉച്ച', 'മഴ'
+        }
+
+        if len(parts) > 1 and parts[-1].upper() in TIME_TOKENS:
+            location_parts = parts[:-1]
+        else:
+            location_parts = parts
+
+        result = ' - '.join(location_parts).strip()
+        return result or cleaned or text or 'Scene'
+
+    @property
+    def action_preview(self) -> str:
+        """
+        Returns the opening action text (first meaningful non-whitespace action element) for scene cards.
+        Safe against empty and whitespace-only elements and preserves Malayalam Unicode exactly.
+        """
+        if hasattr(self, '_prefetched_objects_cache') and 'elements' in self._prefetched_objects_cache:
+            for elem in sorted(self.elements.all(), key=lambda e: (e.order, e.id)):
+                if elem.element_type == 'action' and elem.content and elem.content.strip():
+                    return elem.content.strip()
+            return ''
+
+        for elem in self.elements.filter(element_type='action').order_by('order', 'id'):
+            if elem.content and elem.content.strip():
+                return elem.content.strip()
+        return ''
 
     @property
     def display_number(self) -> str:

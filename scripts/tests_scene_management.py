@@ -650,7 +650,10 @@ class SceneManagementAndMobileTests(TestCase):
 
         self.assertTrue(Scene.objects.filter(id=s7.id).exists())
         self.assertTrue(Scene.objects.filter(id=sub_7a.id).exists())
-        self.assertFalse(Scene.objects.filter(id=sub_7b.id).exists())
+        sub_7b.refresh_from_db()
+        self.assertTrue(sub_7b.is_deleted)
+        self.assertIsNotNone(sub_7b.deleted_at)
+        self.assertFalse(Scene.objects.filter(id=sub_7b.id, is_deleted=False).exists())
         self.assertTrue(Scene.objects.filter(id=sub_7c.id).exists())
 
         ordered = self.script_a.get_ordered_scenes()
