@@ -411,8 +411,14 @@
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">
-                        <li><button type="button" class="dropdown-item" id="btnToolbarCopyCurrentScene"><i
-                                    class="bi bi-clipboard me-2 text-secondary"></i>Copy Current Scene</button></li>
+                        <li><button type="button" class="dropdown-item d-flex align-items-center justify-content-between" id="btnToolbarUndo" disabled>
+                            <span><i class="bi bi-arrow-counterclockwise me-2 text-primary"></i>Undo</span>
+                            <kbd class="text-muted small ms-2 bg-transparent border-0 p-0">Ctrl+Z</kbd>
+                        </button></li>
+                        <li><button type="button" class="dropdown-item d-flex align-items-center justify-content-between" id="btnToolbarRedo" disabled>
+                            <span><i class="bi bi-arrow-clockwise me-2 text-primary"></i>Redo</span>
+                            <kbd class="text-muted small ms-2 bg-transparent border-0 p-0">Ctrl+Y</kbd>
+                        </button></li>
                         <li>
                             <hr class="dropdown-divider">
                         </li>
@@ -420,8 +426,6 @@
                                     class="bi bi-search me-2"></i>Find & Replace</button></li>
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#shortcutsModal"><i
                                     class="bi bi-keyboard me-2"></i>Shortcuts</button></li>
-                        <li><button class="dropdown-item" id="btnToggleFullscreen"><i
-                                    class="bi bi-arrows-fullscreen me-2"></i>Fullscreen</button></li>
                         <li>
                             <hr class="dropdown-divider">
                         </li>

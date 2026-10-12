@@ -251,7 +251,7 @@ class EditorTransitionAndParentheticalTests(TestCase):
 
         # Dirty-state version tracking and flushSave coordination
         self.assertIn('this.changeVersion = (this.changeVersion || 0) + 1;', js_content)
-        self.assertIn('(this.changeVersion || 0) === saveVersion', js_content)
+        self.assertIn('((this.changeVersion || 0) !== saveVersion)', js_content)
         self.assertIn('while (this.isSaving && this.activeSavePromise)', js_content)
         self.assertIn('while (this.isDirty && attempts < 5)', js_content)
         self.assertIn('if (this.isDirty) {', js_content)
@@ -959,8 +959,13 @@ class DashboardScriptManagementAndSceneDropdownTests(TestCase):
         self.assertIn('btn-action-move-down', content)
         self.assertIn('btn-action-delete', content)
 
-        # Toolbar Copy Current Scene present
-        self.assertIn('id="btnToolbarCopyCurrentScene"', content)
+        # Toolbar Undo/Redo present
+        self.assertIn('id="btnToolbarUndo"', content)
+        self.assertIn('id="btnToolbarRedo"', content)
+        self.assertIn('Ctrl+Z', content)
+        self.assertIn('Ctrl+Y', content)
+        self.assertNotIn('id="btnToolbarCopyCurrentScene"', content)
+        self.assertNotIn('id="btnToggleFullscreen"', content)
 
         # Modals present
         self.assertIn('id="editorInsertModal"', content)

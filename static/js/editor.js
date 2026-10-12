@@ -88,6 +88,13 @@ class KadhaEditor {
         this.activeSuggestionBlock = null;
         this.activeSuggestionIndex = -1;
         this.lastCopiedPayload = null;
+        this.undoStacks = {};
+        this.redoStacks = {};
+        this.maxHistoryStack = 50;
+        this.textEditTimer = null;
+        this.textEditTimerSceneId = null;
+        this.isComposing = false;
+        this.lastCapturedSnapshot = null;
 
         window.editor = this;
         window.editorInstance = this;
@@ -180,6 +187,7 @@ class KadhaEditor {
             this.isDirty = false;
             this.needsQueuedSave = false;
             this.changeVersion = 0;
+            this.initSceneHistory(data.scene.id);
         } catch (err) {
             if (requestId !== this.loadRequestId) {
                 return;
@@ -444,9 +452,20 @@ class KadhaEditor {
                 this.calculateLiveStats();
             };
 
-            locationInput.addEventListener('input', syncHeading);
-            intextSelect.addEventListener('change', syncHeading);
-            timeSelect.addEventListener('change', syncHeading);
+            locationInput.addEventListener('input', () => {
+                syncHeading();
+                this.recordTextEdit();
+            });
+            intextSelect.addEventListener('change', () => {
+                const preSnap = this.captureSnapshot();
+                syncHeading();
+                this.pushUndoSnapshot(preSnap);
+            });
+            timeSelect.addEventListener('change', () => {
+                const preSnap = this.captureSnapshot();
+                syncHeading();
+                this.pushUndoSnapshot(preSnap);
+            });
 
             locationInput.addEventListener('focus', () => {
                 document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
@@ -521,7 +540,9 @@ class KadhaEditor {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    const preSnap = this.captureSnapshot();
                     editable.innerText = trans;
+                    this.pushUndoSnapshot(preSnap);
                     this.markDirty();
                     this.calculateLiveStats();
                     editable.focus();
@@ -703,6 +724,17 @@ class KadhaEditor {
             } else {
                 this.hideAutocomplete();
             }
+
+            this.recordTextEdit();
+        });
+
+        editable.addEventListener('compositionstart', () => {
+            this.isComposing = true;
+        });
+
+        editable.addEventListener('compositionend', () => {
+            this.isComposing = false;
+            this.recordTextEdit();
         });
 
         // Keydown handling: Enter, Tab, Backspace, Arrows
@@ -785,7 +817,9 @@ class KadhaEditor {
                 const prevBlock = block.previousElementSibling;
                 if (prevBlock && prevBlock.classList.contains('script-element-block')) {
                     e.preventDefault();
+                    const preSnap = this.captureSnapshot();
                     block.remove();
+                    this.pushUndoSnapshot(preSnap);
                     this.markDirty();
                     this.calculateLiveStats();
                     const prevEditable = prevBlock.querySelector('.element-content:not(.d-none)') || prevBlock.querySelector('.element-content');
@@ -961,6 +995,8 @@ class KadhaEditor {
             return;
         }
 
+        const preSnap = this.captureSnapshot();
+
         // ----------------------------------------------------
         // ACTION PARAGRAPH SPLITTING (Batch 2, Step 1)
         // ----------------------------------------------------
@@ -1012,6 +1048,7 @@ class KadhaEditor {
                 editable.focus();
                 this.setCursorToStart(editable);
                 this.hideSuggestionPopup();
+                this.pushUndoSnapshot(preSnap);
                 this.markDirty();
                 this.calculateLiveStats();
                 return;
@@ -1025,6 +1062,7 @@ class KadhaEditor {
                     newEditable.focus();
                     this.setCursorToStart(newEditable);
                 }
+                this.pushUndoSnapshot(preSnap);
                 this.markDirty();
                 this.calculateLiveStats();
                 this.showSuggestionPopup(newBlock, [{ type: 'character', label: '+ Character' }]);
@@ -1039,6 +1077,7 @@ class KadhaEditor {
                 newEditable.focus();
                 this.setCursorToStart(newEditable);
             }
+            this.pushUndoSnapshot(preSnap);
             this.markDirty();
             this.calculateLiveStats();
 
@@ -1084,6 +1123,7 @@ class KadhaEditor {
             newEditable.focus();
             this.setCursorToStart(newEditable);
         }
+        this.pushUndoSnapshot(preSnap);
         this.markDirty();
         this.calculateLiveStats();
 
@@ -1109,6 +1149,7 @@ class KadhaEditor {
     setElementType(block, newType) {
         const oldType = block.dataset.type;
         if (oldType === newType) return;
+        const preSnap = this.captureSnapshot();
         block.dataset.type = newType;
         const tag = block.querySelector('.element-type-tag');
         if (tag) tag.innerText = this.formatTypeLabel(newType);
@@ -1224,7 +1265,9 @@ class KadhaEditor {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    const preSnap = this.captureSnapshot();
                     editable.innerText = trans;
+                    this.pushUndoSnapshot(preSnap);
                     this.markDirty();
                     this.calculateLiveStats();
                     editable.focus();
@@ -1285,7 +1328,9 @@ class KadhaEditor {
         if (this.currentTypeEl) {
             this.currentTypeEl.innerText = this.formatTypeLabel(newType);
         }
+        this.pushUndoSnapshot(preSnap);
         this.markDirty();
+        this.calculateLiveStats();
     }
 
     // ----------------------------------------------------
@@ -1419,6 +1464,357 @@ class KadhaEditor {
         this.activeAutocompleteEditable = null;
         this.autocompleteIndex = -1;
     }
+
+    // ----------------------------------------------------
+    // SCENE-LEVEL IN-MEMORY HISTORY ARCHITECTURE (Undo/Redo)
+    // ----------------------------------------------------
+    initSceneHistory(sceneId) {
+        const sid = Number(sceneId);
+        if (!sid) return;
+
+        // Ensure no pending timers from a previously loaded scene persist
+        if (this.textEditTimer) {
+            clearTimeout(this.textEditTimer);
+            this.textEditTimer = null;
+            this.textEditTimerSceneId = null;
+        }
+
+        if (!this.undoStacks[sid]) {
+            this.undoStacks[sid] = [];
+        }
+        if (!this.redoStacks[sid]) {
+            this.redoStacks[sid] = [];
+        }
+        // If undoStack is empty for this scene, push the baseline snapshot
+        if (this.undoStacks[sid].length === 0) {
+            const baseline = this.captureSnapshot();
+            if (baseline) {
+                this.undoStacks[sid].push(baseline);
+                this.lastCapturedSnapshot = baseline;
+            }
+        } else {
+            this.lastCapturedSnapshot = this.undoStacks[sid][this.undoStacks[sid].length - 1];
+        }
+        this.updateHistoryButtonsState();
+    }
+
+    captureSnapshot() {
+        if (!this.pageContainer) return null;
+        const payload = this.extractScenePayload();
+        // Deep clone payload to isolate state from future mutations
+        return {
+            heading: payload.heading,
+            elements: (payload.elements || []).map(e => ({
+                element_type: e.element_type,
+                content: e.content,
+                order: e.order
+            }))
+        };
+    }
+
+    areSnapshotsEqual(snapA, snapB) {
+        if (!snapA || !snapB) return false;
+        if (snapA.heading !== snapB.heading) return false;
+        const elemsA = snapA.elements || [];
+        const elemsB = snapB.elements || [];
+        if (elemsA.length !== elemsB.length) return false;
+        for (let i = 0; i < elemsA.length; i++) {
+            if (elemsA[i].element_type !== elemsB[i].element_type) return false;
+            if (elemsA[i].content !== elemsB[i].content) return false;
+        }
+        return true;
+    }
+
+    pushUndoSnapshot(preMutationSnapshot = null) {
+        const sid = Number(this.currentSceneId);
+        if (!sid) return;
+
+        // Any structural edit commits / cancels pending debounced text edit timer
+        if (this.textEditTimer) {
+            clearTimeout(this.textEditTimer);
+            this.textEditTimer = null;
+            this.textEditTimerSceneId = null;
+        }
+
+        if (!this.undoStacks[sid]) {
+            this.undoStacks[sid] = [];
+        }
+
+        const currentStack = this.undoStacks[sid];
+
+        // If a pre-mutation snapshot was provided and it differs from top of stack, push it first
+        if (preMutationSnapshot) {
+            const topSnapshot = currentStack[currentStack.length - 1];
+            if (!this.areSnapshotsEqual(topSnapshot, preMutationSnapshot)) {
+                currentStack.push(preMutationSnapshot);
+                if (currentStack.length > this.maxHistoryStack) {
+                    currentStack.shift();
+                }
+            }
+        }
+
+        // Now capture and push the post-mutation snapshot representing the new state
+        const postSnapshot = this.captureSnapshot();
+        if (postSnapshot) {
+            const topSnapshot = currentStack[currentStack.length - 1];
+            if (!this.areSnapshotsEqual(topSnapshot, postSnapshot)) {
+                currentStack.push(postSnapshot);
+                if (currentStack.length > this.maxHistoryStack) {
+                    currentStack.shift();
+                }
+            }
+        }
+
+        // New edit invalidates any future redo branch
+        if (this.redoStacks[sid] && this.redoStacks[sid].length > 0) {
+            this.redoStacks[sid] = [];
+        }
+
+        this.lastCapturedSnapshot = postSnapshot;
+        this.updateHistoryButtonsState();
+    }
+
+    flushPendingTextEdit() {
+        if (!this.textEditTimer) return;
+        const targetSid = this.textEditTimerSceneId || Number(this.currentSceneId);
+        clearTimeout(this.textEditTimer);
+        this.textEditTimer = null;
+        this.textEditTimerSceneId = null;
+
+        if (this.isComposing) return;
+        if (!targetSid || Number(this.currentSceneId) !== targetSid) return;
+
+        const currentSnap = this.captureSnapshot();
+        if (!currentSnap) return;
+
+        if (!this.undoStacks[targetSid]) {
+            this.undoStacks[targetSid] = [];
+        }
+
+        const currentStack = this.undoStacks[targetSid];
+        const topSnapshot = currentStack[currentStack.length - 1];
+        if (!this.areSnapshotsEqual(topSnapshot, currentSnap)) {
+            currentStack.push(currentSnap);
+            if (currentStack.length > this.maxHistoryStack) {
+                currentStack.shift();
+            }
+            this.lastCapturedSnapshot = currentSnap;
+        }
+
+        // Always invalidate redo stack on flushed edit
+        if (this.redoStacks[targetSid] && this.redoStacks[targetSid].length > 0) {
+            this.redoStacks[targetSid] = [];
+        }
+        this.updateHistoryButtonsState();
+    }
+
+    recordTextEdit() {
+        if (this.isComposing) return;
+        const sid = Number(this.currentSceneId);
+        if (!sid) return;
+
+        // When user starts typing a new edit, immediately invalidate redo stack
+        if (this.redoStacks[sid] && this.redoStacks[sid].length > 0) {
+            this.redoStacks[sid] = [];
+            this.updateHistoryButtonsState();
+        }
+
+        if (this.textEditTimer) {
+            clearTimeout(this.textEditTimer);
+            this.textEditTimer = null;
+        }
+        this.textEditTimerSceneId = sid;
+
+        this.textEditTimer = setTimeout(() => {
+            this.textEditTimer = null;
+            const timerSid = this.textEditTimerSceneId;
+            this.textEditTimerSceneId = null;
+
+            if (this.isComposing) return;
+            if (!timerSid || Number(this.currentSceneId) !== timerSid) return;
+
+            const currentSnap = this.captureSnapshot();
+            if (!currentSnap) return;
+
+            if (!this.undoStacks[timerSid]) {
+                this.undoStacks[timerSid] = [];
+            }
+
+            const currentStack = this.undoStacks[timerSid];
+            const topSnapshot = currentStack[currentStack.length - 1];
+            if (!this.areSnapshotsEqual(topSnapshot, currentSnap)) {
+                currentStack.push(currentSnap);
+                if (currentStack.length > this.maxHistoryStack) {
+                    currentStack.shift();
+                }
+                this.lastCapturedSnapshot = currentSnap;
+                if (this.redoStacks[timerSid] && this.redoStacks[timerSid].length > 0) {
+                    this.redoStacks[timerSid] = [];
+                }
+                this.updateHistoryButtonsState();
+            }
+        }, 500);
+    }
+
+    undo() {
+        const sid = Number(this.currentSceneId);
+        if (!sid) return;
+
+        const stack = this.undoStacks[sid] || [];
+        const hadPendingTimer = Boolean(this.textEditTimer && this.textEditTimerSceneId === sid);
+
+        // Cancel any pending debounced text edit timer
+        if (this.textEditTimer) {
+            clearTimeout(this.textEditTimer);
+            this.textEditTimer = null;
+            this.textEditTimerSceneId = null;
+        }
+
+        const currentSnap = this.captureSnapshot();
+        const topSnapshot = stack[stack.length - 1];
+        const isUncommittedTextEdit = hadPendingTimer && currentSnap && topSnapshot && !this.areSnapshotsEqual(topSnapshot, currentSnap);
+
+        if (isUncommittedTextEdit) {
+            // Typing occurred that has not yet been pushed to undoStacks.
+            // The uncommitted DOM state becomes the state to redo.
+            if (!this.redoStacks[sid]) {
+                this.redoStacks[sid] = [];
+            }
+            const redoStack = this.redoStacks[sid];
+            const topRedo = redoStack[redoStack.length - 1];
+            if (!this.areSnapshotsEqual(topRedo, currentSnap)) {
+                redoStack.push(currentSnap);
+                if (redoStack.length > this.maxHistoryStack) {
+                    redoStack.shift();
+                }
+            }
+
+            // Target state to restore is the top of undoStack (state before typing began)
+            this.applyHistorySnapshot(topSnapshot);
+            this.lastCapturedSnapshot = topSnapshot;
+            this.updateHistoryButtonsState();
+            return;
+        }
+
+        // Standard undo: stack must contain at least baseline + 1 edit
+        if (stack.length <= 1) return;
+
+        if (!this.redoStacks[sid]) {
+            this.redoStacks[sid] = [];
+        }
+
+        // Pop current committed state from undo stack
+        stack.pop();
+        const targetSnap = stack[stack.length - 1];
+        if (!targetSnap) return;
+
+        if (currentSnap) {
+            const redoStack = this.redoStacks[sid];
+            const topRedo = redoStack[redoStack.length - 1];
+            if (!this.areSnapshotsEqual(topRedo, currentSnap)) {
+                redoStack.push(currentSnap);
+                if (redoStack.length > this.maxHistoryStack) {
+                    redoStack.shift();
+                }
+            }
+        }
+
+        this.applyHistorySnapshot(targetSnap);
+        this.lastCapturedSnapshot = targetSnap;
+        this.updateHistoryButtonsState();
+    }
+
+    redo() {
+        const sid = Number(this.currentSceneId);
+        if (!sid) return;
+
+        // Cancel pending debounced text edit before redoing
+        if (this.textEditTimer) {
+            clearTimeout(this.textEditTimer);
+            this.textEditTimer = null;
+            this.textEditTimerSceneId = null;
+        }
+
+        const redoStack = this.redoStacks[sid] || [];
+        if (redoStack.length === 0) return;
+
+        const targetSnap = redoStack.pop();
+        if (!targetSnap) return;
+
+        if (!this.undoStacks[sid]) {
+            this.undoStacks[sid] = [];
+        }
+        this.undoStacks[sid].push(targetSnap);
+        if (this.undoStacks[sid].length > this.maxHistoryStack) {
+            this.undoStacks[sid].shift();
+        }
+
+        this.applyHistorySnapshot(targetSnap);
+        this.lastCapturedSnapshot = targetSnap;
+        this.updateHistoryButtonsState();
+    }
+
+    applyHistorySnapshot(snapshot) {
+        if (!snapshot || !this.pageContainer) return;
+
+        // Remember currently focused element index
+        let focusedIndex = 0;
+        const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+        const focusedBlock = this.activeElementBlock || this.pageContainer.querySelector('.script-element-block.focused');
+        if (focusedBlock) {
+            const idx = blocks.indexOf(focusedBlock);
+            if (idx >= 0) focusedIndex = idx;
+        }
+
+        const sid = Number(this.currentSceneId);
+        const sceneMeta = (this.scenesTree || []).find(s => Number(s.id) === sid) || { id: sid, heading: snapshot.heading };
+        const dummyScene = Object.assign({}, sceneMeta, { id: sid, heading: snapshot.heading });
+
+        this.renderSceneElements(dummyScene, snapshot.elements);
+
+        // Restore focus to closest corresponding block
+        const newBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+        const targetBlock = newBlocks[Math.min(focusedIndex, newBlocks.length - 1)];
+        if (targetBlock) {
+            newBlocks.forEach(b => b.classList.remove('focused'));
+            targetBlock.classList.add('focused');
+            this.activeElementBlock = targetBlock;
+            const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content, .heading-location-input');
+            if (ed) {
+                ed.focus();
+                this.setCursorToEnd(ed);
+            }
+        }
+
+        // Feed standard save pipeline & Read Mode sync
+        this.markDirty();
+        this.calculateLiveStats();
+        const payload = this.extractScenePayload();
+        this.updateReadModeScene(sid, payload);
+    }
+
+    updateHistoryButtonsState() {
+        const sid = Number(this.currentSceneId);
+        const undoStack = (sid && this.undoStacks[sid]) || [];
+        const redoStack = (sid && this.redoStacks[sid]) || [];
+
+        const hasUncommittedEdit = Boolean(this.textEditTimer && this.textEditTimerSceneId === sid);
+        const canUndo = undoStack.length > 1 || (undoStack.length === 1 && hasUncommittedEdit);
+        const canRedo = redoStack.length > 0;
+
+        const btnUndo = document.getElementById('btnToolbarUndo');
+        if (btnUndo) {
+            btnUndo.disabled = !canUndo;
+            btnUndo.classList.toggle('disabled', !canUndo);
+        }
+
+        const btnRedo = document.getElementById('btnToolbarRedo');
+        if (btnRedo) {
+            btnRedo.disabled = !canRedo;
+            btnRedo.classList.toggle('disabled', !canRedo);
+        }
+    }
+
 
     // ----------------------------------------------------
     // ROBUST AUTO-SAVE & PERSISTENCE (Task 7 Architecture)
@@ -2166,6 +2562,8 @@ class KadhaEditor {
             if (currentMainIdx !== -1 && targetMainIdx !== -1 && targetMainIdx > currentMainIdx) {
                 addedTransition = this.ensurePreviousSceneHasTransition();
             }
+
+            this.flushPendingTextEdit();
 
             try {
                 await this.flushSave();
@@ -4208,6 +4606,22 @@ class KadhaEditor {
             });
         }
 
+        const btnToolbarUndo = document.getElementById('btnToolbarUndo');
+        if (btnToolbarUndo) {
+            btnToolbarUndo.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.undo();
+            });
+        }
+
+        const btnToolbarRedo = document.getElementById('btnToolbarRedo');
+        if (btnToolbarRedo) {
+            btnToolbarRedo.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.redo();
+            });
+        }
+
         const btnToolbarCopy = document.getElementById('btnToolbarCopyCurrentScene');
         if (btnToolbarCopy) {
             btnToolbarCopy.addEventListener('click', async (e) => {
@@ -4257,7 +4671,31 @@ class KadhaEditor {
         document.addEventListener('keydown', (e) => {
             const activeEl = document.activeElement;
             const isInsideModal = activeEl && (activeEl.closest('.modal.show') || document.querySelector('.modal.show'));
-            const isSearchInput = activeEl && (activeEl.id === 'sceneSearchInput' || activeEl.id === 'offcanvasSceneSearchInput');
+            const isSearchInput = activeEl && ( activeEl.id === 'sceneSearchInput' ||activeEl.id === 'offcanvasSceneSearchInput');
+            const isFormInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && !activeEl.classList.contains('heading-location-input');
+
+            // 0. Undo & Redo Shortcuts
+            if (!isInsideModal && !isSearchInput && !isFormInput) {
+                const isCmdOrCtrl = e.ctrlKey || e.metaKey;
+                const keyLower = (e.key || '').toLowerCase();
+                const code = e.code || '';
+
+                // Undo: Ctrl+Z / Cmd+Z (without Shift)
+                if (isCmdOrCtrl && !e.altKey && !e.shiftKey && (keyLower === 'z' || code === 'KeyZ')) {
+                    e.preventDefault();
+                    this.undo();
+                    return;
+                }
+
+                // Redo: Ctrl+Y / Cmd+Y / (Cmd/Ctrl + Shift + Z)
+                const isRedoZ = isCmdOrCtrl && !e.altKey && e.shiftKey && (keyLower === 'z' || code === 'KeyZ');
+                const isRedoY = isCmdOrCtrl && !e.altKey && !e.shiftKey && (keyLower === 'y' || code === 'KeyY');
+                if (isRedoZ || isRedoY) {
+                    e.preventDefault();
+                    this.redo();
+                    return;
+                }
+            }
 
             // 1. Save Scene: Ctrl + S / Cmd + S
             if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key === 's' || e.key === 'S' || e.code === 'KeyS')) {
@@ -5546,6 +5984,7 @@ class KadhaEditor {
         // ----------------------------------------------------
         if (payload && payload.elements && Array.isArray(payload.elements) && payload.elements.length > 0) {
             e.preventDefault();
+            const preSnap = this.captureSnapshot();
 
             // Determine target block
             let targetBlock = this.activeElementBlock;
@@ -5610,6 +6049,7 @@ class KadhaEditor {
                 }
             }
 
+            this.pushUndoSnapshot(preSnap);
             this.markDirty();
             this.calculateLiveStats();
             return;
@@ -5623,6 +6063,8 @@ class KadhaEditor {
             // Nothing to paste
             return;
         }
+
+        const preSnap = this.captureSnapshot();
 
         // Intercept external paste - treat purely as plain text
         e.preventDefault();
@@ -5693,6 +6135,7 @@ class KadhaEditor {
         // Insert clean plain text at current caret position
         this.insertPlainTextAtCaret(targetEditable, externalText, isTargetAlreadyFocused);
 
+        this.pushUndoSnapshot(preSnap);
         this.markDirty();
         this.calculateLiveStats();
     }
