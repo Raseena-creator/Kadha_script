@@ -1929,10 +1929,25 @@ class KadhaEditor {
                 headingEl.innerText = fullHeading;
             }
 
-            // Update transition if present
-            let transEl = sec.querySelector('.read-element-block.element-type-transition');
-            const transitionText = (sc.transition || '').trim();
-            if (transitionText) {
+            // Update transition if present (only if the scene does not already end with an explicit transition)
+            const elementsContainer = sec.querySelector('.read-scene-elements');
+            let hasEndingTransition = false;
+            if (elementsContainer) {
+                const elementBlocks = Array.from(elementsContainer.querySelectorAll(':scope > .read-element-block'));
+                for (let i = elementBlocks.length - 1; i >= 0; i--) {
+                    const block = elementBlocks[i];
+                    const content = (block.querySelector('.element-content')?.innerText || '').trim();
+                    if (!content) continue;
+                    if (block.classList.contains('element-type-note')) continue;
+                    if (block.classList.contains('element-type-transition')) {
+                        hasEndingTransition = true;
+                    }
+                    break;
+                }
+            }
+            let transEl = Array.from(sec.children).find(child => child.classList && child.classList.contains('read-element-block') && child.classList.contains('element-type-transition'));
+            const transitionText = (sc.transition === null || sc.transition === undefined) ? '' : String(sc.transition).trim();
+            if (transitionText && !hasEndingTransition) {
                 if (!transEl) {
                     transEl = document.createElement('div');
                     transEl.className = 'read-element-block element-type-transition';
@@ -4829,10 +4844,43 @@ class KadhaEditor {
             });
         }
 
-        // 3. Update Transition if present
-        let transEl = sceneSection.querySelector('.read-element-block.element-type-transition');
-        const transitionText = payload.transition !== undefined ? payload.transition : (this.currentSceneTransition || 'CUT TO:');
-        if (transitionText) {
+        // 3. Update Transition if present (only if the scene does not already end with an explicit transition)
+        let hasEndingTransition = false;
+        if (payload.elements && Array.isArray(payload.elements)) {
+            for (let i = payload.elements.length - 1; i >= 0; i--) {
+                const elem = payload.elements[i];
+                const content = (elem.content || '').trim();
+                if (!content) continue;
+                if (elem.element_type === 'note') continue;
+                if (elem.element_type === 'transition') {
+                    hasEndingTransition = true;
+                }
+                break;
+            }
+        } else if (elementsContainer) {
+            const elementBlocks = Array.from(elementsContainer.querySelectorAll(':scope > .read-element-block'));
+            for (let i = elementBlocks.length - 1; i >= 0; i--) {
+                const block = elementBlocks[i];
+                const content = (block.querySelector('.element-content')?.innerText || '').trim();
+                if (!content) continue;
+                if (block.classList.contains('element-type-note')) continue;
+                if (block.classList.contains('element-type-transition')) {
+                    hasEndingTransition = true;
+                }
+                break;
+            }
+        }
+
+        let transEl = Array.from(sceneSection.children).find(child => child.classList && child.classList.contains('read-element-block') && child.classList.contains('element-type-transition'));
+        let rawTransition;
+        if (payload.transition !== undefined) {
+            rawTransition = payload.transition;
+        } else {
+            rawTransition = this.currentSceneTransition !== undefined ? this.currentSceneTransition : 'CUT TO:';
+        }
+        const transitionText = (rawTransition === null || rawTransition === undefined) ? '' : String(rawTransition).trim();
+
+        if (transitionText && !hasEndingTransition) {
             if (!transEl) {
                 transEl = document.createElement('div');
                 transEl.className = 'read-element-block element-type-transition';

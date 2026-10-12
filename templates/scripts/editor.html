@@ -486,7 +486,7 @@
                         {% endif %}
                         {% endfor %}
                     </div>
-                    {% if sc.transition %}
+                    {% if sc.transition and not sc.has_ending_transition %}
                     <div class="read-element-block element-type-transition">
                         <div class="element-content font-screenplay">{{ sc.transition }}</div>
                     </div>

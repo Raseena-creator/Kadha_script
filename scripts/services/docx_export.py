@@ -150,7 +150,7 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
         scene_run = scene_p.add_run(f"{scene.scene_identifier} : {scene.clean_heading.upper()}")
         _set_run_font(scene_run, size=Pt(11), bold=True)
 
-        elements = scene.elements.all().order_by('order')
+        elements = scene.elements.all().order_by('order', 'id')
         for elem in elements:
             text = (elem.content or '').strip()
             if not text:
@@ -229,15 +229,17 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
                 run = elem_p.add_run(text.upper())
                 _set_run_font(run, size=Pt(11), bold=True)
 
-        # Scene-end transition
-        scene_trans = (scene.transition or 'CUT TO').strip()
-        if scene_trans:
-            elem_p = doc.add_paragraph()
-            elem_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-            elem_p.paragraph_format.space_before = Pt(12)
-            elem_p.paragraph_format.space_after = Pt(12)
-            run = elem_p.add_run(scene_trans.upper())
-            _set_run_font(run, size=Pt(11), bold=True)
+        # Scene-end transition fallback:
+        # If the scene does not already end with an explicit transition element, render scene.transition fallback.
+        if not scene.has_scene_ending_transition(elements):
+            scene_trans = (scene.transition or 'CUT TO').strip()
+            if scene_trans:
+                elem_p = doc.add_paragraph()
+                elem_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                elem_p.paragraph_format.space_before = Pt(12)
+                elem_p.paragraph_format.space_after = Pt(12)
+                run = elem_p.add_run(scene_trans.upper())
+                _set_run_font(run, size=Pt(11), bold=True)
 
     buffer = io.BytesIO()
     doc.save(buffer)

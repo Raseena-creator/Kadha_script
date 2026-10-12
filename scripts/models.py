@@ -212,6 +212,60 @@ class Scene(models.Model):
         return not self.is_intercut
 
     @property
+    def has_transition_element(self) -> bool:
+        """True if this scene contains at least one non-empty transition ScriptElement."""
+        return self.elements.filter(element_type='transition').exclude(content='').exists()
+
+    def has_scene_ending_transition(self, elements=None) -> bool:
+        """
+        True if the scene's last non-empty screenplay element (excluding editorial notes)
+        is an explicit transition.
+        Accepts an optional pre-fetched elements list/queryset to avoid extra queries.
+        """
+        if elements is not None:
+            elems = elements
+        elif hasattr(self, '_prefetched_objects_cache') and 'elements' in self._prefetched_objects_cache:
+            elems = sorted(self.elements.all(), key=lambda e: (e.order, e.id))
+        else:
+            elems = list(self.elements.all().order_by('order', 'id'))
+
+        for elem in reversed(elems):
+            content = (elem.content or '').strip()
+            if not content:
+                continue
+            if elem.element_type == 'note':
+                continue
+            return elem.element_type == 'transition'
+        return False
+
+    @property
+    def has_ending_transition(self) -> bool:
+        """True if the scene ends with an explicit transition element."""
+        return self.has_scene_ending_transition()
+
+    @property
+    def trailing_transition_content(self) -> str:
+        """
+        Returns the content of the scene-ending transition ScriptElement if the scene
+        actually ends with a transition, or empty string if it does not.
+        """
+        if hasattr(self, '_prefetched_objects_cache') and 'elements' in self._prefetched_objects_cache:
+            elems = sorted(self.elements.all(), key=lambda e: (e.order, e.id))
+        else:
+            elems = list(self.elements.all().order_by('order', 'id'))
+
+        for elem in reversed(elems):
+            content = (elem.content or '').strip()
+            if not content:
+                continue
+            if elem.element_type == 'note':
+                continue
+            if elem.element_type == 'transition':
+                return content
+            return ""
+        return ""
+
+    @property
     def duplicate_suffix(self) -> str:
         if not self.is_duplicate:
             return ""

@@ -36,7 +36,7 @@ def generate_screenplay_txt(script, include_notes=False) -> str:
         lines.append(f"{scene.scene_identifier} : {scene.clean_heading.upper()}")
         lines.append("")
 
-        elements = scene.elements.all().order_by('order')
+        elements = scene.elements.all().order_by('order', 'id')
         for elem in elements:
             text = (elem.content or '').strip()
             if not text:
@@ -78,11 +78,13 @@ def generate_screenplay_txt(script, include_notes=False) -> str:
                 lines.append(f"   /* NOTE: {text} */")
                 lines.append("")
 
-        # Scene-end transition
-        scene_trans = (scene.transition or 'CUT TO').strip()
-        if scene_trans:
-            lines.append(f"{' ' * 45}{scene_trans.upper()}")
-            lines.append("")
+        # Scene-end transition fallback:
+        # If the scene does not already end with an explicit transition element, render scene.transition fallback.
+        if not scene.has_scene_ending_transition(elements):
+            scene_trans = (scene.transition or 'CUT TO').strip()
+            if scene_trans:
+                lines.append(f"{' ' * 45}{scene_trans.upper()}")
+                lines.append("")
 
     result = "\n".join(lines).strip()
     return result + "\n"

@@ -5,7 +5,7 @@ from django.test import TestCase, Client
 from django.urls import reverse
 from django.contrib.auth.models import User
 from scripts.models import Script, Scene, ScriptElement, ScriptTitlePage
-from scripts.services.pdf_export import generate_screenplay_pdf
+from scripts.services.pdf_export import generate_screenplay_pdf, get_screenplay_pdf_styles
 from scripts.services.docx_export import generate_screenplay_docx
 from scripts.services.txt_export import generate_screenplay_txt
 
@@ -342,3 +342,348 @@ class ExportPaginationTests(TestCase):
         pdf_bytes = generate_screenplay_pdf(long_action_script)
         self.assertTrue(len(pdf_bytes) > 1000)
 
+    def test_transition_deduplication_single_visible_transition(self):
+        """
+        Verify that an explicit CUT TO: element + scene.transition='CUT TO'
+        produces exactly one visible transition in TXT, DOCX, and PDF exports.
+        """
+        script = Script.objects.create(user=self.user, title='Transition Dedup Script')
+        scene = Scene.objects.create(script=script, scene_number=1, heading='INT. OFFICE - DAY', order=0, transition='CUT TO')
+        ScriptElement.objects.create(scene=scene, element_type='action', content='John looks at the clock.', order=0)
+        ScriptElement.objects.create(scene=scene, element_type='transition', content='CUT TO:', order=1)
+
+        # TXT export
+        txt_str = generate_screenplay_txt(script)
+        txt_lines = [l.strip().upper() for l in txt_str.splitlines() if l.strip()]
+        cut_to_occurrences = [l for l in txt_lines if l in ('CUT TO:', 'CUT TO')]
+        self.assertEqual(len(cut_to_occurrences), 1)
+
+        # DOCX export
+        docx_bytes = generate_screenplay_docx(script)
+        doc = Document(io.BytesIO(docx_bytes))
+        docx_transitions = [p.text.strip().upper() for p in doc.paragraphs if p.text.strip().upper() in ('CUT TO:', 'CUT TO')]
+        self.assertEqual(len(docx_transitions), 1)
+
+        # PDF export
+        pdf_bytes = generate_screenplay_pdf(script)
+        self.assertTrue(len(pdf_bytes) > 1000)
+
+    def test_explicit_transition_earlier_in_scene_followed_by_elements(self):
+        """
+        Verify that an explicit transition earlier in the scene followed by narrative elements
+        does NOT suppress the scene-ending fallback transition.
+        """
+        script = Script.objects.create(user=self.user, title='Mid Transition Script')
+        scene = Scene.objects.create(script=script, scene_number=1, heading='INT. LAB - DAY', order=0, transition='CUT TO')
+        ScriptElement.objects.create(scene=scene, element_type='action', content='Scientist examines specimen.', order=0)
+        ScriptElement.objects.create(scene=scene, element_type='transition', content='DISSOLVE TO:', order=1)
+        ScriptElement.objects.create(scene=scene, element_type='action', content='Hours later, microscope reveals mutation.', order=2)
+
+        # TXT export: both DISSOLVE TO: and the scene-end CUT TO appear
+        txt_str = generate_screenplay_txt(script)
+        txt_lines = [l.strip().upper() for l in txt_str.splitlines() if l.strip()]
+        self.assertIn('DISSOLVE TO:', txt_lines)
+        self.assertIn('CUT TO', txt_lines)
+        dissolve_idx = txt_lines.index('DISSOLVE TO:')
+        cut_idx = txt_lines.index('CUT TO')
+        self.assertTrue(dissolve_idx < cut_idx)
+
+        # DOCX export: both transitions appear in sequence
+        docx_bytes = generate_screenplay_docx(script)
+        doc = Document(io.BytesIO(docx_bytes))
+        docx_lines = [p.text.strip().upper() for p in doc.paragraphs if p.text.strip()]
+        self.assertIn('DISSOLVE TO:', docx_lines)
+        self.assertIn('CUT TO', docx_lines)
+
+        # PDF export builds successfully
+        pdf_bytes = generate_screenplay_pdf(script)
+        self.assertTrue(len(pdf_bytes) > 1000)
+
+    def test_transition_fallback_when_no_explicit_element(self):
+        """
+        Verify that a scene without an explicit transition element still renders its
+        scene.transition fallback in TXT, DOCX, and PDF exports.
+        """
+        script = Script.objects.create(user=self.user, title='Transition Fallback Script')
+        scene = Scene.objects.create(script=script, scene_number=1, heading='EXT. PARK - DAY', order=0, transition='CUT TO')
+        ScriptElement.objects.create(scene=scene, element_type='action', content='A dog runs across the grass.', order=0)
+
+        # TXT export
+        txt_str = generate_screenplay_txt(script)
+        txt_lines = [l.strip().upper() for l in txt_str.splitlines() if l.strip()]
+        cut_to_occurrences = [l for l in txt_lines if l in ('CUT TO:', 'CUT TO')]
+        self.assertEqual(len(cut_to_occurrences), 1)
+
+        # DOCX export
+        docx_bytes = generate_screenplay_docx(script)
+        doc = Document(io.BytesIO(docx_bytes))
+        docx_transitions = [p.text.strip().upper() for p in doc.paragraphs if p.text.strip().upper() in ('CUT TO:', 'CUT TO')]
+        self.assertEqual(len(docx_transitions), 1)
+
+        # PDF export
+        pdf_bytes = generate_screenplay_pdf(script)
+        self.assertTrue(len(pdf_bytes) > 1000)
+
+    def test_distinct_transition_precedence(self):
+        """
+        Verify that when a scene has an explicit transition element (e.g., 'FADE OUT.')
+        and a default/different scene-level transition (e.g., 'CUT TO'),
+        the explicit element takes precedence and the scene-level transition is suppressed.
+        """
+        script = Script.objects.create(user=self.user, title='Distinct Transition Script')
+        scene = Scene.objects.create(script=script, scene_number=1, heading='INT. CABIN - NIGHT', order=0, transition='CUT TO')
+        ScriptElement.objects.create(scene=scene, element_type='action', content='Fire fades out.', order=0)
+        ScriptElement.objects.create(scene=scene, element_type='transition', content='FADE OUT.', order=1)
+
+        # TXT export
+        txt_str = generate_screenplay_txt(script)
+        txt_lines = [l.strip().upper() for l in txt_str.splitlines() if l.strip()]
+        self.assertIn('FADE OUT.', txt_lines)
+        self.assertNotIn('CUT TO', txt_lines)
+        self.assertNotIn('CUT TO:', txt_lines)
+
+        # DOCX export
+        docx_bytes = generate_screenplay_docx(script)
+        doc = Document(io.BytesIO(docx_bytes))
+        docx_lines = [p.text.strip().upper() for p in doc.paragraphs if p.text.strip()]
+        self.assertIn('FADE OUT.', docx_lines)
+        self.assertNotIn('CUT TO', docx_lines)
+        self.assertNotIn('CUT TO:', docx_lines)
+
+        # PDF export
+        pdf_bytes = generate_screenplay_pdf(script)
+        self.assertTrue(len(pdf_bytes) > 1000)
+
+    def test_scene_model_transition_properties(self):
+        """
+        Verify Scene model properties: has_scene_ending_transition, has_ending_transition,
+        has_transition_element, and trailing_transition_content.
+        """
+        script = Script.objects.create(user=self.user, title='Properties Test Script')
+
+        # 1. Scene with no transition
+        s_none = Scene.objects.create(script=script, scene_number=1, heading='INT. ROOM - DAY', order=0)
+        ScriptElement.objects.create(scene=s_none, element_type='action', content='Silent room.', order=0)
+        self.assertFalse(s_none.has_transition_element)
+        self.assertFalse(s_none.has_ending_transition)
+        self.assertFalse(s_none.has_scene_ending_transition())
+        self.assertEqual(s_none.trailing_transition_content, '')
+
+        # 2. Scene with transition at the end
+        s_end = Scene.objects.create(script=script, scene_number=2, heading='EXT. STREET - NIGHT', order=1)
+        ScriptElement.objects.create(scene=s_end, element_type='action', content='Car speeds away.', order=0)
+        ScriptElement.objects.create(scene=s_end, element_type='transition', content='SMASH CUT TO:', order=1)
+        self.assertTrue(s_end.has_transition_element)
+        self.assertTrue(s_end.has_ending_transition)
+        self.assertTrue(s_end.has_scene_ending_transition())
+        self.assertEqual(s_end.trailing_transition_content, 'SMASH CUT TO:')
+
+        # 3. Scene with transition earlier, followed by action
+        s_mid = Scene.objects.create(script=script, scene_number=3, heading='INT. CORRIDOR - DAY', order=2)
+        ScriptElement.objects.create(scene=s_mid, element_type='action', content='Footsteps approach.', order=0)
+        ScriptElement.objects.create(scene=s_mid, element_type='transition', content='DISSOLVE TO:', order=1)
+        ScriptElement.objects.create(scene=s_mid, element_type='action', content='Now inside vault.', order=2)
+        self.assertTrue(s_mid.has_transition_element)
+        self.assertFalse(s_mid.has_ending_transition)
+        self.assertFalse(s_mid.has_scene_ending_transition())
+        self.assertEqual(s_mid.trailing_transition_content, '')
+
+        # 4. Scene with transition at end followed by editorial note
+        s_note = Scene.objects.create(script=script, scene_number=4, heading='EXT. ROOFTOP - NIGHT', order=3)
+        ScriptElement.objects.create(scene=s_note, element_type='action', content='Lightning flashes.', order=0)
+        ScriptElement.objects.create(scene=s_note, element_type='transition', content='FADE OUT.', order=1)
+        ScriptElement.objects.create(scene=s_note, element_type='note', content='Director note: check sound fx.', order=2)
+        self.assertTrue(s_note.has_transition_element)
+        self.assertTrue(s_note.has_ending_transition)
+        self.assertTrue(s_note.has_scene_ending_transition())
+        self.assertEqual(s_note.trailing_transition_content, 'FADE OUT.')
+
+    def test_read_mode_initial_rendering_transition_deduplication(self):
+        """
+        Verify that Read Mode initial template rendering:
+        - Does NOT produce duplicate transition blocks when a transition element ends the scene.
+        - Renders both when a transition is mid-scene and followed by other elements.
+        - Still renders the scene-level fallback when no transition element exists.
+        - Respects explicit element precedence for distinct transitions.
+        """
+        client = Client()
+        client.login(username='filmmaker', password='Password123!')
+
+        test_script = Script.objects.create(user=self.user, title='Read Mode Transition Script')
+        # Scene 1: Explicit transition element 'CUT TO:' at end + scene.transition='CUT TO'
+        sc_dup = Scene.objects.create(script=test_script, scene_number=1, heading='INT. CAFE - DAY', order=0, transition='CUT TO')
+        ScriptElement.objects.create(scene=sc_dup, element_type='action', content='Drinking coffee.', order=0)
+        ScriptElement.objects.create(scene=sc_dup, element_type='transition', content='CUT TO:', order=1)
+
+        # Scene 2: Fallback only (no transition element)
+        sc_fallback = Scene.objects.create(script=test_script, scene_number=2, heading='EXT. BEACH - SUNSET', order=1, transition='DISSOLVE TO')
+        ScriptElement.objects.create(scene=sc_fallback, element_type='action', content='Waves crash.', order=0)
+
+        # Scene 3: Distinct transition 'FADE OUT.' at end + scene.transition='CUT TO'
+        sc_distinct = Scene.objects.create(script=test_script, scene_number=3, heading='INT. BEDROOM - NIGHT', order=2, transition='CUT TO')
+        ScriptElement.objects.create(scene=sc_distinct, element_type='action', content='Falling asleep.', order=0)
+        ScriptElement.objects.create(scene=sc_distinct, element_type='transition', content='FADE OUT.', order=1)
+
+        # Scene 4: Transition in the middle, followed by action -> fallback should render at end
+        sc_mid = Scene.objects.create(script=test_script, scene_number=4, heading='INT. GYM - DAY', order=3, transition='CUT TO')
+        ScriptElement.objects.create(scene=sc_mid, element_type='action', content='Boxer punches bag.', order=0)
+        ScriptElement.objects.create(scene=sc_mid, element_type='transition', content='MATCH CUT TO:', order=1)
+        ScriptElement.objects.create(scene=sc_mid, element_type='action', content='Boxer drinking water.', order=2)
+
+        response = client.get(reverse('script_editor', kwargs={'script_id': test_script.id}))
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode('utf-8')
+
+        # Scene 1: Exactly ONE element-type-transition block
+        sec1_match = re.search(rf'<section[^>]*id="read-scene-{sc_dup.id}"[^>]*>(.*?)</section>', html, re.DOTALL)
+        self.assertIsNotNone(sec1_match)
+        sec1_html = sec1_match.group(1)
+        self.assertEqual(sec1_html.count('element-type-transition'), 1)
+        self.assertIn('CUT TO:', sec1_html)
+
+        # Scene 2: Fallback only
+        sec2_match = re.search(rf'<section[^>]*id="read-scene-{sc_fallback.id}"[^>]*>(.*?)</section>', html, re.DOTALL)
+        self.assertIsNotNone(sec2_match)
+        sec2_html = sec2_match.group(1)
+        self.assertEqual(sec2_html.count('element-type-transition'), 1)
+        self.assertIn('DISSOLVE TO', sec2_html)
+
+        # Scene 3: Distinct transition at end suppresses scene.transition fallback
+        sec3_match = re.search(rf'<section[^>]*id="read-scene-{sc_distinct.id}"[^>]*>(.*?)</section>', html, re.DOTALL)
+        self.assertIsNotNone(sec3_match)
+        sec3_html = sec3_match.group(1)
+        self.assertEqual(sec3_html.count('element-type-transition'), 1)
+        self.assertIn('FADE OUT.', sec3_html)
+        self.assertNotIn('CUT TO', sec3_html)
+
+        # Scene 4: Mid-scene transition + fallback at end (TWO transitions)
+        sec4_match = re.search(rf'<section[^>]*id="read-scene-{sc_mid.id}"[^>]*>(.*?)</section>', html, re.DOTALL)
+        self.assertIsNotNone(sec4_match)
+        sec4_html = sec4_match.group(1)
+        self.assertEqual(sec4_html.count('element-type-transition'), 2)
+        self.assertIn('MATCH CUT TO:', sec4_html)
+        self.assertIn('CUT TO', sec4_html)
+
+    def test_api_save_scene_nullable_and_missing_transition(self):
+        """
+        Verify that api_save_scene handles nullable, omitted, empty, and custom transition payloads
+        without server-side errors.
+        """
+        import json
+        client = Client()
+        client.login(username='filmmaker', password='Password123!')
+
+        save_url = reverse('api_save_scene', kwargs={'script_id': self.script.id, 'scene_id': self.sc1.id})
+
+        # 1. Payload with transition: None
+        res_null = client.post(
+            save_url,
+            data=json.dumps({'heading': 'INT. OFFICE - DAY', 'transition': None}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_null.status_code, 200)
+        self.sc1.refresh_from_db()
+        self.assertEqual(self.sc1.transition, 'CUT TO')
+
+        # 2. Payload with transition omitted
+        res_omitted = client.post(
+            save_url,
+            data=json.dumps({'heading': 'INT. OFFICE - DAY'}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_omitted.status_code, 200)
+
+        # 3. Payload with empty string transition
+        res_empty = client.post(
+            save_url,
+            data=json.dumps({'heading': 'INT. OFFICE - DAY', 'transition': '   '}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_empty.status_code, 200)
+        self.sc1.refresh_from_db()
+        self.assertEqual(self.sc1.transition, 'CUT TO')
+
+        # 4. Payload with custom transition
+        res_custom = client.post(
+            save_url,
+            data=json.dumps({'heading': 'INT. OFFICE - DAY', 'transition': 'DISSOLVE TO:'}),
+            content_type='application/json'
+        )
+        self.assertEqual(res_custom.status_code, 200)
+        self.sc1.refresh_from_db()
+        self.assertEqual(self.sc1.transition, 'DISSOLVE TO:')
+
+    def test_screenplay_pdf_paragraph_styles_typography(self):
+        """
+        Verify that main screenplay PDF paragraph styles use the intended font sizes (~12 pt),
+        leading (15-16 pt), parenthetical (10.5 pt, 13 pt leading), and Unicode shaping is preserved.
+        """
+        styles = get_screenplay_pdf_styles()
+
+        # Scene heading: 12 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['SceneHeading'].fontSize, 12)
+        self.assertEqual(styles['SceneHeading'].leading, 16)
+        self.assertTrue(styles['SceneHeading'].shaping)
+
+        # Action: 12 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['Action'].fontSize, 12)
+        self.assertEqual(styles['Action'].leading, 16)
+        self.assertTrue(styles['Action'].shaping)
+
+        # Character: 12 pt, 15 pt leading, shaping=True
+        self.assertEqual(styles['Character'].fontSize, 12)
+        self.assertEqual(styles['Character'].leading, 15)
+        self.assertTrue(styles['Character'].shaping)
+
+        # Dialogue: 12 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['Dialogue'].fontSize, 12)
+        self.assertEqual(styles['Dialogue'].leading, 16)
+        self.assertTrue(styles['Dialogue'].shaping)
+
+        # Parenthetical: 10.5 pt, 13 pt leading, shaping=True
+        self.assertEqual(styles['Parenthetical'].fontSize, 10.5)
+        self.assertEqual(styles['Parenthetical'].leading, 13)
+        self.assertTrue(styles['Parenthetical'].shaping)
+
+        # Transition: 12 pt, 15 pt leading, shaping=True
+        self.assertEqual(styles['Transition'].fontSize, 12)
+        self.assertEqual(styles['Transition'].leading, 15)
+        self.assertTrue(styles['Transition'].shaping)
+
+        # Shot: 12 pt, 15 pt leading, shaping=True
+        self.assertEqual(styles['Shot'].fontSize, 12)
+        self.assertEqual(styles['Shot'].leading, 15)
+        self.assertTrue(styles['Shot'].shaping)
+
+    def test_long_dialogue_across_page_boundaries_english_and_malayalam(self):
+        """
+        Verify that long English and Malayalam dialogue can cross page boundaries
+        without layout errors or content truncation, without persistent machine-specific file writes.
+        """
+        dialogue_script = Script.objects.create(user=self.user, title='Long Dialogue Script', language='Malayalam')
+        sc = Scene.objects.create(script=dialogue_script, scene_number=1, heading='INT. COURTROOM - DAY', order=0)
+
+        # English long speech
+        ScriptElement.objects.create(scene=sc, element_type='character', content='LAWYER', order=0)
+        long_english_dialogue = " ".join([
+            f"Your Honor, statement paragraph number {i} demonstrates beyond any reasonable doubt that the sequence of events as described by the prosecution is fundamentally flawed and contradicts the photographic evidence."
+            for i in range(1, 35)
+        ])
+        ScriptElement.objects.create(scene=sc, element_type='dialogue', content=long_english_dialogue, order=1)
+
+        # Malayalam long speech
+        ScriptElement.objects.create(scene=sc, element_type='character', content='ജഡ്ജി (JUDGE)', order=2)
+        long_malayalam_dialogue = " ".join([
+            f"കോടതി ഈ വിഷയത്തിൽ വ്യക്തമായ നിലപാട് സ്വീകരിക്കുന്നു {i}. നിയമപരമായ എല്ലാ രേഖകളും പരിശോധിച്ചതിനു ശേഷമേ അന്തിമ തീരുമാനം എടുക്കാൻ സാധിക്കൂ."
+            for i in range(1, 35)
+        ])
+        ScriptElement.objects.create(scene=sc, element_type='dialogue', content=long_malayalam_dialogue, order=3)
+
+        pdf_bytes = generate_screenplay_pdf(dialogue_script)
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(len(pdf_bytes) > 2000)
+
+        # Count pages: 1 title page + multi-page scene
+        pages = re.findall(rb'/Type\s*/Page\b(?!\s*/Pages)', pdf_bytes)
+        # Should span across at least 3 pages (title page + 2 or more scene pages)
+        self.assertTrue(len(pages) >= 3)

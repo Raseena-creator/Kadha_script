@@ -159,7 +159,8 @@ def api_save_scene(request, script_id, scene_id):
             if 'summary' in data:
                 scene.summary = data.get('summary', '')
             if 'transition' in data:
-                scene.transition = data.get('transition', 'CUT TO').strip() or 'CUT TO'
+                raw_trans = data.get('transition')
+                scene.transition = (raw_trans.strip() if isinstance(raw_trans, str) else '') or 'CUT TO'
             scene.save()
 
             # Update or recreate elements only when explicitly provided

@@ -119,6 +119,198 @@ class NumberedCanvas(canvas.Canvas):
         canvas.Canvas.save(self)
 
 
+def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
+    """Returns the dictionary of paragraph styles configured for screenplay PDF export."""
+    if font_regular is None or font_bold is None:
+        reg, bold = register_malayalam_fonts()
+        font_regular = font_regular or reg
+        font_bold = font_bold or bold
+
+    styles = getSampleStyleSheet()
+
+    return {
+        'TitleStyle': ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=24,
+            leading=30,
+            alignment=TA_CENTER,
+            spaceAfter=12,
+            shaping=True,
+        ),
+        'SubtitleStyle': ParagraphStyle(
+            'SubtitleStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=12,
+            leading=16,
+            alignment=TA_CENTER,
+            textColor='#444444',
+            spaceAfter=12,
+            shaping=True,
+        ),
+        'ByStyle': ParagraphStyle(
+            'ByStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=11,
+            leading=15,
+            alignment=TA_CENTER,
+            spaceAfter=6,
+            shaping=True,
+        ),
+        'AuthorStyle': ParagraphStyle(
+            'AuthorStyle',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=14,
+            leading=18,
+            alignment=TA_CENTER,
+            spaceAfter=14,
+            shaping=True,
+        ),
+        'CreditsStyle': ParagraphStyle(
+            'CreditsStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=10,
+            leading=14,
+            alignment=TA_CENTER,
+            textColor='#333333',
+            spaceAfter=18,
+            shaping=True,
+        ),
+        'MetaStyle': ParagraphStyle(
+            'MetaStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=10,
+            leading=14,
+            alignment=TA_CENTER,
+            textColor='#555555',
+            shaping=True,
+        ),
+        'MetaLeftStyle': ParagraphStyle(
+            'MetaLeftStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=9.5,
+            leading=13.5,
+            alignment=TA_LEFT,
+            textColor='#222222',
+            shaping=True,
+        ),
+        'MetaRightStyle': ParagraphStyle(
+            'MetaRightStyle',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=9.5,
+            leading=13.5,
+            alignment=TA_RIGHT,
+            textColor='#222222',
+            shaping=True,
+        ),
+        'SceneHeading': ParagraphStyle(
+            'SceneHeading',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=16,
+            spaceBefore=16,
+            spaceAfter=8,
+            keepWithNext=True,
+            shaping=True,
+            backColor=colors.HexColor('#ECECEC'),
+            borderPadding=(3, 5, 3, 5),
+        ),
+        'Action': ParagraphStyle(
+            'Action',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=12,
+            leading=16,
+            leftIndent=0,
+            rightIndent=0,
+            firstLineIndent=0,
+            spaceBefore=6,
+            spaceAfter=8,
+            alignment=TA_LEFT,
+            shaping=True,
+        ),
+        'Character': ParagraphStyle(
+            'Character',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=15,
+            leftIndent=2.0 * inch,
+            spaceBefore=12,
+            spaceAfter=2,
+            keepWithNext=True,
+            shaping=True,
+        ),
+        'Dialogue': ParagraphStyle(
+            'Dialogue',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=12,
+            leading=16,
+            leftIndent=1.0 * inch,
+            rightIndent=1.0 * inch,
+            spaceBefore=0,
+            spaceAfter=8,
+            shaping=True,
+        ),
+        'Parenthetical': ParagraphStyle(
+            'Parenthetical',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=10.5,
+            leading=13,
+            leftIndent=1.5 * inch,
+            rightIndent=1.5 * inch,
+            spaceBefore=0,
+            spaceAfter=2,
+            keepWithNext=True,
+            shaping=True,
+        ),
+        'Transition': ParagraphStyle(
+            'Transition',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=15,
+            alignment=TA_RIGHT,
+            spaceBefore=14,
+            spaceAfter=14,
+            shaping=True,
+        ),
+        'Shot': ParagraphStyle(
+            'Shot',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=15,
+            spaceBefore=10,
+            spaceAfter=6,
+            shaping=True,
+        ),
+        'Note': ParagraphStyle(
+            'Note',
+            parent=styles['Normal'],
+            fontName=font_regular,
+            fontSize=9.5,
+            leading=13,
+            textColor='#777777',
+            leftIndent=0.5 * inch,
+            spaceBefore=4,
+            spaceAfter=6,
+            shaping=True,
+        ),
+    }
+
+
 def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     """Generates standard screenplay formatted PDF for Malayalam scripts with Unicode shaping."""
     font_regular, font_bold = register_malayalam_fonts()
@@ -134,190 +326,23 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
         bottomMargin=1.0 * inch,
     )
 
-    styles = getSampleStyleSheet()
-
-    # Title Page Styles (Shaping enabled for Malayalam Unicode)
-    title_style = ParagraphStyle(
-        'TitleStyle',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=24,
-        leading=30,
-        alignment=TA_CENTER,
-        spaceAfter=12,
-        shaping=True,
-    )
-    subtitle_style = ParagraphStyle(
-        'SubtitleStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=12,
-        leading=16,
-        alignment=TA_CENTER,
-        textColor='#444444',
-        spaceAfter=12,
-        shaping=True,
-    )
-    by_style = ParagraphStyle(
-        'ByStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=11,
-        leading=15,
-        alignment=TA_CENTER,
-        spaceAfter=6,
-        shaping=True,
-    )
-    author_style = ParagraphStyle(
-        'AuthorStyle',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=14,
-        leading=18,
-        alignment=TA_CENTER,
-        spaceAfter=14,
-        shaping=True,
-    )
-    credits_style = ParagraphStyle(
-        'CreditsStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=10,
-        leading=14,
-        alignment=TA_CENTER,
-        textColor='#333333',
-        spaceAfter=18,
-        shaping=True,
-    )
-    meta_style = ParagraphStyle(
-        'MetaStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=10,
-        leading=14,
-        alignment=TA_CENTER,
-        textColor='#555555',
-        shaping=True,
-    )
-    meta_left_style = ParagraphStyle(
-        'MetaLeftStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=9.5,
-        leading=13.5,
-        alignment=TA_LEFT,
-        textColor='#222222',
-        shaping=True,
-    )
-    meta_right_style = ParagraphStyle(
-        'MetaRightStyle',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=9.5,
-        leading=13.5,
-        alignment=TA_RIGHT,
-        textColor='#222222',
-        shaping=True,
-    )
-
-    # Screenplay Body Styles (Shaping enabled for Malayalam Unicode)
-    scene_heading_style = ParagraphStyle(
-        'SceneHeading',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=11,
-        leading=15,
-        spaceBefore=16,
-        spaceAfter=8,
-        keepWithNext=True,
-        shaping=True,
-        backColor=colors.HexColor('#ECECEC'),
-        borderPadding=(3, 5, 3, 5),
-    )
-    action_style = ParagraphStyle(
-        'Action',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=11,
-        leading=15,
-        leftIndent=0,
-        rightIndent=0,
-        firstLineIndent=0,
-        spaceBefore=6,
-        spaceAfter=8,
-        alignment=TA_LEFT,
-        shaping=True,
-    )
-    character_style = ParagraphStyle(
-        'Character',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=11,
-        leading=14,
-        leftIndent=2.0 * inch, # Centered-ish character cue
-        spaceBefore=12,
-        spaceAfter=2,
-        keepWithNext=True,
-        shaping=True,
-    )
-    dialogue_style = ParagraphStyle(
-        'Dialogue',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=11,
-        leading=14,
-        leftIndent=1.0 * inch,
-        rightIndent=1.0 * inch,
-        spaceBefore=0,
-        spaceAfter=8,
-        shaping=True,
-    )
-    parenthetical_style = ParagraphStyle(
-        'Parenthetical',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=10,
-        leading=12,
-        leftIndent=1.5 * inch,
-        rightIndent=1.5 * inch,
-        spaceBefore=0,
-        spaceAfter=2,
-        keepWithNext=True,
-        shaping=True,
-    )
-    transition_style = ParagraphStyle(
-        'Transition',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=11,
-        leading=14,
-        alignment=TA_RIGHT,
-        spaceBefore=14,
-        spaceAfter=14,
-        shaping=True,
-    )
-    shot_style = ParagraphStyle(
-        'Shot',
-        parent=styles['Normal'],
-        fontName=font_bold,
-        fontSize=11,
-        leading=14,
-        spaceBefore=10,
-        spaceAfter=6,
-        shaping=True,
-    )
-    note_style = ParagraphStyle(
-        'Note',
-        parent=styles['Normal'],
-        fontName=font_regular,
-        fontSize=9,
-        leading=12,
-        textColor='#777777',
-        leftIndent=0.5 * inch,
-        spaceBefore=4,
-        spaceAfter=6,
-        shaping=True,
-    )
+    pdf_styles = get_screenplay_pdf_styles(font_regular, font_bold)
+    title_style = pdf_styles['TitleStyle']
+    subtitle_style = pdf_styles['SubtitleStyle']
+    by_style = pdf_styles['ByStyle']
+    author_style = pdf_styles['AuthorStyle']
+    credits_style = pdf_styles['CreditsStyle']
+    meta_style = pdf_styles['MetaStyle']
+    meta_left_style = pdf_styles['MetaLeftStyle']
+    meta_right_style = pdf_styles['MetaRightStyle']
+    scene_heading_style = pdf_styles['SceneHeading']
+    action_style = pdf_styles['Action']
+    character_style = pdf_styles['Character']
+    dialogue_style = pdf_styles['Dialogue']
+    parenthetical_style = pdf_styles['Parenthetical']
+    transition_style = pdf_styles['Transition']
+    shot_style = pdf_styles['Shot']
+    note_style = pdf_styles['Note']
 
     story = []
 
@@ -409,7 +434,7 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
         heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
         story.append(Paragraph(heading_text, scene_heading_style))
 
-        elements = scene.elements.all().order_by('order')
+        elements = scene.elements.all().order_by('order', 'id')
         for elem in elements:
             text = (elem.content or '').strip()
             if not text:
@@ -449,11 +474,13 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             elif elem.element_type == 'shot':
                 story.append(Paragraph(clean_text.upper(), shot_style))
 
-        # Scene-end transition
-        scene_trans = (scene.transition or 'CUT TO').strip()
-        if scene_trans:
-            clean_trans = scene_trans.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-            story.append(Paragraph(clean_trans.upper(), transition_style))
+        # Scene-end transition fallback:
+        # If the scene does not already end with an explicit transition element, render scene.transition fallback.
+        if not scene.has_scene_ending_transition(elements):
+            scene_trans = (scene.transition or 'CUT TO').strip()
+            if scene_trans:
+                clean_trans = scene_trans.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+                story.append(Paragraph(clean_trans.upper(), transition_style))
 
     # Build PDF with standard screenplay page numbers
     doc.build(story, canvasmaker=NumberedCanvas)
