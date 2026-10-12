@@ -667,6 +667,219 @@ def reorder_main_scene(script: Script, scene: Scene, target_number: int) -> tupl
     return True, "Scene reordered successfully."
 
 
+def promote_sub_scene(script: Script, scene: Scene) -> tuple[bool, str]:
+    """
+    Promotes an eligible sub-scene to become a main scene.
+    1. Preserves scene record, primary key, UUID, elements, heading, content, Malayalam text.
+    2. Detaches parent relationship (parent_scene = None).
+    3. Places it immediately after its former parent's complete scene block (former parent + surviving sub-scenes/duplicates).
+    4. Renumbers all eligible main scenes sequentially (P.scene_number + 1, subsequent main scenes increment).
+    5. Renumbers remaining sub-scenes under the former parent (A, B, C...).
+    6. Preserves duplicate/intercut semantics.
+    7. Wrapped in a database transaction.
+    """
+    if scene.script_id != script.id:
+        raise ValueError("Scene does not belong to the specified screenplay.")
+    if scene.is_deleted:
+        raise ValueError("Cannot promote a deleted scene.")
+    if not scene.is_sub_scene or not scene.parent_scene:
+        raise ValueError("Only active sub-scenes can be promoted to a main scene.")
+    if scene.is_intercut:
+        raise ValueError("Intercut sub-scenes cannot be promoted to a main scene.")
+    if scene.is_duplicate:
+        raise ValueError("Duplicate sub-scenes cannot be promoted to a main scene directly.")
+
+    with transaction.atomic():
+        former_parent = scene.parent_scene
+        if former_parent.is_deleted:
+            raise ValueError("Cannot promote a sub-scene whose parent scene is deleted.")
+
+        # Detach parent
+        scene.parent_scene = None
+        scene.save(update_fields=['parent_scene'])
+
+        # Top items excluding the promoted scene (which was a sub-scene before)
+        top_items = list(script.scenes.filter(
+            is_deleted=False
+        ).filter(
+            models.Q(parent_scene__isnull=True) | models.Q(is_intercut=True)
+        ).exclude(id=scene.id).order_by('order', 'id'))
+
+        try:
+            parent_idx = [t.id for t in top_items].index(former_parent.id)
+        except ValueError:
+            parent_idx = len(top_items) - 1
+
+        # Advance past any top-level duplicates of former_parent
+        insert_idx = parent_idx + 1
+        while insert_idx < len(top_items):
+            item = top_items[insert_idx]
+            if item.parent_scene_id is None and item.is_duplicate and item.scene_number == former_parent.scene_number:
+                insert_idx += 1
+            else:
+                break
+
+        top_items.insert(insert_idx, scene)
+
+        # Reconstruct flat sequence of all scenes in script:
+        # Each top-level item followed by its surviving sub-scenes
+        ordered_scenes = []
+        seen_ids = set()
+
+        for item in top_items:
+            if item.id in seen_ids:
+                continue
+            ordered_scenes.append(item)
+            seen_ids.add(item.id)
+
+            if not item.is_sub_scene:
+                for sub in item.sub_scenes.filter(is_deleted=False, is_intercut=False).order_by('order', 'id'):
+                    if sub.id not in seen_ids:
+                        ordered_scenes.append(sub)
+                        seen_ids.add(sub.id)
+
+        all_remaining = script.scenes.filter(is_deleted=False).exclude(id__in=seen_ids).order_by('order', 'id')
+        for rem in all_remaining:
+            ordered_scenes.append(rem)
+            seen_ids.add(rem.id)
+
+        # Update order values
+        for new_order, sc in enumerate(ordered_scenes):
+            if sc.order != new_order:
+                sc.order = new_order
+                sc.save(update_fields=['order'])
+
+        # Resequence scene numbers and sub-letters
+        resequence_script_scenes(script)
+
+        script.updated_at = timezone.now()
+        script.save(update_fields=['updated_at'])
+
+        scene.refresh_from_db()
+        return True, "Sub-scene promoted to main scene successfully."
+
+
+def reorder_sub_scene(script: Script, scene: Scene, target_position: int) -> tuple[bool, str]:
+    """
+    Reorders a sub-scene to target_position (1-indexed) among its active siblings under the same parent scene.
+    Preserves:
+    - Parent scene's scene_number and identity
+    - Sub-scene primary key, UUID, elements, heading, content, and parent relationship
+    - Content elements, IDs, and screenplay integrity
+    - Excludes soft-deleted sub-scenes
+    """
+    if scene.script_id != script.id:
+        raise ValueError("Scene does not belong to the specified screenplay.")
+    if scene.is_deleted:
+        raise ValueError("Cannot reorder a deleted scene.")
+    if not scene.is_sub_scene or not scene.parent_scene:
+        raise ValueError("Only sub-scenes can be reordered using sub-scene reordering.")
+    if scene.is_intercut:
+        raise ValueError("Intercut sub-scenes cannot be directly renumbered.")
+    if scene.is_duplicate:
+        raise ValueError("Duplicate sub-scenes retain their base sub-scene position and cannot be directly renumbered.")
+
+    parent = scene.parent_scene
+    if parent.is_deleted:
+        raise ValueError("Cannot reorder sub-scenes under a deleted parent scene.")
+
+    siblings = list(
+        parent.sub_scenes.filter(
+            is_deleted=False,
+            is_intercut=False,
+            is_duplicate=False
+        ).order_by('order', 'id')
+    )
+    total_siblings = len(siblings)
+    if total_siblings == 0:
+        raise ValueError("No active sibling sub-scenes found.")
+
+    if not isinstance(target_position, int) or isinstance(target_position, bool):
+        raise ValueError("Sub-scene position must be a valid integer.")
+
+    if target_position < 1:
+        raise ValueError("Sub-scene position must be a positive integer greater than zero.")
+
+    if target_position > total_siblings:
+        raise ValueError(f"Sub-scene position cannot exceed the total number of sibling sub-scenes ({total_siblings}).")
+
+    try:
+        current_idx = [s.id for s in siblings].index(scene.id)
+    except ValueError:
+        raise ValueError("The selected sub-scene is not an active sub-scene under its parent.")
+
+    current_position = current_idx + 1
+    if target_position == current_position:
+        return False, f"Sub-scene is already at position {target_position}."
+
+    target_idx = target_position - 1
+
+    with transaction.atomic():
+        moved = siblings.pop(current_idx)
+        siblings.insert(target_idx, moved)
+
+        all_parent_subs = list(parent.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
+        new_sub_items = []
+        seen_sub_ids = set()
+        for base_s in siblings:
+            new_sub_items.append(base_s)
+            seen_sub_ids.add(base_s.id)
+            dups = [s for s in all_parent_subs if s.is_duplicate and s.sub_letter == base_s.sub_letter and s.id not in seen_sub_ids]
+            for d in dups:
+                new_sub_items.append(d)
+                seen_sub_ids.add(d.id)
+
+        for s in all_parent_subs:
+            if s.id not in seen_sub_ids:
+                new_sub_items.append(s)
+                seen_sub_ids.add(s.id)
+
+        top_items = list(script.scenes.filter(
+            is_deleted=False
+        ).filter(
+            models.Q(parent_scene__isnull=True) | models.Q(is_intercut=True)
+        ).order_by('order', 'id'))
+
+        ordered_scenes = []
+        seen_all_ids = set()
+
+        for item in top_items:
+            if item.id in seen_all_ids:
+                continue
+            ordered_scenes.append(item)
+            seen_all_ids.add(item.id)
+
+            if not item.is_sub_scene:
+                if item.id == parent.id:
+                    for sub in new_sub_items:
+                        if sub.id not in seen_all_ids:
+                            ordered_scenes.append(sub)
+                            seen_all_ids.add(sub.id)
+                else:
+                    for sub in item.sub_scenes.filter(is_deleted=False, is_intercut=False).order_by('order', 'id'):
+                        if sub.id not in seen_all_ids:
+                            ordered_scenes.append(sub)
+                            seen_all_ids.add(sub.id)
+
+        all_remaining = script.scenes.filter(is_deleted=False).exclude(id__in=seen_all_ids).order_by('order', 'id')
+        for rem in all_remaining:
+            ordered_scenes.append(rem)
+            seen_all_ids.add(rem.id)
+
+        for new_order, sc in enumerate(ordered_scenes):
+            if sc.order != new_order:
+                sc.order = new_order
+                sc.save(update_fields=['order'])
+
+        resequence_script_scenes(script)
+
+        script.updated_at = timezone.now()
+        script.save(update_fields=['updated_at'])
+
+        scene.refresh_from_db()
+        return True, "Sub-scene reordered successfully."
+
+
 
 def serialize_scenes_hierarchy(script: Script) -> list:
     """

@@ -17,6 +17,8 @@ from .services.scene_service import (
     serialize_scenes_hierarchy,
     restore_scene_to_script,
     reorder_main_scene,
+    promote_sub_scene,
+    reorder_sub_scene,
 )
 
 
@@ -589,6 +591,109 @@ def api_reorder_scenes(request, script_id):
         'status': 'ok',
         'scenes_tree': serialize_scenes_hierarchy(script),
     })
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_promote_sub_scene(request, script_id, scene_id):
+    """
+    Dedicated endpoint to promote an eligible sub-scene to become a main scene.
+    Preserves scene record, PK, UUID, content, and elements.
+    Places it immediately after its former parent's complete scene block.
+    Renumbers all affected scenes sequentially.
+    """
+    script = get_user_script(request.user, script_id)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
+
+    try:
+        changed, message = promote_sub_scene(script, scene)
+        scene.refresh_from_db()
+        return JsonResponse({
+            'status': 'ok',
+            'message': message,
+            'scene': {
+                'id': scene.id,
+                'parent_scene_id': scene.parent_scene_id,
+                'is_sub_scene': scene.is_sub_scene,
+                'is_intercut': scene.is_intercut,
+                'scene_number': scene.scene_number,
+                'scene_identifier': scene.scene_identifier,
+                'nav_identifier': scene.nav_identifier,
+                'display_number': scene.display_number,
+                'display_number_formatted': scene.display_number_formatted,
+                'full_display_heading': scene.full_display_heading,
+                'clean_heading': scene.clean_heading,
+                'clean_location': scene.clean_location or 'Location',
+                'action_preview': scene.action_preview,
+                'heading': scene.heading,
+                'order': scene.order,
+            },
+            'scenes_tree': serialize_scenes_hierarchy(script),
+        })
+    except ValueError as ve:
+        return JsonResponse({'status': 'error', 'message': str(ve)}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Failed to promote sub-scene: {str(e)}'}, status=500)
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_reorder_sub_scene(request, script_id, scene_id):
+    """
+    Dedicated endpoint to reorder a sub-scene among its siblings under the same parent scene.
+    Accepts JSON: {"target_position": 1}
+    """
+    script = get_user_script(request.user, script_id)
+    scene = get_object_or_404(Scene, id=scene_id, script=script, is_deleted=False)
+
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+
+    raw_pos = data.get('target_position')
+    if raw_pos is None:
+        raw_pos = data.get('position')
+    if raw_pos is None:
+        return JsonResponse({'status': 'error', 'message': 'Target position is required.'}, status=400)
+
+    try:
+        if isinstance(raw_pos, bool) or not str(raw_pos).strip().lstrip('-+').isdigit():
+            return JsonResponse({'status': 'error', 'message': 'Target position must be a positive integer.'}, status=400)
+        target_position = int(raw_pos)
+    except (ValueError, TypeError):
+        return JsonResponse({'status': 'error', 'message': 'Target position must be a positive integer.'}, status=400)
+
+    try:
+        changed, message = reorder_sub_scene(script, scene, target_position)
+        scene.refresh_from_db()
+        return JsonResponse({
+            'status': 'ok' if changed else 'noop',
+            'message': message,
+            'scene': {
+                'id': scene.id,
+                'parent_scene_id': scene.parent_scene_id,
+                'is_sub_scene': scene.is_sub_scene,
+                'is_intercut': scene.is_intercut,
+                'scene_number': scene.scene_number,
+                'scene_identifier': scene.scene_identifier,
+                'nav_identifier': scene.nav_identifier,
+                'sub_letter': scene.sub_letter,
+                'display_number': scene.display_number,
+                'display_number_formatted': scene.display_number_formatted,
+                'full_display_heading': scene.full_display_heading,
+                'clean_heading': scene.clean_heading,
+                'clean_location': scene.clean_location or 'Location',
+                'action_preview': scene.action_preview,
+                'heading': scene.heading,
+                'order': scene.order,
+            },
+            'scenes_tree': serialize_scenes_hierarchy(script),
+        })
+    except ValueError as ve:
+        return JsonResponse({'status': 'error', 'message': str(ve)}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Failed to reorder sub-scene: {str(e)}'}, status=500)
 
 
 @login_required

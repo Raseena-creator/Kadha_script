@@ -1008,18 +1008,18 @@
 
                     <div class="alert alert-danger py-2 px-3 small d-none mb-3" id="editorRenameError"></div>
 
-                    <!-- Dedicated Scene Number Field (Main Scenes Only) -->
+                    <!-- Dedicated Scene Number Field (Main Scenes & Sub-Scenes) -->
                     <div class="mb-3" id="editorRenameNumberGroup">
                         <label for="editorRenameSceneNumber" class="form-label small fw-semibold text-muted d-flex justify-content-between align-items-center mb-1">
-                            <span>Scene Number / Position</span>
+                            <span id="editorRenameNumberLabel">Scene Number / Position</span>
                             <span class="text-muted fw-normal" id="editorRenameTotalScenesHint"></span>
                         </label>
                         <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-light text-muted font-screenplay">Scene</span>
+                            <span class="input-group-text bg-light text-muted font-screenplay" id="editorRenameNumberPrefix">Scene</span>
                             <input type="number" id="editorRenameSceneNumber" class="form-control font-screenplay"
                                 min="1" step="1" placeholder="e.g. 1">
                         </div>
-                        <div class="form-text small text-muted mt-1">
+                        <div class="form-text small text-muted mt-1" id="editorRenameNumberHelp">
                             Changing the scene number moves this scene and automatically renumbers all affected main scenes.
                         </div>
                     </div>
@@ -1056,6 +1056,46 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Promote Sub-Scene Modal -->
+<div class="modal fade" id="editorPromoteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content ks-card border shadow-lg">
+            <div class="modal-header border-bottom py-2 px-3">
+                <h6 class="modal-title fw-bold text-dark" id="editorPromoteModalTitle">
+                    <i class="bi bi-box-arrow-up-right me-1 text-primary"></i> Promote to Main Scene
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-3">
+                <input type="hidden" id="editorPromoteSceneId" value="">
+
+                <div class="alert alert-danger py-2 px-3 small d-none mb-3" id="editorPromoteError"></div>
+
+                <div class="p-2 mb-3 bg-light rounded border d-flex align-items-center gap-2">
+                    <span class="badge bg-primary font-screenplay fs-6 px-2 py-1 flex-shrink-0"
+                        id="editorPromoteBadge">Scene 1.A</span>
+                    <span class="fw-semibold text-truncate font-screenplay text-dark"
+                        id="editorPromotePreview">INT. LOCATION - DAY</span>
+                </div>
+
+                <p class="small text-muted mb-2">
+                    Are you sure you want to promote this sub-scene to a top-level main scene?
+                </p>
+                <div class="alert alert-info py-2 px-3 small mb-0">
+                    <i class="bi bi-info-circle me-1"></i>
+                    This scene will be placed immediately after its former parent's scene block, and all subsequent main scenes and surviving sub-scenes will be automatically renumbered.
+                </div>
+            </div>
+            <div class="modal-footer py-2 px-3 bg-light border-top d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal" id="btnEditorCancelPromote">Cancel</button>
+                <button type="button" class="btn-primary-ks btn-sm" id="btnEditorConfirmPromote">
+                    <i class="bi bi-box-arrow-up-right me-1"></i> Promote to Main Scene
+                </button>
             </div>
         </div>
     </div>

@@ -43,6 +43,8 @@ class KadhaEditor {
         this.bsDeleteModal = this.deleteModalEl ? new bootstrap.Modal(this.deleteModalEl) : null;
         this.renameModalEl = document.getElementById('editorRenameModal');
         this.bsRenameModal = this.renameModalEl ? new bootstrap.Modal(this.renameModalEl) : null;
+        this.promoteModalEl = document.getElementById('editorPromoteModal');
+        this.bsPromoteModal = this.promoteModalEl ? new bootstrap.Modal(this.promoteModalEl) : null;
         this.sceneSelectModalEl = document.getElementById('editorSceneSelectModal');
         this.bsSceneSelectModal = this.sceneSelectModalEl ? new bootstrap.Modal(this.sceneSelectModalEl) : null;
         this.trashModalEl = document.getElementById('sceneTrashModal');
@@ -1830,7 +1832,13 @@ class KadhaEditor {
                         <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="${sc.id}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-arrow-down-circle me-2 text-success"></i>${afterLabel}</button></li>
                         <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="${targetParentId}" data-heading="${escapedHeading}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><button type="button" class="dropdown-item btn-action-rename" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}"><i class="bi bi-pencil me-2 text-warning"></i>Rename</button></li>
+                        ${isSub ? `
+                        <li><button type="button" class="dropdown-item btn-action-promote ${sc.is_duplicate || sc.is_intercut ? 'text-muted' : 'text-primary fw-medium'}" data-id="${sc.id}" data-badge="${navId}" data-heading="${escapedHeading}" data-is-dup="${Boolean(sc.is_duplicate)}" data-is-intercut="${Boolean(sc.is_intercut)}"><i class="bi bi-box-arrow-up-right me-2 ${sc.is_duplicate || sc.is_intercut ? 'text-muted' : 'text-primary'}"></i>Promote to Main Scene</button></li>
+                        ${!sc.is_duplicate && !sc.is_intercut ? `
+                        <li><button type="button" class="dropdown-item btn-action-reorder-sub" data-id="${sc.id}" data-badge="${navId}" data-heading="${escapedHeading}"><i class="bi bi-sort-numeric-down me-2 text-info"></i>Change Position</button></li>
+                        ` : ''}
+                        ` : ''}
+                        <li><button type="button" class="dropdown-item btn-action-rename" data-id="${sc.id}" data-badge="${navId}" data-is-sub="${isSub}" data-heading="${escapedHeading}" data-is-dup="${Boolean(sc.is_duplicate)}" data-is-intercut="${Boolean(sc.is_intercut)}"><i class="bi bi-pencil me-2 text-warning"></i>Rename</button></li>
                         <li><button type="button" class="dropdown-item btn-action-copy-scene" data-id="${sc.id}"><i class="bi bi-clipboard me-2 text-secondary"></i>Copy Full Scene</button></li>
                         <li><button type="button" class="dropdown-item btn-action-dup" data-id="${sc.id}"><i class="bi bi-copy me-2 text-secondary"></i>Duplicate</button></li>
                         <li><button type="button" class="dropdown-item btn-action-move-up" data-id="${sc.id}"><i class="bi bi-arrow-up me-2"></i>Move Up</button></li>
@@ -1993,6 +2001,26 @@ class KadhaEditor {
             if (addSubBtn) {
                 e.preventDefault();
                 this.openSubSceneModal(addSubBtn.dataset.id, addSubBtn.dataset.heading);
+                return;
+            }
+
+            // Promote Sub-Scene
+            const promoteBtn = e.target.closest('.btn-action-promote');
+            if (promoteBtn) {
+                e.preventDefault();
+                const isDup = promoteBtn.dataset.isDup === 'true';
+                const isIntercut = promoteBtn.dataset.isIntercut === 'true';
+                this.openPromoteModal(promoteBtn.dataset.id, promoteBtn.dataset.badge, promoteBtn.dataset.heading, isDup, isIntercut);
+                return;
+            }
+
+            // Reorder Sub-Scene
+            const reorderSubBtn = e.target.closest('.btn-action-reorder-sub');
+            if (reorderSubBtn) {
+                e.preventDefault();
+                const heading = reorderSubBtn.dataset.heading || '';
+                const badge = reorderSubBtn.dataset.badge || 'Sub-Scene';
+                this.openRenameModal(reorderSubBtn.dataset.id, badge, heading, true, true);
                 return;
             }
 
@@ -2430,7 +2458,7 @@ class KadhaEditor {
         }
     }
 
-    openRenameModal(sceneId, badge = '', heading = '', isSub = false) {
+    openRenameModal(sceneId, badge = '', heading = '', isSub = false, focusOnPosition = false) {
         const sId = parseInt(sceneId);
         const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === sId);
         const currentHeading = (treeItem && treeItem.heading) || heading || (isSub ? 'INT. SUB LOCATION - DAY' : 'INT. LOCATION - DAY');
@@ -2461,20 +2489,54 @@ class KadhaEditor {
             errEl.innerText = '';
         }
 
-        // Configure Scene Number input for main scenes
+        // Configure Scene Number input for main scenes vs sub-scenes
         const numberGroupEl = document.getElementById('editorRenameNumberGroup');
+        const numberLabel = document.getElementById('editorRenameNumberLabel');
+        const numberPrefix = document.getElementById('editorRenameNumberPrefix');
+        const numberHelp = document.getElementById('editorRenameNumberHelp');
         const numberInput = document.getElementById('editorRenameSceneNumber');
         const numberHint = document.getElementById('editorRenameTotalScenesHint');
-        const baseMainScenes = (this.scenesTree || []).filter(sc => !sc.is_sub_scene && !sc.is_intercut && !sc.is_duplicate);
-        const totalMainCount = baseMainScenes.length;
 
         if (isSub) {
-            if (numberGroupEl) numberGroupEl.classList.add('d-none');
+            if (treeItem && (treeItem.is_duplicate || treeItem.is_intercut)) {
+                if (numberGroupEl) numberGroupEl.classList.add('d-none');
+            } else {
+                if (numberGroupEl) numberGroupEl.classList.remove('d-none');
+                const parentItem = (this.scenesTree || []).find(sc => Number(sc.id) === Number(treeItem ? treeItem.parent_scene_id : null));
+                const parentLabel = parentItem ? (parentItem.nav_identifier || `Scene ${parentItem.scene_number}`) : 'Parent Scene';
+
+                // Siblings under same parent (non-duplicate, non-intercut)
+                const siblings = (this.scenesTree || []).filter(sc =>
+                    Number(sc.parent_scene_id) === Number(treeItem ? treeItem.parent_scene_id : null) &&
+                    !sc.is_duplicate && !sc.is_intercut
+                );
+                const totalSiblings = siblings.length || 1;
+                const currentSiblingPos = Math.max(1, siblings.findIndex(s => Number(s.id) === sId) + 1);
+
+                if (numberLabel) numberLabel.innerText = `Sub-Scene Position (under ${parentLabel})`;
+                if (numberPrefix) numberPrefix.innerText = 'Position';
+                if (numberHelp) numberHelp.innerText = `Changing position moves this sub-scene among its siblings (A, B, C...). Parent scene ${parentItem ? parentItem.scene_number : ''} remains unchanged.`;
+                if (numberInput) {
+                    numberInput.value = currentSiblingPos;
+                    numberInput.dataset.originalPosition = currentSiblingPos;
+                    numberInput.min = 1;
+                    numberInput.max = totalSiblings;
+                }
+                if (numberHint) {
+                    numberHint.innerText = totalSiblings > 0 ? `(1 to ${totalSiblings})` : '';
+                }
+            }
         } else {
             if (numberGroupEl) numberGroupEl.classList.remove('d-none');
+            const baseMainScenes = (this.scenesTree || []).filter(sc => !sc.is_sub_scene && !sc.is_intercut && !sc.is_duplicate);
+            const totalMainCount = baseMainScenes.length;
             const currentMainNum = (treeItem && treeItem.scene_number) ? treeItem.scene_number : 1;
+            if (numberLabel) numberLabel.innerText = 'Scene Number / Position';
+            if (numberPrefix) numberPrefix.innerText = 'Scene';
+            if (numberHelp) numberHelp.innerText = 'Changing the scene number moves this scene and automatically renumbers all affected main scenes.';
             if (numberInput) {
                 numberInput.value = currentMainNum;
+                numberInput.dataset.originalPosition = currentMainNum;
                 numberInput.min = 1;
                 numberInput.max = totalMainCount || 1;
             }
@@ -2518,7 +2580,15 @@ class KadhaEditor {
         if (this.renameModalEl) {
             const modal = bootstrap.Modal.getOrCreateInstance(this.renameModalEl);
             modal.show();
-            setTimeout(() => { if (locEl) { locEl.focus(); locEl.select(); } }, 300);
+            setTimeout(() => {
+                if (focusOnPosition && numberInput) {
+                    numberInput.focus();
+                    numberInput.select();
+                } else if (locEl) {
+                    locEl.focus();
+                    locEl.select();
+                }
+            }, 300);
         }
     }
 
@@ -2533,7 +2603,7 @@ class KadhaEditor {
                 errEl.innerText = 'Please enter a valid scene location or heading.';
                 errEl.classList.remove('d-none');
             }
-            return;
+            return false;
         }
 
         if (submitBtn) {
@@ -2635,12 +2705,13 @@ class KadhaEditor {
                 this.updateStats(result.script_stats);
             }
 
-            // Close modal on success
-            if (this.renameModalEl) {
+            // Close modal on success if position is not also being changed
+            if (this.renameModalEl && !requestedSceneNum && !document.getElementById('editorRenameForm')?.dataset?.isChainedReorder) {
                 const modal = bootstrap.Modal.getInstance(this.renameModalEl);
                 if (modal) modal.hide();
             }
 
+            return true;
         } catch (err) {
             console.error('Rename failed:', err);
             this.setSaveStatus('error', 'Rename failed');
@@ -2648,7 +2719,207 @@ class KadhaEditor {
                 errEl.innerText = err.message || 'Failed to rename scene. Please check your connection and retry.';
                 errEl.classList.remove('d-none');
             }
+            return false;
         } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Save';
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+        }
+    }
+
+    openPromoteModal(sceneId, badge = '', heading = '', isDup = false, isIntercut = false) {
+        if (isDup) {
+            alert('Duplicate sub-scenes retain their base sub-scene identity and cannot be promoted to a main scene directly.');
+            return;
+        }
+        if (isIntercut) {
+            alert('Intercut sub-scenes retain their source scene link and cannot be promoted to a main scene.');
+            return;
+        }
+
+        const sId = parseInt(sceneId);
+        const idInput = document.getElementById('editorPromoteSceneId');
+        if (idInput) idInput.value = sId;
+
+        const badgeEl = document.getElementById('editorPromoteBadge');
+        if (badgeEl) badgeEl.innerText = badge || 'Sub-Scene';
+
+        const previewEl = document.getElementById('editorPromotePreview');
+        if (previewEl) previewEl.innerText = heading || 'INT. LOCATION - DAY';
+
+        const errEl = document.getElementById('editorPromoteError');
+        if (errEl) {
+            errEl.classList.add('d-none');
+            errEl.innerText = '';
+        }
+
+        const confirmBtn = document.getElementById('btnEditorConfirmPromote');
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i> Promote to Main Scene';
+        }
+
+        if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+            this.bsOffcanvas.hide();
+        }
+        if (this.promoteModalEl) {
+            const modal = bootstrap.Modal.getOrCreateInstance(this.promoteModalEl);
+            modal.show();
+        }
+    }
+
+    async confirmPromoteSubScene(sceneId) {
+        const sId = parseInt(sceneId);
+        const confirmBtn = document.getElementById('btnEditorConfirmPromote');
+        const cancelBtn = document.getElementById('btnEditorCancelPromote');
+        const errEl = document.getElementById('editorPromoteError');
+
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Promoting...';
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+
+        // 1. If promoting the active scene and there are pending changes or a save is in flight, flush save first
+        const isActiveScene = (Number(this.currentSceneId) === sId);
+        if (isActiveScene && (this.isDirty || this.isSaving)) {
+            try {
+                this.setSaveStatus('saving', 'Saving scene before promotion...');
+                await this.flushSave();
+                if (this.isDirty) {
+                    throw new Error('Unsaved changes could not be saved before promotion.');
+                }
+            } catch (saveErr) {
+                console.error('Save failed before promotion:', saveErr);
+                if (errEl) {
+                    errEl.innerText = 'Could not save current changes before promotion. Please retry once saved.';
+                    errEl.classList.remove('d-none');
+                }
+                this.setSaveStatus('error', 'Save failed before promotion');
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i> Promote to Main Scene';
+                }
+                if (cancelBtn) cancelBtn.disabled = false;
+                return;
+            }
+        }
+
+        try {
+            this.setSaveStatus('saving', 'Promoting scene...');
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${sId}/promote/`, {
+                method: 'POST',
+                headers: this.getHeaders()
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || `Server returned HTTP ${res.status}`);
+            }
+
+            const result = await res.json();
+            if (result.status !== 'ok') {
+                throw new Error(result.message || 'Failed to promote sub-scene.');
+            }
+
+            if (this.promoteModalEl) {
+                const modal = bootstrap.Modal.getInstance(this.promoteModalEl);
+                if (modal) modal.hide();
+            }
+
+            if (result.scenes_tree && Array.isArray(result.scenes_tree)) {
+                this.renderScenesTree(result.scenes_tree);
+            }
+
+            // If active scene was the promoted scene, update state
+            const isActiveScene = (Number(this.currentSceneId) === sId);
+            if (isActiveScene && result.scene) {
+                this.currentSceneIsSub = false;
+                this.currentSceneNumber = result.scene.scene_number || this.currentSceneNumber;
+                this.currentSceneIdentifier = result.scene.scene_identifier || this.currentSceneIdentifier;
+                this.currentFullHeading = result.scene.full_display_heading || `${result.scene.nav_identifier || this.currentSceneIdentifier} : ${result.scene.clean_heading || ''}`;
+                if (this.currentSelectorBadge) {
+                    this.currentSelectorBadge.innerText = this.currentFullHeading;
+                }
+            }
+
+            this.setSaveStatus('saved', 'Saved ✓');
+        } catch (err) {
+            console.error('Promotion failed:', err);
+            if (errEl) {
+                errEl.innerText = err.message || 'Failed to promote sub-scene.';
+                errEl.classList.remove('d-none');
+            }
+            this.setSaveStatus('error', 'Error promoting scene');
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.innerHTML = '<i class="bi bi-box-arrow-up-right me-1"></i> Promote to Main Scene';
+            }
+            if (cancelBtn) cancelBtn.disabled = false;
+        }
+    }
+
+    async submitReorderSubScene(sceneId, targetPosition) {
+        const sId = parseInt(sceneId);
+        const targetPos = parseInt(targetPosition, 10);
+        const submitBtn = document.getElementById('btnEditorSubmitRename');
+        const cancelBtn = document.getElementById('btnEditorCancelRename');
+        const errEl = document.getElementById('editorRenameError');
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Moving...';
+        }
+        if (cancelBtn) cancelBtn.disabled = true;
+
+        try {
+            this.setSaveStatus('saving', 'Moving sub-scene...');
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${sId}/reorder-sub/`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({ target_position: targetPos })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || `Server returned HTTP ${res.status}`);
+            }
+
+            const result = await res.json();
+            if (result.status !== 'ok' && result.status !== 'noop') {
+                throw new Error(result.message || 'Failed to reorder sub-scene.');
+            }
+
+            if (this.renameModalEl) {
+                const modal = bootstrap.Modal.getInstance(this.renameModalEl);
+                if (modal) modal.hide();
+            }
+
+            if (result.scenes_tree && Array.isArray(result.scenes_tree)) {
+                this.renderScenesTree(result.scenes_tree);
+            }
+
+            // If active scene, synchronize
+            const isActiveScene = (Number(this.currentSceneId) === sId);
+            if (isActiveScene && result.scene) {
+                this.currentSceneNumber = result.scene.scene_number || this.currentSceneNumber;
+                this.currentSceneIdentifier = result.scene.scene_identifier || this.currentSceneIdentifier;
+                this.currentFullHeading = result.scene.full_display_heading || `${result.scene.nav_identifier || this.currentSceneIdentifier} : ${result.scene.clean_heading || ''}`;
+                if (this.currentSelectorBadge) {
+                    this.currentSelectorBadge.innerText = this.currentFullHeading;
+                }
+            }
+
+            this.setSaveStatus('saved', 'Saved ✓');
+        } catch (err) {
+            console.error('Reorder sub-scene failed:', err);
+            if (errEl) {
+                errEl.innerText = err.message || 'Failed to reorder sub-scene.';
+                errEl.classList.remove('d-none');
+            }
+            this.setSaveStatus('error', 'Error moving sub-scene');
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Save';
@@ -2818,10 +3089,21 @@ class KadhaEditor {
             });
         }
 
+        // Promote Sub-Scene Confirm
+        const btnPromoteConfirm = document.getElementById('btnEditorConfirmPromote');
+        if (btnPromoteConfirm) {
+            btnPromoteConfirm.addEventListener('click', () => {
+                const sceneId = document.getElementById('editorPromoteSceneId').value;
+                if (sceneId) {
+                    this.confirmPromoteSubScene(sceneId);
+                }
+            });
+        }
+
         // Rename Scene Form Submit
         const renameForm = document.getElementById('editorRenameForm');
         if (renameForm) {
-            renameForm.addEventListener('submit', (e) => {
+            renameForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 const sceneId = document.getElementById('editorRenameSceneId').value;
                 const intextEl = document.getElementById('editorRenameIntext');
@@ -2842,13 +3124,68 @@ class KadhaEditor {
                     return;
                 }
 
-                // Check scene number if this is a main scene
-                let requestedSceneNum = null;
                 const treeItem = (this.scenesTree || []).find(sc => Number(sc.id) === Number(sceneId));
                 const isSub = treeItem ? Boolean(treeItem.is_sub_scene) : false;
+                const numberInput = document.getElementById('editorRenameSceneNumber');
 
-                if (!isSub) {
-                    const numberInput = document.getElementById('editorRenameSceneNumber');
+                if (isSub) {
+                    let requestedSubPos = null;
+                    let originalSubPos = null;
+                    if (numberInput && !numberInput.closest('#editorRenameNumberGroup').classList.contains('d-none')) {
+                        const numValStr = numberInput.value.trim();
+                        originalSubPos = numberInput.dataset.originalPosition ? parseInt(numberInput.dataset.originalPosition, 10) : null;
+                        if (!numValStr || isNaN(numValStr) || !Number.isInteger(Number(numValStr))) {
+                            if (errEl) {
+                                errEl.innerText = 'Please enter a valid positive whole number for the sub-scene position.';
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        const numVal = parseInt(numValStr, 10);
+                        if (numVal <= 0) {
+                            if (errEl) {
+                                errEl.innerText = 'Sub-scene position must be a positive integer greater than zero.';
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        const maxPos = parseInt(numberInput.max, 10) || 1;
+                        if (numVal > maxPos) {
+                            if (errEl) {
+                                errEl.innerText = `Sub-scene position cannot exceed the total number of sibling sub-scenes (${maxPos}).`;
+                                errEl.classList.remove('d-none');
+                            }
+                            numberInput.focus();
+                            return;
+                        }
+                        requestedSubPos = numVal;
+                    }
+
+                    const newHeading = this.buildHeading(intext, loc, time);
+                    const currentHeading = (treeItem && treeItem.heading) || '';
+                    const headingChanged = (newHeading.trim() !== currentHeading.trim());
+                    const positionChanged = (requestedSubPos !== null && originalSubPos !== null && requestedSubPos !== originalSubPos);
+
+                    if (positionChanged && !headingChanged) {
+                        await this.submitReorderSubScene(sceneId, requestedSubPos);
+                    } else if (positionChanged && headingChanged) {
+                        renameForm.dataset.isChainedReorder = 'true';
+                        let renameOk = false;
+                        try {
+                            renameOk = await this.submitRenameScene(sceneId, newHeading, null);
+                        } finally {
+                            delete renameForm.dataset.isChainedReorder;
+                        }
+                        if (renameOk) {
+                            await this.submitReorderSubScene(sceneId, requestedSubPos);
+                        }
+                    } else {
+                        await this.submitRenameScene(sceneId, newHeading, null);
+                    }
+                } else {
+                    let requestedSceneNum = null;
                     if (numberInput) {
                         const numValStr = numberInput.value.trim();
                         if (!numValStr || isNaN(numValStr) || !Number.isInteger(Number(numValStr))) {
@@ -2879,10 +3216,10 @@ class KadhaEditor {
                         }
                         requestedSceneNum = numVal;
                     }
-                }
 
-                const heading = this.buildHeading(intext, loc, time);
-                this.submitRenameScene(sceneId, heading, requestedSceneNum);
+                    const heading = this.buildHeading(intext, loc, time);
+                    this.submitRenameScene(sceneId, heading, requestedSceneNum);
+                }
             });
         }
 
