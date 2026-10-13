@@ -83,6 +83,17 @@
                             </li>
                             <li><hr class="dropdown-divider"></li>
                             <li>
+                                <a class="dropdown-item" href="{% url 'export_pdf' script.id %}">
+                                    <i class="bi bi-file-earmark-pdf me-2 text-danger"></i>Export PDF
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{% url 'export_docx' script.id %}">
+                                    <i class="bi bi-file-earmark-word me-2 text-primary"></i>Export Word (.docx)
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
                                 <button type="button" class="dropdown-item text-danger btn-action-delete-script" data-id="{{ script.id }}" data-title="{{ script.title|escape }}">
                                     <i class="bi bi-trash me-2"></i>Delete
                                 </button>
