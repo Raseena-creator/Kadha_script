@@ -9,6 +9,7 @@ from .models import Script, Scene, ScriptElement, Character
 from .services.scene_service import (
     resequence_script_scenes,
     insert_scene_relative,
+    create_sequence_scene,
     create_sub_scene,
     create_sub_scene_2,
     create_intercut_scene,
@@ -67,6 +68,8 @@ def api_get_scene(request, script_id, scene_id):
             'is_sub_scene': scene.is_sub_scene,
             'is_intercut': scene.is_intercut,
             'intercut_source_id': scene.intercut_source_id,
+            'is_sequence': scene.is_sequence,
+            'sequence_type': scene.sequence_type,
             'scene_number': scene.scene_number,
             'scene_identifier': scene.scene_identifier,
             'nav_identifier': scene.nav_identifier,
@@ -135,13 +138,17 @@ def api_save_scene(request, script_id, scene_id):
             return JsonResponse({'status': 'error', 'message': 'Intercut scenes cannot be directly renumbered.'}, status=400)
         if scene.is_duplicate:
             return JsonResponse({'status': 'error', 'message': 'Duplicate scenes retain their base scene number and cannot be directly renumbered.'}, status=400)
+        if scene.is_sequence:
+            return JsonResponse({'status': 'error', 'message': 'Sequence scenes cannot be renumbered.'}, status=400)
 
-        total_main_scenes = script.scenes.filter(
-            is_deleted=False,
-            parent_scene__isnull=True,
-            is_intercut=False,
-            is_duplicate=False
-        ).count()
+        total_main_scenes = len([
+            s for s in script.scenes.filter(
+                is_deleted=False,
+                parent_scene__isnull=True,
+                is_intercut=False,
+                is_duplicate=False
+            ) if not s.is_sequence
+        ])
 
         if target_scene_number > total_main_scenes:
             return JsonResponse({
@@ -194,6 +201,8 @@ def api_save_scene(request, script_id, scene_id):
             'status': 'ok',
             'scene_id': scene.id,
             'scene_number': scene.scene_number,
+            'is_sequence': scene.is_sequence,
+            'sequence_type': scene.sequence_type,
             'scene_identifier': scene.scene_identifier,
             'nav_identifier': scene.nav_identifier,
             'display_number': scene.display_number,
@@ -244,12 +253,17 @@ def api_create_scene(request, script_id):
             'parent_scene_id': new_scene.parent_scene_id,
             'is_sub_scene': new_scene.is_sub_scene,
             'is_intercut': new_scene.is_intercut,
+            'is_sequence': new_scene.is_sequence,
+            'sequence_type': new_scene.sequence_type,
             'scene_number': new_scene.scene_number,
             'scene_identifier': new_scene.scene_identifier,
+            'nav_identifier': new_scene.nav_identifier,
             'display_number': new_scene.display_number,
             'display_number_formatted': new_scene.display_number_formatted,
             'full_display_heading': new_scene.full_display_heading,
             'clean_heading': new_scene.clean_heading,
+            'clean_location': new_scene.clean_location or 'Location',
+            'action_preview': new_scene.action_preview,
             'heading': new_scene.heading,
             'transition': new_scene.transition or 'CUT TO',
             'order': new_scene.order,
@@ -291,12 +305,69 @@ def api_insert_scene(request, script_id):
             'parent_scene_id': new_scene.parent_scene_id,
             'is_sub_scene': new_scene.is_sub_scene,
             'is_intercut': new_scene.is_intercut,
+            'is_sequence': new_scene.is_sequence,
+            'sequence_type': new_scene.sequence_type,
             'scene_number': new_scene.scene_number,
             'scene_identifier': new_scene.scene_identifier,
+            'nav_identifier': new_scene.nav_identifier,
             'display_number': new_scene.display_number,
             'display_number_formatted': new_scene.display_number_formatted,
             'full_display_heading': new_scene.full_display_heading,
             'clean_heading': new_scene.clean_heading,
+            'clean_location': new_scene.clean_location or 'Location',
+            'action_preview': new_scene.action_preview,
+            'heading': new_scene.heading,
+            'transition': new_scene.transition or 'CUT TO',
+            'order': new_scene.order,
+        },
+        'scenes_tree': serialize_scenes_hierarchy(script),
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_create_sequence_scene(request, script_id):
+    """
+    Creates a dedicated sequence scene (Song or Montage) as a separate screenplay scene/page:
+    - Independent sequence shot numbering: 1., 2., 3...
+    - Does NOT consume or change master scene numbering.
+    - Closes any active unclosed sequence in reference_scene.
+    """
+    script = get_user_script(request.user, script_id)
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        data = {}
+
+    reference_scene_id = data.get('reference_scene_id')
+    sequence_type = data.get('sequence_type', 'song')
+    if sequence_type not in ('song', 'montage'):
+        sequence_type = 'song'
+
+    new_scene = create_sequence_scene(
+        script=script,
+        reference_scene_id=reference_scene_id,
+        sequence_type=sequence_type
+    )
+
+    return JsonResponse({
+        'status': 'ok',
+        'scene': {
+            'id': new_scene.id,
+            'parent_scene_id': new_scene.parent_scene_id,
+            'is_sub_scene': new_scene.is_sub_scene,
+            'is_intercut': new_scene.is_intercut,
+            'is_sequence': new_scene.is_sequence,
+            'sequence_type': new_scene.sequence_type,
+            'scene_number': new_scene.scene_number,
+            'scene_identifier': new_scene.scene_identifier,
+            'nav_identifier': new_scene.nav_identifier,
+            'display_number': new_scene.display_number,
+            'display_number_formatted': new_scene.display_number_formatted,
+            'full_display_heading': new_scene.full_display_heading,
+            'clean_heading': new_scene.clean_heading,
+            'clean_location': new_scene.clean_location or 'Location',
+            'action_preview': new_scene.action_preview,
             'heading': new_scene.heading,
             'transition': new_scene.transition or 'CUT TO',
             'order': new_scene.order,

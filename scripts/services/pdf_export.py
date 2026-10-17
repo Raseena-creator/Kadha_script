@@ -431,7 +431,10 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     for idx, scene in enumerate(scenes):
         if idx > 0:
             story.append(PageBreak())
-        heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
+        if scene.is_sequence:
+            heading_text = scene.full_display_heading.upper()
+        else:
+            heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
         story.append(Paragraph(heading_text, scene_heading_style))
 
         elements = scene.elements.all().order_by('order', 'id')
@@ -472,11 +475,13 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             elif elem.element_type == 'transition':
                 story.append(Paragraph(clean_text.upper(), transition_style))
             elif elem.element_type == 'shot':
+                if elem.order == 0 and scene.is_sequence and clean_text.upper() == heading_text.upper():
+                    continue
                 story.append(Paragraph(clean_text.upper(), shot_style))
 
         # Scene-end transition fallback:
         # If the scene does not already end with an explicit transition element, render scene.transition fallback.
-        if not scene.has_scene_ending_transition(elements):
+        if not scene.is_sequence and not scene.has_scene_ending_transition(elements):
             scene_trans = (scene.transition or 'CUT TO').strip()
             if scene_trans:
                 clean_trans = scene_trans.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')

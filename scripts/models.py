@@ -301,6 +301,8 @@ class Scene(models.Model):
                 continue
             if elem.element_type == 'note':
                 continue
+            if content in ('SONG ENDS', 'MONTAGE ENDS'):
+                return True
             return elem.element_type == 'transition'
         return False
 
@@ -369,10 +371,13 @@ class Scene(models.Model):
     def scene_identifier(self) -> str:
         """
         Exact format:
+        Sequence scene: 'Song Sequence' or 'Montage Sequence'
         Main scene: 'Scene 1', 'Scene 2', etc.
         Sub-scene: 'Scene 1.A', 'Scene 1.B', 'Scene 2.A', etc.
         Intercut main scene: 'Scene 2' (retains source scene number without duplicate suffix)
         """
+        if self.is_sequence:
+            return "Song Sequence" if self.sequence_type == 'song' else "Montage Sequence"
         if self.is_sub_scene and self.parent_scene:
             base = f"Scene {self.parent_scene.scene_number}.{self.sub_letter}"
             suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
@@ -387,8 +392,10 @@ class Scene(models.Model):
     def nav_identifier(self) -> str:
         """
         Clean identifier for Scene Navigator:
-        e.g., 'Scene 1', 'Scene 2A', 'Scene 2B'
+        e.g., 'Scene 1', 'Scene 2A', 'Song Sequence', 'Montage Sequence'
         """
+        if self.is_sequence:
+            return "Song Sequence" if self.sequence_type == 'song' else "Montage Sequence"
         if self.is_sub_scene and self.parent_scene:
             base = f"Scene {self.parent_scene.scene_number}{self.sub_letter}"
             suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
@@ -404,6 +411,8 @@ class Scene(models.Model):
         strips INT./EXT. prefixes and recognized trailing time-of-day segments.
         Preserves multi-part locations (e.g. 'INT. CENTRAL JAIL - CORRIDOR - DAY' -> 'CENTRAL JAIL - CORRIDOR').
         """
+        if self.is_sequence:
+            return "SONG BEGINS" if self.sequence_type == 'song' else "MONTAGE BEGINS"
         import re
         text = self.clean_heading or self.heading or ''
         cleaned = re.sub(
@@ -462,9 +471,12 @@ class Scene(models.Model):
     def full_display_heading(self) -> str:
         """
         Exact combined format on ONE line:
+        Sequence scene: 'SONG BEGINS' or 'MONTAGE BEGINS'
         Main scene: 'Scene 1 : INT. HOUSE - DAY'
         Sub-scene: 'Scene 1.A : LIVING ROOM'
         """
+        if self.is_sequence:
+            return "SONG BEGINS" if self.sequence_type == 'song' else "MONTAGE BEGINS"
         return f"{self.scene_identifier} : {self.clean_heading}"
 
     def __str__(self):

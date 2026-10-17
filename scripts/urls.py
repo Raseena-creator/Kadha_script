@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/<int:script_id>/scenes/<int:scene_id>/save/', api_views.api_save_scene, name='api_save_scene'),
     path('api/<int:script_id>/scenes/create/', api_views.api_create_scene, name='api_create_scene'),
     path('api/<int:script_id>/scenes/insert/', api_views.api_insert_scene, name='api_insert_scene'),
+    path('api/<int:script_id>/scenes/sequence/', api_views.api_create_sequence_scene, name='api_create_sequence_scene'),
     path('api/<int:script_id>/scenes/<int:parent_scene_id>/subscene/', api_views.api_create_sub_scene, name='api_create_sub_scene'),
     path('api/<int:script_id>/scenes/subscene-2/', api_views.api_create_sub_scene_2, name='api_create_sub_scene_2'),
     path('api/<int:script_id>/scenes/intercut/', api_views.api_create_intercut, name='api_create_intercut'),

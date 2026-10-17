@@ -147,7 +147,11 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
         scene_p.paragraph_format.space_before = Pt(16)
         scene_p.paragraph_format.space_after = Pt(6)
         scene_p.paragraph_format.keep_with_next = True
-        scene_run = scene_p.add_run(f"{scene.scene_identifier} : {scene.clean_heading.upper()}")
+        if scene.is_sequence:
+            heading_text = scene.full_display_heading.upper()
+        else:
+            heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
+        scene_run = scene_p.add_run(heading_text)
         _set_run_font(scene_run, size=Pt(11), bold=True)
 
         elements = scene.elements.all().order_by('order', 'id')
@@ -223,6 +227,8 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
                 _set_run_font(run, size=Pt(11), bold=True)
 
             elif elem.element_type == 'shot':
+                if elem.order == 0 and scene.is_sequence and text.upper() == heading_text.upper():
+                    continue
                 elem_p = doc.add_paragraph()
                 elem_p.paragraph_format.space_before = Pt(8)
                 elem_p.paragraph_format.space_after = Pt(4)
@@ -231,7 +237,7 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
 
         # Scene-end transition fallback:
         # If the scene does not already end with an explicit transition element, render scene.transition fallback.
-        if not scene.has_scene_ending_transition(elements):
+        if not scene.is_sequence and not scene.has_scene_ending_transition(elements):
             scene_trans = (scene.transition or 'CUT TO').strip()
             if scene_trans:
                 elem_p = doc.add_paragraph()

@@ -403,7 +403,9 @@
                         <div class="sp-transition">{{ elem.content|upper }}</div>
 
                         {% elif elem.element_type == 'shot' %}
-                        <div class="sp-shot">{{ elem.content|upper }}</div>
+                            {% if not forloop.first or not scene.is_sequence or elem.content|upper != scene.full_display_heading|upper %}
+                            <div class="sp-shot">{{ elem.content|upper }}</div>
+                            {% endif %}
 
                         {% elif elem.element_type == 'note' %}
                         <div class="sp-note">

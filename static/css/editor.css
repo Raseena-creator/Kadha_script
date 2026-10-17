@@ -702,7 +702,7 @@
     font-size: 13px;
 }
 
-/* 7. Shot */
+/* 7. Shot & Sequences */
 .script-element-block[data-type="shot"] {
     margin-top: 0.9rem;
     margin-bottom: 0.45rem;
@@ -710,6 +710,70 @@
 .script-element-block[data-type="shot"] .element-content {
     font-weight: 700;
     text-transform: uppercase;
+}
+
+/* Dedicated Sequence Markers (Song / Montage Begins and Ends) */
+.script-element-block.sequence-marker,
+.script-element-block.sequence-marker-start,
+.sequence-marker-start {
+    margin-top: 1.4rem;
+    margin-bottom: 0.6rem;
+    padding: 0.25rem 0.6rem;
+    border-left: 3px solid var(--ks-accent, #c85a32);
+    background-color: transparent !important;
+}
+.script-element-block.sequence-marker .element-content,
+.script-element-block.sequence-marker-start .element-content,
+.sequence-marker-start .element-content {
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--ks-accent, #c85a32);
+}
+.script-element-block.sequence-marker-end,
+.sequence-marker-end {
+    border-left-color: #64748b;
+}
+.script-element-block.sequence-marker-end .element-content,
+.sequence-marker-end .element-content {
+    color: #475569;
+}
+
+/* Dedicated Sequence Shot Headings (1. INT. HOUSE - DAY) - No Default Grey Bar */
+.script-element-block.sequence-shot-heading {
+    margin-top: 1.3rem;
+    margin-bottom: 0.55rem;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+.script-element-block.sequence-shot-heading .sequence-shot-line {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    width: 100%;
+}
+.script-element-block.sequence-shot-heading .sequence-shot-number {
+    font-weight: 700;
+    font-size: 14.5px;
+    color: #1a1918;
+    min-width: 24px;
+    white-space: nowrap;
+    user-select: none;
+    font-family: 'Courier Prime', 'Noto Sans Malayalam', 'Manjari', monospace;
+}
+.script-element-block.sequence-shot-heading .sequence-shot-builder {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+/* Sequence Toolbar Dropdown */
+#sequenceDropdownContainer .dropdown-menu {
+    z-index: 1050;
 }
 
 /* 8. Note */
@@ -1376,6 +1440,33 @@ body.editor-edit-mode #btnExitEditMode {
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+.read-element-block.element-type-shot.sequence-marker {
+    margin-top: 1.4rem;
+    margin-bottom: 0.6rem;
+    padding-left: 0.5rem;
+    border-left: 3px solid var(--ks-accent, #c85a32);
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--ks-accent, #c85a32);
+}
+
+.read-element-block.element-type-shot.sequence-marker-end {
+    border-left-color: #64748b;
+    color: #475569;
+}
+
+.read-element-block.element-type-shot.sequence-shot-heading {
+    margin-top: 1.3rem;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+    font-size: 14.5px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: #000000;
 }
 
 .read-element-block.element-type-note {
