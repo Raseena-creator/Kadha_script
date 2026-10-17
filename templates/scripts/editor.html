@@ -395,6 +395,38 @@
                             <span>CutBack To</span>
                         </button>
 
+                        <div class="dropdown d-inline-flex" id="sequenceDropdownContainer">
+                            <button type="button"
+                                class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control dropdown-toggle"
+                                id="btnSequenceDropdown" data-bs-toggle="dropdown"
+                                data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                                title="Sequence (Song / Montage)">
+                                <i class="bi bi-music-note-list me-1 d-none d-sm-inline"></i><span>Sequence</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end shadow-sm border small"
+                                aria-labelledby="btnSequenceDropdown">
+                                <li><button type="button" class="dropdown-item d-flex align-items-center"
+                                        id="btnStartSongSequence">
+                                        <i class="bi bi-music-note-beamed me-2 text-info"></i>Song Sequence
+                                    </button></li>
+                                <li><button type="button" class="dropdown-item d-flex align-items-center"
+                                        id="btnStartMontageSequence">
+                                        <i class="bi bi-collection-play me-2 text-warning"></i>Montage Sequence
+                                    </button></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><button type="button" class="dropdown-item d-flex align-items-center"
+                                        id="btnNextSequenceShot" disabled>
+                                        <i class="bi bi-plus-circle me-2 text-success"></i>Next Sequence Shot
+                                    </button></li>
+                                <li><button type="button" class="dropdown-item d-flex align-items-center text-danger"
+                                        id="btnEndSequence" disabled>
+                                        <i class="bi bi-stop-circle me-2"></i>End Sequence
+                                    </button></li>
+                            </ul>
+                        </div>
+
                     </div>
                 </div>
 

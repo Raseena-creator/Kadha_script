@@ -154,6 +154,9 @@ class KadhaEditor {
             this.characters = data.characters || this.characters;
             this.scenesTree = data.scenes_tree || [];
             this.currentSceneIsSub = Boolean(data.scene.is_sub_scene);
+            this.currentSceneIsSequence = Boolean(data.scene.is_sequence);
+            this.currentSceneSequenceType = data.scene.sequence_type || '';
+            this.currentSceneHeading = data.scene.heading || '';
             this.currentMainSceneId = data.scene.parent_scene_id || data.scene.id;
             const fallbackIdent = data.scene.nav_identifier
                 || data.scene.display_number
@@ -297,8 +300,14 @@ class KadhaEditor {
         const noteElements = allElements.filter(e => e.element_type === 'note');
 
         if (contentElements.length === 0) {
-            this.createElementBlock('scene_heading', scene.heading || 'INT. LOCATION - DAY');
-            this.createElementBlock('action', '');
+            if (scene.is_sequence || (scene.heading && (scene.heading.startsWith('SONG') || scene.heading.startsWith('MONTAGE')))) {
+                this.createElementBlock('shot', scene.heading || 'SONG BEGINS');
+                this.createElementBlock('shot', '1. INT. LOCATION - DAY');
+                this.createElementBlock('action', '');
+            } else {
+                this.createElementBlock('scene_heading', scene.heading || 'INT. LOCATION - DAY');
+                this.createElementBlock('action', '');
+            }
         } else {
             contentElements.forEach(elem => {
                 this.createElementBlock(elem.element_type, elem.content);
@@ -310,6 +319,7 @@ class KadhaEditor {
             this.createElementBlock(elem.element_type, elem.content);
         });
 
+        this.updateSequenceToolbarState();
         // Edit Mode entry does not automatically steal focus; user explicitly clicks to focus
     }
 
@@ -582,6 +592,168 @@ class KadhaEditor {
             block.appendChild(wrapper);
 
             this.bindElementEvents(block, editable);
+        } else if (type === 'shot') {
+            const trimmed = (content || '').trim();
+            if (trimmed === 'SONG BEGINS' || trimmed === 'MONTAGE BEGINS') {
+                block.classList.add('sequence-marker', 'sequence-marker-start');
+                block.dataset.sequenceType = trimmed.startsWith('SONG') ? 'song' : 'montage';
+                tag.innerText = 'Sequence';
+
+                const editable = document.createElement('div');
+                editable.className = 'element-content font-screenplay font-malayalam';
+                editable.contentEditable = 'true';
+                editable.spellcheck = false;
+                editable.dataset.placeholder = trimmed;
+                editable.innerText = trimmed;
+
+                block.appendChild(editable);
+                this.bindElementEvents(block, editable);
+            } else if (trimmed === 'SONG ENDS' || trimmed === 'MONTAGE ENDS') {
+                block.classList.add('sequence-marker', 'sequence-marker-end');
+                block.dataset.sequenceType = trimmed.startsWith('SONG') ? 'song' : 'montage';
+                tag.innerText = 'Sequence End';
+
+                const editable = document.createElement('div');
+                editable.className = 'element-content font-screenplay font-malayalam';
+                editable.contentEditable = 'true';
+                editable.spellcheck = false;
+                editable.dataset.placeholder = trimmed;
+                editable.innerText = trimmed;
+
+                block.appendChild(editable);
+                this.bindElementEvents(block, editable);
+            } else if (/^\s*(\d+)\.\s*/.test(trimmed)) {
+                block.classList.add('sequence-shot-heading');
+                tag.innerText = 'Sequence Shot';
+
+                const match = trimmed.match(/^\s*(\d+)\.\s*(.*)$/);
+                const num = match ? match[1] : '1';
+                const sluglinePart = match ? match[2] : '';
+                const parsed = this.parseHeading(sluglinePart);
+
+                const lineWrapper = document.createElement('div');
+                lineWrapper.className = 'sequence-shot-line';
+
+                const numSpan = document.createElement('span');
+                numSpan.className = 'sequence-shot-number font-screenplay user-select-none';
+                numSpan.innerText = `${num}.`;
+                lineWrapper.appendChild(numSpan);
+
+                const builder = document.createElement('div');
+                builder.className = 'scene-heading-builder sequence-shot-builder';
+                builder.contentEditable = 'false';
+
+                // 1. Interior/Exterior dropdown
+                const intextSelect = document.createElement('select');
+                intextSelect.className = 'form-select form-select-sm heading-intext-select font-screenplay user-select-none';
+                intextSelect.title = 'Interior / Exterior';
+                intextSelect.innerHTML = `
+                    <option value="INT." ${parsed.intext === 'INT.' ? 'selected' : ''}>Interior</option>
+                    <option value="EXT." ${parsed.intext === 'EXT.' ? 'selected' : ''}>Exterior</option>
+                `;
+
+                // 2. Editable location field
+                const locationInput = document.createElement('input');
+                locationInput.type = 'text';
+                locationInput.className = 'form-control form-control-sm heading-location-input font-screenplay font-malayalam';
+                locationInput.placeholder = 'Enter location...';
+                locationInput.value = parsed.location || '';
+                locationInput.spellcheck = false;
+                locationInput.autocomplete = 'off';
+
+                // 3. Time-of-day dropdown
+                const timeSelect = document.createElement('select');
+                timeSelect.className = 'form-select form-select-sm heading-time-select font-screenplay user-select-none';
+                timeSelect.title = 'Time of Day';
+                timeSelect.innerHTML = `
+                    <option value="DAY" ${parsed.time === 'DAY' ? 'selected' : ''}>Day</option>
+                    <option value="NIGHT" ${parsed.time === 'NIGHT' ? 'selected' : ''}>Night</option>
+                    <option value="DUSK" ${parsed.time === 'DUSK' ? 'selected' : ''}>Dusk</option>
+                    <option value="DAWN" ${parsed.time === 'DAWN' ? 'selected' : ''}>Dawn</option>
+                `;
+
+                builder.appendChild(intextSelect);
+                builder.appendChild(locationInput);
+                builder.appendChild(timeSelect);
+                lineWrapper.appendChild(builder);
+
+                // Hidden element-content to preserve compatibility with element iteration and serializer
+                const editable = document.createElement('div');
+                editable.className = 'element-content font-screenplay font-malayalam d-none';
+                editable.contentEditable = 'true';
+                const initialHeading = this.buildHeading(parsed.intext, parsed.location, parsed.time);
+                editable.innerText = `${num}. ${initialHeading || `${parsed.intext} ${parsed.location || 'LOCATION'} - ${parsed.time}`}`;
+                lineWrapper.appendChild(editable);
+
+                block.appendChild(lineWrapper);
+
+                const syncSequenceHeading = () => {
+                    const locVal = locationInput.value.trim();
+                    const built = this.buildHeading(intextSelect.value, locVal, timeSelect.value);
+                    const currentNum = (numSpan.innerText || '').replace('.', '').trim() || num;
+                    editable.innerText = `${currentNum}. ${built || `${intextSelect.value} ${locVal || 'LOCATION'} - ${timeSelect.value}`}`;
+                    if (locVal === '') {
+                        locationInput.classList.add('is-invalid');
+                    } else {
+                        locationInput.classList.remove('is-invalid');
+                    }
+                    this.markDirty();
+                    this.calculateLiveStats();
+                };
+
+                locationInput.addEventListener('input', () => {
+                    syncSequenceHeading();
+                    this.recordTextEdit();
+                });
+                intextSelect.addEventListener('change', () => {
+                    const preSnap = this.captureSnapshot();
+                    syncSequenceHeading();
+                    this.pushUndoSnapshot(preSnap);
+                });
+                timeSelect.addEventListener('change', () => {
+                    const preSnap = this.captureSnapshot();
+                    syncSequenceHeading();
+                    this.pushUndoSnapshot(preSnap);
+                });
+
+                locationInput.addEventListener('focus', () => {
+                    document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                    block.classList.add('focused');
+                    this.activeElementBlock = block;
+                    this.updateActiveToolbarButton('shot');
+                    if (this.currentTypeEl) {
+                        this.currentTypeEl.innerText = 'Sequence Shot';
+                    }
+                    this.updateSequenceToolbarState();
+                });
+
+                locationInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        let nextBlock = block.nextElementSibling;
+                        if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
+                            nextBlock = this.createElementBlock('action', '', block);
+                        }
+                        const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
+                        if (nextEditable) {
+                            nextEditable.focus();
+                            this.setCursorToStart(nextEditable);
+                        }
+                    }
+                });
+
+                this.bindElementEvents(block, editable);
+            } else {
+                const editable = document.createElement('div');
+                editable.className = 'element-content font-screenplay font-malayalam';
+                editable.contentEditable = 'true';
+                editable.spellcheck = false;
+                editable.dataset.placeholder = this.getPlaceholderForType(type);
+                editable.innerText = content;
+
+                block.appendChild(editable);
+                this.bindElementEvents(block, editable);
+            }
         } else {
             const editable = document.createElement('div');
             editable.className = 'element-content font-screenplay font-malayalam';
@@ -649,8 +821,15 @@ class KadhaEditor {
             this.activeElementBlock = block;
             this.updateActiveToolbarButton(block.dataset.type);
             if (this.currentTypeEl) {
-                this.currentTypeEl.innerText = this.formatTypeLabel(block.dataset.type);
+                if (block.classList.contains('sequence-marker')) {
+                    this.currentTypeEl.innerText = 'Sequence';
+                } else if (block.classList.contains('sequence-shot-heading')) {
+                    this.currentTypeEl.innerText = 'Sequence Shot';
+                } else {
+                    this.currentTypeEl.innerText = this.formatTypeLabel(block.dataset.type);
+                }
             }
+            this.updateSequenceToolbarState();
         });
 
         editable.addEventListener('blur', () => {
@@ -819,6 +998,8 @@ class KadhaEditor {
                     e.preventDefault();
                     const preSnap = this.captureSnapshot();
                     block.remove();
+                    this.renumberSequenceShots();
+                    this.updateSequenceToolbarState();
                     this.pushUndoSnapshot(preSnap);
                     this.markDirty();
                     this.calculateLiveStats();
@@ -1065,7 +1246,13 @@ class KadhaEditor {
                 this.pushUndoSnapshot(preSnap);
                 this.markDirty();
                 this.calculateLiveStats();
-                this.showSuggestionPopup(newBlock, [{ type: 'character', label: '+ Character' }]);
+                const seqState = this.detectCurrentSequenceState(newBlock);
+                const actionSuggestions = [{ type: 'character', label: '+ Character' }];
+                if (seqState.inSequence) {
+                    actionSuggestions.push({ type: 'next_sequence_shot', label: '+ Next Sequence Shot' });
+                    actionSuggestions.push({ type: 'end_sequence', label: 'End Sequence' });
+                }
+                this.showSuggestionPopup(newBlock, actionSuggestions);
                 return;
             }
 
@@ -1082,7 +1269,13 @@ class KadhaEditor {
             this.calculateLiveStats();
 
             if (cleanRight === '') {
-                this.showSuggestionPopup(newBlock, [{ type: 'character', label: '+ Character' }]);
+                const seqState = this.detectCurrentSequenceState(newBlock);
+                const actionSuggestions = [{ type: 'character', label: '+ Character' }];
+                if (seqState.inSequence) {
+                    actionSuggestions.push({ type: 'next_sequence_shot', label: '+ Next Sequence Shot' });
+                    actionSuggestions.push({ type: 'end_sequence', label: 'End Sequence' });
+                }
+                this.showSuggestionPopup(newBlock, actionSuggestions);
             } else {
                 this.hideSuggestionPopup();
             }
@@ -1111,10 +1304,22 @@ class KadhaEditor {
                 { type: 'character', label: '+ Character' },
                 { type: 'action', label: '+ Action' }
             ];
+            const seqState = this.detectCurrentSequenceState(block);
+            if (seqState.inSequence) {
+                suggestions.push({ type: 'next_sequence_shot', label: '+ Next Sequence Shot' });
+                suggestions.push({ type: 'end_sequence', label: 'End Sequence' });
+            }
         } else if (currentType === 'transition') {
             nextType = 'action';
         } else if (currentType === 'shot') {
             nextType = 'action';
+            const seqState = this.detectCurrentSequenceState(block);
+            if (seqState.inSequence) {
+                suggestions = [
+                    { type: 'character', label: '+ Character' },
+                    { type: 'next_sequence_shot', label: '+ Next Sequence Shot' }
+                ];
+            }
         }
 
         const newBlock = this.createElementBlock(nextType, '', block);
@@ -1168,11 +1373,20 @@ class KadhaEditor {
                 transWrapper.remove();
                 editable = null;
             }
+        } else if (oldType === 'shot') {
+            const lineWrapper = block.querySelector('.sequence-shot-line');
+            if (lineWrapper) lineWrapper.remove();
+            block.classList.remove('sequence-shot-heading', 'sequence-marker', 'sequence-marker-start', 'sequence-marker-end');
+            editable = null;
         } else if (oldType === 'parenthetical' && newType !== 'parenthetical') {
             let trimmed = currentContent.trim();
             if (trimmed.startsWith('(') && trimmed.endsWith(')') && trimmed.length >= 2) {
                 currentContent = trimmed.slice(1, -1).trim();
             }
+        }
+
+        if (newType !== 'shot') {
+            block.classList.remove('sequence-shot-heading', 'sequence-marker', 'sequence-marker-start', 'sequence-marker-end');
         }
 
         if (newType === 'scene_heading') {
@@ -1833,7 +2047,17 @@ class KadhaEditor {
     extractScenePayload() {
         const blocks = this.pageContainer.querySelectorAll('.script-element-block');
         const elementsData = [];
-        let sceneHeading = 'INT. LOCATION - DAY';
+        let sceneHeading = this.currentSceneIsSequence
+            ? (this.currentSceneHeading || (this.currentSceneSequenceType === 'montage' ? 'MONTAGE BEGINS' : 'SONG BEGINS'))
+            : 'INT. LOCATION - DAY';
+
+        if (!Array.from(blocks).some(b => b.dataset.type === 'scene_heading')) {
+            const firstShot = Array.from(blocks).find(b => b.dataset.type === 'shot');
+            const firstContent = (firstShot?.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+            if (firstContent === 'SONG BEGINS' || firstContent === 'MONTAGE BEGINS') {
+                sceneHeading = firstContent;
+            }
+        }
 
         blocks.forEach((block, index) => {
             const type = block.dataset.type;
@@ -1857,6 +2081,22 @@ class KadhaEditor {
             } else if (type === 'note') {
                 const contentEl = block.querySelector('.element-content');
                 content = contentEl ? contentEl.innerText.replace(/\r\n/g, '\n').trimEnd() : '';
+            } else if (type === 'shot' && block.classList.contains('sequence-shot-heading')) {
+                const numSpan = block.querySelector('.sequence-shot-number');
+                const intextSel = block.querySelector('.heading-intext-select');
+                const locInp = block.querySelector('.heading-location-input');
+                const timeSel = block.querySelector('.heading-time-select');
+                if (numSpan && intextSel && locInp && timeSel) {
+                    const rawNum = (numSpan.innerText || '').replace('.', '').trim() || '1';
+                    const intext = intextSel.value || 'INT.';
+                    const loc = locInp.value.trim();
+                    const time = timeSel.value || 'DAY';
+                    const headingStr = this.buildHeading(intext, loc || 'LOCATION', time);
+                    content = `${rawNum}. ${headingStr || `${intext} ${loc || 'LOCATION'} - ${time}`}`;
+                } else {
+                    const contentEl = block.querySelector('.element-content');
+                    content = contentEl ? contentEl.innerText.trim() : '';
+                }
             } else {
                 const contentEl = block.querySelector('.element-content');
                 content = contentEl ? contentEl.innerText.trim() : '';
@@ -1921,6 +2161,7 @@ class KadhaEditor {
     }
 
     ensurePreviousSceneHasTransition() {
+        if (this.currentSceneIsSequence) return null;
         const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
         if (blocks.length === 0) return null;
 
@@ -1943,6 +2184,15 @@ class KadhaEditor {
             if (blocks[i].dataset.type !== 'note') {
                 targetBlock = blocks[i];
                 break;
+            }
+        }
+
+        if (targetBlock) {
+            const targetContent = (targetBlock.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+            if (targetContent === 'SONG ENDS' || targetContent === 'MONTAGE ENDS' ||
+                targetContent === 'SONG BEGINS' || targetContent === 'MONTAGE BEGINS' ||
+                targetBlock.classList.contains('sequence-marker') || targetBlock.classList.contains('sequence-marker-end')) {
+                return null;
             }
         }
 
@@ -2617,6 +2867,21 @@ class KadhaEditor {
     // SCENE CREATION, INSERTION, SUB-SCENE & MOVE OPERATIONS
     // ----------------------------------------------------
     async appendScene() {
+        const seqState = this.detectSceneSequenceState();
+        let addedEndMarker = null;
+
+        // Auto-close active sequence if not already ended
+        if (seqState.inSequence && !seqState.hasEnded) {
+            const endMarkerText = seqState.type === 'montage' ? 'MONTAGE ENDS' : 'SONG ENDS';
+            const allBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+            const lastBlock = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
+            addedEndMarker = this.createElementBlock('shot', endMarkerText, lastBlock);
+            this.renumberSequenceShots();
+            this.updateSequenceToolbarState();
+            this.markDirty();
+            this.calculateLiveStats();
+        }
+
         const addedTransition = this.ensurePreviousSceneHasTransition();
         try {
             await this.flushSave();
@@ -2626,19 +2891,37 @@ class KadhaEditor {
                 addedTransition.remove();
                 this.calculateLiveStats();
             }
+            if (addedEndMarker && addedEndMarker.parentElement) {
+                addedEndMarker.remove();
+                this.updateSequenceToolbarState();
+                this.calculateLiveStats();
+            }
             alert('Could not save the current scene. Scene creation was cancelled to protect your unsaved writing. Please retry once saved.');
             return;
         }
 
         try {
             this.setSaveStatus('saving', 'Creating scene...');
-            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/create/`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify({
-                    heading: 'INT. LOCATION - DAY'
-                })
-            });
+            let res;
+            if (seqState.isSequenceScene) {
+                res = await fetch(`/scripts/api/${this.scriptId}/scenes/insert/`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        reference_scene_id: parseInt(this.currentSceneId),
+                        position: 'after',
+                        heading: 'INT. LOCATION - DAY'
+                    })
+                });
+            } else {
+                res = await fetch(`/scripts/api/${this.scriptId}/scenes/create/`, {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        heading: 'INT. LOCATION - DAY'
+                    })
+                });
+            }
             if (!res.ok) throw new Error('Could not create scene');
             const data = await res.json();
             
@@ -4606,6 +4889,50 @@ class KadhaEditor {
             });
         }
 
+        const btnStartSongSequence = document.getElementById('btnStartSongSequence');
+        if (btnStartSongSequence) {
+            btnStartSongSequence.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.startSequence('song');
+            });
+        }
+
+        const btnStartMontageSequence = document.getElementById('btnStartMontageSequence');
+        if (btnStartMontageSequence) {
+            btnStartMontageSequence.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.startSequence('montage');
+            });
+        }
+
+        const btnNextSequenceShot = document.getElementById('btnNextSequenceShot');
+        if (btnNextSequenceShot) {
+            btnNextSequenceShot.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.createNextSequenceShot();
+            });
+        }
+
+        const btnEndSequence = document.getElementById('btnEndSequence');
+        if (btnEndSequence) {
+            btnEndSequence.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.endCurrentSequence();
+            });
+        }
+
+        const btnSequenceDropdown = document.getElementById('btnSequenceDropdown');
+        if (btnSequenceDropdown) {
+            if (window.bootstrap && window.bootstrap.Dropdown) {
+                window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown, {
+                    popperConfig: { strategy: 'fixed' }
+                });
+            }
+            btnSequenceDropdown.addEventListener('show.bs.dropdown', () => {
+                this.updateSequenceToolbarState();
+            });
+        }
+
         const btnToolbarUndo = document.getElementById('btnToolbarUndo');
         if (btnToolbarUndo) {
             btnToolbarUndo.addEventListener('click', (e) => {
@@ -5273,6 +5600,16 @@ class KadhaEditor {
                 if (elem.element_type !== 'scene_heading') {
                     const block = document.createElement('div');
                     block.className = `read-element-block element-type-${elem.element_type}`;
+                    const contentStr = (elem.content || '').trim();
+                    if (elem.element_type === 'shot') {
+                        if (contentStr === 'SONG BEGINS' || contentStr === 'MONTAGE BEGINS') {
+                            block.classList.add('sequence-marker', 'sequence-marker-start');
+                        } else if (contentStr === 'SONG ENDS' || contentStr === 'MONTAGE ENDS') {
+                            block.classList.add('sequence-marker', 'sequence-marker-end');
+                        } else if (/^\d+\.\s*/.test(contentStr)) {
+                            block.classList.add('sequence-shot-heading');
+                        }
+                    }
                     const contentDiv = document.createElement('div');
                     contentDiv.className = 'element-content font-screenplay font-malayalam';
                     contentDiv.innerText = elem.content || '';
@@ -5292,6 +5629,11 @@ class KadhaEditor {
                 if (elem.element_type === 'note') continue;
                 if (elem.element_type === 'transition') {
                     hasEndingTransition = true;
+                } else if (elem.element_type === 'shot') {
+                    const uc = content.toUpperCase();
+                    if (uc === 'SONG ENDS' || uc === 'MONTAGE ENDS' || uc === 'SONG BEGINS' || uc === 'MONTAGE BEGINS') {
+                        hasEndingTransition = true;
+                    }
                 }
                 break;
             }
@@ -5304,6 +5646,11 @@ class KadhaEditor {
                 if (block.classList.contains('element-type-note')) continue;
                 if (block.classList.contains('element-type-transition')) {
                     hasEndingTransition = true;
+                } else if (block.classList.contains('element-type-shot') || block.classList.contains('sequence-marker')) {
+                    const uc = content.toUpperCase();
+                    if (uc === 'SONG ENDS' || uc === 'MONTAGE ENDS' || uc === 'SONG BEGINS' || uc === 'MONTAGE BEGINS') {
+                        hasEndingTransition = true;
+                    }
                 }
                 break;
             }
@@ -5590,6 +5937,20 @@ class KadhaEditor {
     applySuggestion(suggestionType, targetBlock) {
         if (!targetBlock || !targetBlock.parentNode) return;
         this.hideSuggestionPopup();
+
+        if (suggestionType === 'next_sequence_shot') {
+            const prev = targetBlock.previousElementSibling;
+            targetBlock.remove();
+            this.createNextSequenceShot(prev);
+            return;
+        }
+
+        if (suggestionType === 'end_sequence') {
+            const prev = targetBlock.previousElementSibling;
+            targetBlock.remove();
+            this.endCurrentSequence(prev);
+            return;
+        }
 
         this.activeElementBlock = targetBlock;
         if (suggestionType === 'parenthetical') {
@@ -6209,8 +6570,17 @@ class KadhaEditor {
                     type: e.element_type,
                     content: e.content
                 }));
+                const endsWithSequence = elements.length > 0 && (() => {
+                    for (let i = elements.length - 1; i >= 0; i--) {
+                        if (elements[i].type !== 'note') {
+                            const c = (elements[i].content || '').trim().toUpperCase();
+                            return c === 'SONG ENDS' || c === 'MONTAGE ENDS' || c === 'SONG BEGINS' || c === 'MONTAGE BEGINS';
+                        }
+                    }
+                    return false;
+                })();
                 const hasTransition = elements.some(e => e.type === 'transition');
-                if (!hasTransition && transition) {
+                if (!hasTransition && transition && !endsWithSequence) {
                     elements.push({ type: 'transition', content: transition });
                 }
             } else {
@@ -6224,8 +6594,17 @@ class KadhaEditor {
                     type: e.element_type,
                     content: e.content
                 }));
+                const endsWithSequence = elements.length > 0 && (() => {
+                    for (let i = elements.length - 1; i >= 0; i--) {
+                        if (elements[i].type !== 'note') {
+                            const c = (elements[i].content || '').trim().toUpperCase();
+                            return c === 'SONG ENDS' || c === 'MONTAGE ENDS' || c === 'SONG BEGINS' || c === 'MONTAGE BEGINS';
+                        }
+                    }
+                    return false;
+                })();
                 const hasTransition = elements.some(e => e.type === 'transition');
-                if (!hasTransition && transition) {
+                if (!hasTransition && transition && !endsWithSequence) {
                     elements.push({ type: 'transition', content: transition });
                 }
             }
@@ -6306,5 +6685,268 @@ class KadhaEditor {
                 }
             }, 2000);
         }
+    }
+
+    // ====================================================
+    // SEQUENCE WORKFLOW (Song & Montage Sequences)
+    // ====================================================
+    detectCurrentSequenceState(refBlock = null) {
+        if (!this.pageContainer) {
+            return { inSequence: false, type: null, startBlock: null, shotCount: 0, hasEnded: false, isSequenceScene: false };
+        }
+        const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+        let target = refBlock || this.activeElementBlock;
+        if (!target || !this.pageContainer.contains(target)) {
+            target = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+        }
+
+        let inSequence = Boolean(this.currentSceneIsSequence);
+        let sequenceType = this.currentSceneSequenceType || null; // 'song' | 'montage'
+        let startBlock = null;
+        let shotCount = 0;
+        let hasEnded = false;
+
+        for (const block of blocks) {
+            const type = block.dataset.type;
+            const content = (block.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+
+            if (type === 'shot') {
+                if (content === 'SONG BEGINS' || (block.classList.contains('sequence-marker-start') && content.includes('SONG'))) {
+                    inSequence = true;
+                    sequenceType = 'song';
+                    startBlock = block;
+                    shotCount = 0;
+                    hasEnded = false;
+                } else if (content === 'MONTAGE BEGINS' || (block.classList.contains('sequence-marker-start') && content.includes('MONTAGE'))) {
+                    inSequence = true;
+                    sequenceType = 'montage';
+                    startBlock = block;
+                    shotCount = 0;
+                    hasEnded = false;
+                } else if (content === 'SONG ENDS' || content === 'MONTAGE ENDS' || block.classList.contains('sequence-marker-end')) {
+                    hasEnded = true;
+                    if (block === target) {
+                        return { inSequence: false, type: sequenceType, startBlock, shotCount, justEnded: true, hasEnded: true, isSequenceScene: Boolean(this.currentSceneIsSequence || startBlock) };
+                    }
+                    inSequence = false;
+                    startBlock = null;
+                    shotCount = 0;
+                } else if (inSequence && (block.classList.contains('sequence-shot-heading') || /^\d+\.\s*/.test(content))) {
+                    shotCount++;
+                }
+            }
+
+            if (block === target) {
+                break;
+            }
+        }
+
+        // Check if any block in the entire scene has ended
+        const sceneHasEnd = blocks.some(b => {
+            const c = (b.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+            return b.classList.contains('sequence-marker-end') || c === 'SONG ENDS' || c === 'MONTAGE ENDS';
+        });
+
+        return {
+            inSequence: inSequence && !hasEnded,
+            type: sequenceType || (this.currentSceneSequenceType || 'song'),
+            startBlock,
+            shotCount,
+            hasEnded: hasEnded || sceneHasEnd,
+            isSequenceScene: Boolean(this.currentSceneIsSequence || startBlock)
+        };
+    }
+
+    detectSceneSequenceState() {
+        return this.detectCurrentSequenceState(null);
+    }
+
+    updateSequenceToolbarState() {
+        const state = this.detectCurrentSequenceState();
+        const btnNext = document.getElementById('btnNextSequenceShot');
+        const btnEnd = document.getElementById('btnEndSequence');
+        const btnStartSong = document.getElementById('btnStartSongSequence');
+        const btnStartMontage = document.getElementById('btnStartMontageSequence');
+        const btnDropdown = document.getElementById('btnSequenceDropdown');
+
+        const canAddShot = state.isSequenceScene && !state.hasEnded;
+        const canEndSeq = state.isSequenceScene && !state.hasEnded;
+
+        if (btnNext) {
+            btnNext.disabled = !canAddShot;
+            btnNext.classList.toggle('disabled', !canAddShot);
+        }
+        if (btnEnd) {
+            btnEnd.disabled = !canEndSeq;
+            btnEnd.classList.toggle('disabled', !canEndSeq);
+            if (canEndSeq && state.type) {
+                btnEnd.innerHTML = `<i class="bi bi-stop-circle me-2"></i>End ${state.type === 'montage' ? 'Montage' : 'Song'} Sequence`;
+            } else {
+                btnEnd.innerHTML = `<i class="bi bi-stop-circle me-2"></i>End Sequence`;
+            }
+        }
+        if (btnStartSong) {
+            const disableStart = state.isSequenceScene && !state.hasEnded;
+            btnStartSong.disabled = disableStart;
+            btnStartSong.classList.toggle('disabled', disableStart);
+        }
+        if (btnStartMontage) {
+            const disableStart = state.isSequenceScene && !state.hasEnded;
+            btnStartMontage.disabled = disableStart;
+            btnStartMontage.classList.toggle('disabled', disableStart);
+        }
+        if (btnDropdown) {
+            if (state.isSequenceScene) {
+                btnDropdown.classList.add('btn-sequence-active');
+            } else {
+                btnDropdown.classList.remove('btn-sequence-active');
+            }
+        }
+    }
+
+    renumberSequenceShots() {
+        if (!this.pageContainer) return;
+        const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+        let inSeq = Boolean(this.currentSceneIsSequence);
+        let counter = 1;
+
+        blocks.forEach(block => {
+            const type = block.dataset.type;
+            const content = (block.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+
+            if (type === 'shot') {
+                if (content === 'SONG BEGINS' || content === 'MONTAGE BEGINS' || block.classList.contains('sequence-marker-start')) {
+                    inSeq = true;
+                    counter = 1;
+                } else if (content === 'SONG ENDS' || content === 'MONTAGE ENDS' || block.classList.contains('sequence-marker-end')) {
+                    inSeq = false;
+                    counter = 1;
+                } else if (inSeq && block.classList.contains('sequence-shot-heading')) {
+                    const numSpan = block.querySelector('.sequence-shot-number');
+                    if (numSpan) {
+                        numSpan.innerText = `${counter}.`;
+                    }
+                    const editable = block.querySelector('.element-content');
+                    const intextSel = block.querySelector('.heading-intext-select');
+                    const locInp = block.querySelector('.heading-location-input');
+                    const timeSel = block.querySelector('.heading-time-select');
+                    if (editable && intextSel && locInp && timeSel) {
+                        const built = this.buildHeading(intextSel.value, locInp.value.trim(), timeSel.value);
+                        editable.innerText = `${counter}. ${built || `${intextSel.value} ${locInp.value.trim() || 'LOCATION'} - ${timeSel.value}`}`;
+                    }
+                    counter++;
+                }
+            }
+        });
+    }
+
+    async startSequence(sequenceType = 'song') {
+        const seqState = this.detectSceneSequenceState();
+        if (seqState.inSequence && !seqState.hasEnded) {
+            const endMarkerText = seqState.type === 'montage' ? 'MONTAGE ENDS' : 'SONG ENDS';
+            const allBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+            const lastBlock = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
+            this.createElementBlock('shot', endMarkerText, lastBlock);
+            this.renumberSequenceShots();
+            this.updateSequenceToolbarState();
+            this.markDirty();
+        }
+
+        try {
+            await this.flushSave();
+        } catch (err) {
+            console.error('Save failed before starting sequence:', err);
+            alert('Could not save current scene. Sequence creation was cancelled to protect your unsaved writing. Please retry once saved.');
+            return;
+        }
+
+        try {
+            this.setSaveStatus('saving', 'Creating sequence scene...');
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/sequence/`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    reference_scene_id: parseInt(this.currentSceneId),
+                    sequence_type: sequenceType
+                })
+            });
+            if (!res.ok) throw new Error('Could not create sequence scene');
+            const data = await res.json();
+
+            this.renderScenesTree(data.scenes_tree);
+            await this.switchScene(data.scene.id);
+
+            const locInp = this.pageContainer.querySelector('.sequence-shot-heading .heading-location-input') || this.pageContainer.querySelector('.heading-location-input');
+            if (locInp) {
+                locInp.focus();
+                locInp.select();
+            }
+        } catch (err) {
+            alert('Failed to start sequence: ' + err.message);
+            this.setSaveStatus('error', 'Error creating sequence');
+        }
+    }
+
+    createNextSequenceShot(targetBlock = null, forcedNum = null) {
+        const preSnap = this.captureSnapshot();
+        let insertAfter = targetBlock || this.activeElementBlock;
+        if (!insertAfter || !this.pageContainer.contains(insertAfter)) {
+            const allBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+            insertAfter = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
+        }
+
+        // Determine next sequence shot number based on existing shot headings
+        let nextNum = forcedNum;
+        if (!nextNum) {
+            const shotBlocks = Array.from(this.pageContainer.querySelectorAll('.sequence-shot-heading'));
+            nextNum = shotBlocks.length + 1;
+        }
+
+        const newBlock = this.createElementBlock('shot', `${nextNum}. INT. LOCATION - DAY`, insertAfter);
+
+        this.renumberSequenceShots();
+        this.updateSequenceToolbarState();
+        this.pushUndoSnapshot(preSnap);
+        this.markDirty();
+        this.calculateLiveStats();
+
+        const locInp = newBlock.querySelector('.heading-location-input');
+        if (locInp) {
+            locInp.focus();
+            locInp.select();
+        }
+        return newBlock;
+    }
+
+    endCurrentSequence(targetBlock = null) {
+        const state = this.detectCurrentSequenceState(targetBlock);
+        if (state.hasEnded) {
+            return null;
+        }
+
+        const preSnap = this.captureSnapshot();
+        const endMarkerText = state.type === 'montage' ? 'MONTAGE ENDS' : 'SONG ENDS';
+
+        let insertAfter = targetBlock || this.activeElementBlock;
+        if (!insertAfter || !this.pageContainer.contains(insertAfter)) {
+            const allBlocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
+            insertAfter = allBlocks.length > 0 ? allBlocks[allBlocks.length - 1] : null;
+        }
+
+        const endBlock = this.createElementBlock('shot', endMarkerText, insertAfter);
+        const nextAction = this.createElementBlock('action', '', endBlock);
+
+        this.renumberSequenceShots();
+        this.updateSequenceToolbarState();
+        this.pushUndoSnapshot(preSnap);
+        this.markDirty();
+        this.calculateLiveStats();
+
+        const ed = nextAction.querySelector('.element-content');
+        if (ed) {
+            ed.focus();
+            this.setCursorToStart(ed);
+        }
+        return endBlock;
     }
 }
