@@ -57,6 +57,10 @@ def resequence_script_scenes(script: Script):
                     if source and not source.is_deleted:
                         sc.scene_number = source.scene_number
                     sc.duplicate_number = 0
+                elif sc.is_sequence:
+                    # Sequence scene does NOT consume or change master scene numbers
+                    sc.scene_number = current_base_num if current_base_num > 0 else 1
+                    sc.duplicate_number = 0
                 elif not sc.is_duplicate and not sc.is_intercut:
                     current_base_num += 1
                     sc.scene_number = current_base_num
@@ -254,13 +258,23 @@ def insert_scene_relative(script: Script, reference_scene_id: int = None, positi
         all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
 
         if ref_scene:
-            try:
-                ref_index = [s.id for s in all_scenes].index(ref_scene.id)
-                target_order = ref_index if position == 'before' else ref_index + 1
-            except ValueError:
-                target_order = len(all_scenes)
+            subs = list(ref_scene.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
+            if position == 'after' and subs:
+                target_ref = subs[-1]
+            else:
+                target_ref = ref_scene
+            target_order = target_ref.order if position == 'before' else target_ref.order + 1
         else:
-            target_order = len(all_scenes)
+            target_order = max([s.order for s in all_scenes], default=-1) + 1
+
+        # If reference scene is an active sequence that has not already ended, close it automatically before adding the next scene
+        if ref_scene and ref_scene.is_sequence and position == 'after':
+            expected_end_marker = 'MONTAGE ENDS' if ref_scene.sequence_type == 'montage' else 'SONG ENDS'
+            elems = list(ref_scene.elements.all().order_by('order', 'id'))
+            has_ended = any((e.content or '').strip().upper() == expected_end_marker for e in elems)
+            if not has_ended:
+                next_order = len(elems)
+                ScriptElement.objects.create(scene=ref_scene, element_type='shot', content=expected_end_marker, order=next_order)
 
         # Shift all scenes at or after target_order
         for s in all_scenes:
@@ -289,10 +303,87 @@ def insert_scene_relative(script: Script, reference_scene_id: int = None, positi
             )
 
         # Seed initial elements
-        ScriptElement.objects.create(scene=new_scene, element_type='scene_heading', content=heading, order=0)
-        ScriptElement.objects.create(scene=new_scene, element_type='action', content='', order=1)
+        h_upper = heading.strip().upper()
+        if h_upper in ('SONG BEGINS', 'MONTAGE BEGINS'):
+            ScriptElement.objects.create(scene=new_scene, element_type='shot', content=heading, order=0)
+            ScriptElement.objects.create(scene=new_scene, element_type='shot', content='1. INT. LOCATION - DAY', order=1)
+            ScriptElement.objects.create(scene=new_scene, element_type='action', content='', order=2)
+        else:
+            ScriptElement.objects.create(scene=new_scene, element_type='scene_heading', content=heading, order=0)
+            ScriptElement.objects.create(scene=new_scene, element_type='action', content='', order=1)
 
         # Resequence to guarantee clean numbering
+        resequence_script_scenes(script)
+        new_scene.refresh_from_db()
+
+        script.updated_at = timezone.now()
+        script.save(update_fields=['updated_at'])
+
+        return new_scene
+
+
+def create_sequence_scene(script: Script, reference_scene_id: int = None, sequence_type: str = 'song') -> Scene:
+    """
+    Creates a new independent sequence scene (Song or Montage) as a separate screenplay scene/page:
+    - Positioned immediately after the reference scene (or its sub-scenes if it is a parent).
+    - If the reference scene is an active sequence that has not ended, closes it automatically.
+    - Seeding:
+        Order 0: shot: 'SONG BEGINS' or 'MONTAGE BEGINS'
+        Order 1: shot: '1. INT. LOCATION - DAY'
+        Order 2: action: ''
+    - Sequence shots do NOT consume or change master scene numbering.
+    - Automatically resequences the screenplay.
+    """
+    seq_type = 'montage' if sequence_type == 'montage' else 'song'
+    marker_begin = 'MONTAGE BEGINS' if seq_type == 'montage' else 'SONG BEGINS'
+
+    with transaction.atomic():
+        ref_scene = None
+        if reference_scene_id:
+            try:
+                ref_scene = script.scenes.get(id=reference_scene_id, is_deleted=False)
+            except Scene.DoesNotExist:
+                ref_scene = None
+
+        all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
+
+        # If reference scene is an active sequence that has not already ended, close it
+        if ref_scene and ref_scene.is_sequence:
+            expected_end_marker = 'MONTAGE ENDS' if ref_scene.sequence_type == 'montage' else 'SONG ENDS'
+            elems = list(ref_scene.elements.all().order_by('order', 'id'))
+            has_ended = any((e.content or '').strip().upper() == expected_end_marker for e in elems)
+            if not has_ended:
+                next_order = len(elems)
+                ScriptElement.objects.create(scene=ref_scene, element_type='shot', content=expected_end_marker, order=next_order)
+
+        if ref_scene:
+            # If ref_scene is a sub-scene, resolve to its parent group to place sequence after all siblings
+            parent = ref_scene.parent_scene if ref_scene.is_sub_scene and ref_scene.parent_scene else ref_scene
+            subs = list(parent.sub_scenes.filter(is_deleted=False).order_by('order', 'id'))
+            target_ref = subs[-1] if subs else parent
+            target_order = target_ref.order + 1
+        else:
+            target_order = max([s.order for s in all_scenes], default=-1) + 1
+
+        for s in all_scenes:
+            if s.order >= target_order:
+                s.order += 1
+                s.save(update_fields=['order'])
+
+        new_scene = Scene.objects.create(
+            script=script,
+            parent_scene=None,
+            scene_number=ref_scene.scene_number if ref_scene else 1,
+            heading=marker_begin,
+            summary='',
+            order=target_order
+        )
+
+        # Seed initial elements
+        ScriptElement.objects.create(scene=new_scene, element_type='shot', content=marker_begin, order=0)
+        ScriptElement.objects.create(scene=new_scene, element_type='shot', content='1. INT. LOCATION - DAY', order=1)
+        ScriptElement.objects.create(scene=new_scene, element_type='action', content='', order=2)
+
         resequence_script_scenes(script)
         new_scene.refresh_from_db()
 
@@ -578,15 +669,18 @@ def reorder_main_scene(script: Script, scene: Scene, target_number: int) -> tupl
         raise ValueError("Intercut scenes cannot be directly renumbered.")
     if scene.is_duplicate:
         raise ValueError("Duplicate scenes retain their base scene number and cannot be directly renumbered.")
+    if scene.is_sequence:
+        raise ValueError("Sequence scenes do not consume master scene numbers and cannot be directly renumbered.")
 
-    base_main_scenes = list(
-        script.scenes.filter(
+    base_main_scenes = [
+        s for s in script.scenes.filter(
             is_deleted=False,
             parent_scene__isnull=True,
             is_intercut=False,
             is_duplicate=False
         ).order_by('order', 'id')
-    )
+        if not s.is_sequence
+    ]
     total_main = len(base_main_scenes)
     if total_main == 0:
         raise ValueError("No active main scenes found in this screenplay.")
@@ -896,6 +990,8 @@ def serialize_scenes_hierarchy(script: Script) -> list:
             'is_duplicate': sc.is_duplicate,
             'duplicate_number': sc.duplicate_number,
             'is_intercut': sc.is_intercut,
+            'is_sequence': sc.is_sequence,
+            'sequence_type': sc.sequence_type,
             'scene_number': sc.scene_number,
             'scene_identifier': sc.scene_identifier,
             'nav_identifier': sc.nav_identifier,
