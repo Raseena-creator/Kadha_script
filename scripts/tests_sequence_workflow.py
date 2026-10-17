@@ -713,5 +713,72 @@ class SequenceWorkflowTests(TestCase):
         sc3.refresh_from_db()
         self.assertEqual(sc3.scene_number, 3)
 
+    def test_25_model_sequence_properties_and_prefetched_elements_invariants(self):
+        """
+        Verify that Scene.is_sequence and Scene.sequence_type satisfy all invariants:
+        1. Recognize Song headings: 'SONG BEGINS', 'SONG SEQUENCE', 'SONG: ROMANTIC'.
+        2. Recognize Montage headings: 'MONTAGE BEGINS', 'MONTAGE SEQUENCE', 'MONTAGE: TRAINING'.
+        3. Correctly classify ordinary scenes without sequence false positives (e.g., 'INT. SONG ROOM - DAY').
+        4. Detect sequences via prefetched elements when heading is ordinary.
+        5. Ignore editorial note elements when inspecting prefetched elements.
+        6. Avoid database queries when elements are not prefetched.
+        7. Maintain full compatibility with serialize_scenes_hierarchy without AttributeError.
+        """
+        # 1. Heading-based detection for Song sequences
+        for song_heading in ('SONG BEGINS', 'SONG SEQUENCE', 'song begins', 'SONG: LOVE THEME'):
+            sc = Scene(script=self.script, heading=song_heading)
+            self.assertTrue(sc.is_sequence, f"Expected is_sequence=True for heading '{song_heading}'")
+            self.assertEqual(sc.sequence_type, 'song', f"Expected sequence_type='song' for heading '{song_heading}'")
 
+        # 2. Heading-based detection for Montage sequences
+        for montage_heading in ('MONTAGE BEGINS', 'MONTAGE SEQUENCE', 'montage begins', 'MONTAGE: CHASE'):
+            sc = Scene(script=self.script, heading=montage_heading)
+            self.assertTrue(sc.is_sequence, f"Expected is_sequence=True for heading '{montage_heading}'")
+            self.assertEqual(sc.sequence_type, 'montage', f"Expected sequence_type='montage' for heading '{montage_heading}'")
+
+        # 3. Ordinary scenes must not trigger false positives
+        ordinary_headings = (
+            'INT. LIVING ROOM - DAY',
+            'EXT. STREET - NIGHT',
+            'INT. SONGWRITER STUDIO - DAY',
+            'INT. MONTAGE ART GALLERY - NIGHT',
+            'SONGWRITER INT. CAFE - DAY',
+        )
+        for ord_heading in ordinary_headings:
+            sc = Scene(script=self.script, heading=ord_heading)
+            self.assertFalse(sc.is_sequence, f"Expected is_sequence=False for ordinary heading '{ord_heading}'")
+            self.assertEqual(sc.sequence_type, '', f"Expected sequence_type='' for ordinary heading '{ord_heading}'")
+
+        # 4. Zero database queries when elements are NOT prefetched
+        sc_db = Scene.objects.create(script=self.script, heading='INT. LIBRARY - DAY', scene_number=10, order=10)
+        ScriptElement.objects.create(scene=sc_db, element_type='action', content='Reading books.', order=0)
+        sc_fresh = Scene.objects.get(id=sc_db.id)
+        with self.assertNumQueries(0):
+            is_seq = sc_fresh.is_sequence
+            seq_type = sc_fresh.sequence_type
+        self.assertFalse(is_seq)
+        self.assertEqual(seq_type, '')
+
+        # 5. Prefetched elements: Note element with marker text must be ignored
+        sc_note = Scene.objects.create(script=self.script, heading='INT. OFFICE - DAY', scene_number=11, order=11)
+        ScriptElement.objects.create(scene=sc_note, element_type='note', content='SONG BEGINS', order=0)
+        ScriptElement.objects.create(scene=sc_note, element_type='action', content='Typing report.', order=1)
+        sc_note_prefetched = Scene.objects.filter(id=sc_note.id).prefetch_related('elements').first()
+        self.assertFalse(sc_note_prefetched.is_sequence)
+        self.assertEqual(sc_note_prefetched.sequence_type, '')
+
+        # 6. Prefetched elements: Note element followed by valid Montage marker
+        sc_montage_pref = Scene.objects.create(script=self.script, heading='INT. GYM - NIGHT', scene_number=12, order=12)
+        ScriptElement.objects.create(scene=sc_montage_pref, element_type='note', content='Director note: start montage here', order=0)
+        ScriptElement.objects.create(scene=sc_montage_pref, element_type='shot', content='MONTAGE BEGINS', order=1)
+        sc_m_prefetched = Scene.objects.filter(id=sc_montage_pref.id).prefetch_related('elements').first()
+        self.assertTrue(sc_m_prefetched.is_sequence)
+        self.assertEqual(sc_m_prefetched.sequence_type, 'montage')
+
+        # 7. Compatibility with serialize_scenes_hierarchy
+        hierarchy = serialize_scenes_hierarchy(self.script)
+        self.assertIsInstance(hierarchy, list)
+        for node in hierarchy:
+            self.assertIn('is_sequence', node)
+            self.assertIn('sequence_type', node)
 

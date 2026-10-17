@@ -207,6 +207,72 @@ class Scene(models.Model):
         return self.parent_scene_id is not None
 
     @property
+    def is_sequence(self) -> bool:
+        """Return True when this scene is explicitly identified as a Song or Montage sequence."""
+        heading = (self.heading or '').strip().upper()
+        if (
+            heading in (
+                'SONG BEGINS',
+                'MONTAGE BEGINS',
+                'SONG SEQUENCE',
+                'MONTAGE SEQUENCE',
+            )
+            or heading.startswith('SONG:')
+            or heading.startswith('MONTAGE:')
+        ):
+            return True
+
+        # Inspect elements only when they are already prefetched.
+        # This avoids introducing an unnecessary database query.
+        if (
+            hasattr(self, '_prefetched_objects_cache')
+            and 'elements' in self._prefetched_objects_cache
+        ):
+            for element in sorted(
+                self.elements.all(),
+                key=lambda item: (item.order or 0, item.id or 0),
+            ):
+                content = (element.content or '').strip().upper()
+                if not content or element.element_type == 'note':
+                    continue
+
+                if content in ('SONG BEGINS', 'MONTAGE BEGINS'):
+                    return True
+
+        return False
+
+    @property
+    def sequence_type(self) -> str:
+        """Return 'song' or 'montage' for an explicitly identified sequence."""
+        heading = (self.heading or '').strip().upper()
+        if heading in ('MONTAGE BEGINS', 'MONTAGE SEQUENCE') or heading.startswith('MONTAGE:'):
+            return 'montage'
+
+        if heading in ('SONG BEGINS', 'SONG SEQUENCE') or heading.startswith('SONG:'):
+            return 'song'
+
+        # Use only recognized start markers in prefetched elements.
+        if (
+            hasattr(self, '_prefetched_objects_cache')
+            and 'elements' in self._prefetched_objects_cache
+        ):
+            for element in sorted(
+                self.elements.all(),
+                key=lambda item: (item.order or 0, item.id or 0),
+            ):
+                content = (element.content or '').strip().upper()
+                if not content or element.element_type == 'note':
+                    continue
+
+                if content == 'MONTAGE BEGINS':
+                    return 'montage'
+
+                if content == 'SONG BEGINS':
+                    return 'song'
+
+        return ''
+
+    @property
     def is_actual_scene(self) -> bool:
         """True if this is an actual scene or sub-scene, not a navigation/transition entry."""
         return not self.is_intercut
