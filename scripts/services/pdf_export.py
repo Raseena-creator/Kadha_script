@@ -308,6 +308,43 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             spaceAfter=6,
             shaping=True,
         ),
+        'SequenceHeading': ParagraphStyle(
+            'SequenceHeading',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=16,
+            alignment=TA_CENTER,
+            spaceBefore=16,
+            spaceAfter=8,
+            keepWithNext=True,
+            shaping=True,
+            backColor=colors.HexColor('#ECECEC'),
+            borderPadding=(3, 5, 3, 5),
+        ),
+        'SequenceBeginLabel': ParagraphStyle(
+            'SequenceBeginLabel',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=16,
+            alignment=TA_LEFT,
+            spaceBefore=8,
+            spaceAfter=14,
+            keepWithNext=True,
+            shaping=True,
+        ),
+        'SequenceEndLabel': ParagraphStyle(
+            'SequenceEndLabel',
+            parent=styles['Normal'],
+            fontName=font_bold,
+            fontSize=12,
+            leading=16,
+            alignment=TA_LEFT,
+            spaceBefore=20,
+            spaceAfter=12,
+            shaping=True,
+        ),
     }
 
 
@@ -336,6 +373,9 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     meta_left_style = pdf_styles['MetaLeftStyle']
     meta_right_style = pdf_styles['MetaRightStyle']
     scene_heading_style = pdf_styles['SceneHeading']
+    sequence_heading_style = pdf_styles['SequenceHeading']
+    sequence_begin_style = pdf_styles['SequenceBeginLabel']
+    sequence_end_style = pdf_styles['SequenceEndLabel']
     action_style = pdf_styles['Action']
     character_style = pdf_styles['Character']
     dialogue_style = pdf_styles['Dialogue']
@@ -431,13 +471,31 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     for idx, scene in enumerate(scenes):
         if idx > 0:
             story.append(PageBreak())
+
         if scene.is_sequence:
-            heading_text = scene.full_display_heading.upper()
+            seq_type = getattr(scene, 'sequence_type', None)
+            if not seq_type:
+                h = (scene.heading or '').upper()
+                seq_type = 'montage' if 'MONTAGE' in h else 'song'
+
+            if seq_type == 'montage':
+                seq_heading_text = "Montage Sequence"
+                seq_begin_text = "Montage Begins:"
+                seq_end_text = "Montage Ends"
+            else:
+                seq_heading_text = "Song Sequence"
+                seq_begin_text = "Song Begins:"
+                seq_end_text = "Song Ends"
+
+            story.append(Paragraph(seq_heading_text, sequence_heading_style))
+            story.append(Paragraph(seq_begin_text, sequence_begin_style))
         else:
             heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
-        story.append(Paragraph(heading_text, scene_heading_style))
+            story.append(Paragraph(heading_text, scene_heading_style))
 
         elements = scene.elements.all().order_by('order', 'id')
+        rendered_seq_end = False
+
         for elem in elements:
             text = (elem.content or '').strip()
             if not text:
@@ -475,9 +533,20 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             elif elem.element_type == 'transition':
                 story.append(Paragraph(clean_text.upper(), transition_style))
             elif elem.element_type == 'shot':
-                if elem.order == 0 and scene.is_sequence and clean_text.upper() == heading_text.upper():
-                    continue
+                uc_text = clean_text.upper()
+                if scene.is_sequence:
+                    if uc_text in ('SONG BEGINS', 'MONTAGE BEGINS', 'SONG BEGINS:', 'MONTAGE BEGINS:'):
+                        continue
+                    if uc_text in ('SONG ENDS', 'MONTAGE ENDS'):
+                        story.append(Paragraph(seq_end_text, sequence_end_style))
+                        rendered_seq_end = True
+                        continue
+
                 story.append(Paragraph(clean_text.upper(), shot_style))
+
+        # For sequence scenes, ensure ending label is present if not already rendered
+        if scene.is_sequence and not rendered_seq_end:
+            story.append(Paragraph(seq_end_text, sequence_end_style))
 
         # Scene-end transition fallback:
         # If the scene does not already end with an explicit transition element, render scene.transition fallback.

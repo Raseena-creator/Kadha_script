@@ -447,16 +447,19 @@ class SequenceWorkflowTests(TestCase):
             textpage = page.get_textpage()
             pdf_text += textpage.get_text_range() + '\n'
 
-        self.assertEqual(pdf_text.count('SONG BEGINS'), 1)
+        self.assertEqual(pdf_text.count('Song Sequence'), 1)
+        self.assertEqual(pdf_text.count('Song Begins:'), 1)
         self.assertIn('1. INT. LOCATION - DAY', pdf_text)
         self.assertIn('2. EXT. ROOF - NIGHT', pdf_text)
-        self.assertEqual(pdf_text.count('SONG ENDS'), 1)
+        self.assertEqual(pdf_text.count('Song Ends'), 1)
         # Verify ordering in extracted PDF text
-        p_idx_heading = pdf_text.index('SONG BEGINS')
+        p_idx_heading = pdf_text.index('Song Sequence')
+        p_idx_begin = pdf_text.index('Song Begins:')
         p_idx_shot1 = pdf_text.index('1. INT. LOCATION - DAY')
         p_idx_shot2 = pdf_text.index('2. EXT. ROOF - NIGHT')
-        p_idx_ends = pdf_text.index('SONG ENDS')
-        self.assertLess(p_idx_heading, p_idx_shot1)
+        p_idx_ends = pdf_text.index('Song Ends')
+        self.assertLess(p_idx_heading, p_idx_begin)
+        self.assertLess(p_idx_begin, p_idx_shot1)
         self.assertLess(p_idx_shot1, p_idx_shot2)
         self.assertLess(p_idx_shot2, p_idx_ends)
         # No unwanted fallback CUT TO: for the sequence
@@ -782,3 +785,111 @@ class SequenceWorkflowTests(TestCase):
             self.assertIn('is_sequence', node)
             self.assertIn('sequence_type', node)
 
+    def test_28_montage_sequence_pdf_export_formatting(self):
+        """
+        Verify that Montage Sequence PDF export renders centered Montage Sequence heading,
+        left-aligned Montage Begins: label, numbered entries, and Montage Ends label.
+        """
+        sc_m = create_sequence_scene(self.script, reference_scene_id=None, sequence_type='montage')
+        ScriptElement.objects.create(scene=sc_m, element_type='shot', content='2. EXT. MOUNTAIN - SUNRISE', order=3)
+        ScriptElement.objects.create(scene=sc_m, element_type='action', content='Climbing to the peak.', order=4)
+        ScriptElement.objects.create(scene=sc_m, element_type='shot', content='MONTAGE ENDS', order=5)
+
+        pdf_bytes = generate_screenplay_pdf(self.script)
+        self.assertIsInstance(pdf_bytes, bytes)
+        pdf_doc = pdfium.PdfDocument(pdf_bytes)
+        pdf_text = ''
+        for page in pdf_doc:
+            tp = page.get_textpage()
+            pdf_text += tp.get_text_range() + '\n'
+
+        self.assertEqual(pdf_text.count('Montage Sequence'), 1)
+        self.assertEqual(pdf_text.count('Montage Begins:'), 1)
+        self.assertIn('1. INT. LOCATION - DAY', pdf_text)
+        self.assertIn('2. EXT. MOUNTAIN - SUNRISE', pdf_text)
+        self.assertIn('Climbing to the peak.', pdf_text)
+        self.assertEqual(pdf_text.count('Montage Ends'), 1)
+
+        idx_h = pdf_text.index('Montage Sequence')
+        idx_b = pdf_text.index('Montage Begins:')
+        idx_s1 = pdf_text.index('1. INT. LOCATION - DAY')
+        idx_s2 = pdf_text.index('2. EXT. MOUNTAIN - SUNRISE')
+        idx_e = pdf_text.index('Montage Ends')
+        self.assertLess(idx_h, idx_b)
+        self.assertLess(idx_b, idx_s1)
+        self.assertLess(idx_s1, idx_s2)
+        self.assertLess(idx_s2, idx_e)
+
+    def test_29_song_sequence_pdf_duplicate_heading_regression(self):
+        """
+        Verify that a Song Sequence with a duplicate-heading shot at order=0
+        does not render duplicate sequence headings or extra visible shots in the PDF.
+        """
+        seq_scene = Scene.objects.create(
+            script=self.script,
+            scene_number=1,
+            heading='SONG BEGINS',
+            order=1,
+        )
+        # Duplicate heading shot at order=0
+        ScriptElement.objects.create(
+            scene=seq_scene,
+            element_type='shot',
+            content='SONG BEGINS',
+            order=0,
+        )
+        # Numbered sequence shot
+        ScriptElement.objects.create(
+            scene=seq_scene,
+            element_type='shot',
+            content='1. INT. ROOM - DAY',
+            order=1,
+        )
+        # Action element
+        ScriptElement.objects.create(
+            scene=seq_scene,
+            element_type='action',
+            content='Sunlight streams through the window as melody plays.',
+            order=2,
+        )
+        # Explicit SONG ENDS marker
+        ScriptElement.objects.create(
+            scene=seq_scene,
+            element_type='shot',
+            content='SONG ENDS',
+            order=3,
+        )
+
+        pdf_bytes = generate_screenplay_pdf(self.script)
+        self.assertIsInstance(pdf_bytes, bytes)
+        pdf_doc = pdfium.PdfDocument(pdf_bytes)
+        pdf_text = ''
+        for page in pdf_doc:
+            tp = page.get_textpage()
+            pdf_text += tp.get_text_range() + '\n'
+
+        # Required assertions:
+        # - Song Sequence appears exactly once
+        self.assertEqual(pdf_text.count('Song Sequence'), 1)
+        # - Song Begins: appears exactly once
+        self.assertEqual(pdf_text.count('Song Begins:'), 1)
+        # - 1. INT. ROOM - DAY appears exactly once
+        self.assertEqual(pdf_text.count('1. INT. ROOM - DAY'), 1)
+        # - The duplicated SONG BEGINS marker is not rendered as a separate shot
+        self.assertEqual(pdf_text.count('SONG BEGINS'), 0)
+        # - Song Ends appears exactly once
+        self.assertEqual(pdf_text.count('Song Ends'), 1)
+        # - Action element is present
+        self.assertIn('Sunlight streams through the window as melody plays.', pdf_text)
+
+        # - The elements appear in the correct order
+        idx_seq = pdf_text.index('Song Sequence')
+        idx_begin = pdf_text.index('Song Begins:')
+        idx_shot = pdf_text.index('1. INT. ROOM - DAY')
+        idx_action = pdf_text.index('Sunlight streams through the window as melody plays.')
+        idx_ends = pdf_text.index('Song Ends')
+
+        self.assertLess(idx_seq, idx_begin)
+        self.assertLess(idx_begin, idx_shot)
+        self.assertLess(idx_shot, idx_action)
+        self.assertLess(idx_action, idx_ends)
