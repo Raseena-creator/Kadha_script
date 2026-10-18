@@ -1248,6 +1248,332 @@ Prepare call sheet for shoot."""
     # -------------------------------------------------------------------------
     # 41. Batch 2D.3 Bug D: Enter key cursor split behavior (12 cases)
     # -------------------------------------------------------------------------
+    def test_41_enter_key_cursor_split_behavior(self):
+        # 1. Enter at beginning of Action
+        r1 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'The man walks toward the door.', heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 0);
+            range.setEnd(ed.firstChild, 0);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r1['count'], 2)
+        self.assertEqual(r1['b0_text'], '')
+        self.assertEqual(r1['b1_text'], 'The man walks toward the door.')
+
+        # 2. Enter in middle of Action
+        r2 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'The man walks toward the door.', heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 14);
+            range.setEnd(ed.firstChild, 14);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r2['count'], 2)
+        self.assertEqual(r2['b0_text'], 'The man walks')
+        self.assertEqual(r2['b1_text'], 'toward the door.')
+
+        # 3. Enter at end of Action
+        r3 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'The man walks toward the door.', heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, ed.firstChild.length);
+            range.setEnd(ed.firstChild, ed.firstChild.length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r3['count'], 2)
+        self.assertEqual(r3['b0_text'], 'The man walks toward the door.')
+        self.assertEqual(r3['b1_text'], '')
+
+        # 4. Enter at beginning of Dialogue
+        r4 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 0);
+            range.setEnd(ed.firstChild, 0);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r4['count'], 2)
+        self.assertEqual(r4['b0_type'], 'dialogue')
+        self.assertEqual(r4['b0_text'], '')
+        self.assertEqual(r4['b1_type'], 'dialogue')
+        self.assertEqual(r4['b1_text'], "I don't know what happened.")
+
+        # 5. Enter in middle of Dialogue
+        r5 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 8);
+            range.setEnd(ed.firstChild, 8);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r5['count'], 2)
+        self.assertEqual(r5['b0_type'], 'dialogue')
+        self.assertEqual(r5['b0_text'], "I don't")
+        self.assertEqual(r5['b1_type'], 'dialogue')
+        self.assertEqual(r5['b1_text'], "know what happened.")
+
+        # 6. Enter at end of Dialogue
+        r6 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, ed.firstChild.length);
+            range.setEnd(ed.firstChild, ed.firstChild.length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r6['count'], 2)
+        self.assertEqual(r6['b0_type'], 'dialogue')
+        self.assertEqual(r6['b0_text'], "I don't know what happened.")
+        self.assertEqual(r6['b1_type'], 'action')
+        self.assertEqual(r6['b1_text'], '')
+
+        # 7. Malayalam Action enter in middle
+        r7 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const text = "അവൻ പതുക്കെ വാതിലിനടുത്തേക്ക് നടക്കുന്നു.";
+            const b = window.editorInstance.createElementBlock('action', text, heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 12);
+            range.setEnd(ed.firstChild, 12);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r7['count'], 2)
+        self.assertEqual(r7['b0_text'], "അവൻ പതുക്കെ")
+        self.assertEqual(r7['b1_text'], "വാതിലിനടുത്തേക്ക് നടക്കുന്നു.")
+
+        # 8. Malayalam Dialogue enter in middle
+        r8 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const text = "എനിക്ക് ഒന്നും അറിയില്ല, എന്നെ വിടൂ.";
+            const b = window.editorInstance.createElementBlock('dialogue', text, heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 24);
+            range.setEnd(ed.firstChild, 24);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r8['count'], 2)
+        self.assertEqual(r8['b0_type'], 'dialogue')
+        self.assertEqual(r8['b0_text'], "എനിക്ക് ഒന്നും അറിയില്ല,")
+        self.assertEqual(r8['b1_type'], 'dialogue')
+        self.assertEqual(r8['b1_text'], "എന്നെ വിടൂ.")
+
+        # 9. Undo after Action split
+        r9 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'The man walks toward the door.', heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 14);
+            range.setEnd(ed.firstChild, 14);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            window.editorInstance.undo();
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r9['count'], 1)
+        self.assertEqual(r9['b0_text'], 'The man walks toward the door.')
+
+        # 10. Undo after Dialogue split
+        r10 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 8);
+            range.setEnd(ed.firstChild, 8);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            window.editorInstance.undo();
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r10['count'], 1)
+        self.assertEqual(r10['b0_type'], 'dialogue')
+        self.assertEqual(r10['b0_text'], "I don't know what happened.")
+
+        # 11. Redo after Action split
+        r11 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'The man walks toward the door.', heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 14);
+            range.setEnd(ed.firstChild, 14);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            window.editorInstance.undo();
+            window.editorInstance.redo();
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r11['count'], 2)
+        self.assertEqual(r11['b0_text'], 'The man walks')
+        self.assertEqual(r11['b1_text'], 'toward the door.')
+
+        # 12. Redo after Dialogue split
+        r12 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 8);
+            range.setEnd(ed.firstChild, 8);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            window.editorInstance.undo();
+            window.editorInstance.redo();
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r12['count'], 2)
+        self.assertEqual(r12['b0_text'], "I don't")
+        self.assertEqual(r12['b1_text'], "know what happened.")
+
+    # -------------------------------------------------------------------------
+    # 42. External paste failure recovery: destination block preserved on fault
+    # -------------------------------------------------------------------------
     def test_42_external_paste_failure_recovery_preserves_destination_block(self):
         res = self.driver.execute_script("""
             const page = window.editorInstance.pageContainer;
@@ -1320,3 +1646,504 @@ Prepare call sheet for shoot."""
     # -------------------------------------------------------------------------
     # 43. Dialogue selection replacement on Enter
     # -------------------------------------------------------------------------
+    def test_43_dialogue_selection_replacement_on_enter(self):
+        # 1. Middle selection replacement
+        r1 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 8);   // start of "know "
+            range.setEnd(ed.firstChild, 13);    // end of "know "
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r1['count'], 2)
+        self.assertEqual(r1['b0_type'], 'dialogue')
+        self.assertEqual(r1['b0_text'], "I don't")
+        self.assertEqual(r1['b1_type'], 'dialogue')
+        self.assertEqual(r1['b1_text'], "what happened.")
+
+        # 2. Selection extending through the end of Dialogue -> transition to action
+        r2 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 13);  // start of "what happened."
+            range.setEnd(ed.firstChild, ed.firstChild.length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r2['count'], 2)
+        self.assertEqual(r2['b0_type'], 'dialogue')
+        self.assertEqual(r2['b0_text'], "I don't know")
+        self.assertEqual(r2['b1_type'], 'action')
+        self.assertEqual(r2['b1_text'], "")
+
+        # 3. Entire Dialogue selected -> dialogue cleared, transitions to action
+        r3 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 0);
+            range.setEnd(ed.firstChild, ed.firstChild.length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r3['count'], 2)
+        self.assertEqual(r3['b0_type'], 'dialogue')
+        self.assertEqual(r3['b0_text'], "")
+        self.assertEqual(r3['b1_type'], 'action')
+        self.assertEqual(r3['b1_text'], "")
+
+        # 4. Selection at beginning of Dialogue
+        r4 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', "I don't know what happened.", heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 0);
+            range.setEnd(ed.firstChild, 8);   // "I don't "
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r4['count'], 2)
+        self.assertEqual(r4['b0_type'], 'dialogue')
+        self.assertEqual(r4['b0_text'], "")
+        self.assertEqual(r4['b1_type'], 'dialogue')
+        self.assertEqual(r4['b1_text'], "know what happened.")
+
+        # 5. Malayalam Unicode selection replacement in middle
+        r5 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const text = "എനിക്ക് ഒന്നും അറിയില്ല, എന്നെ വിടൂ.";
+            const b = window.editorInstance.createElementBlock('dialogue', text, heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 8);   // start of "ഒന്നും അറിയില്ല, "
+            range.setEnd(ed.firstChild, 24);    // end of "ഒന്നും അറിയില്ല, "
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r5['count'], 2)
+        self.assertEqual(r5['b0_type'], 'dialogue')
+        self.assertEqual(r5['b0_text'], "എനിക്ക്")
+        self.assertEqual(r5['b1_type'], 'dialogue')
+        self.assertEqual(r5['b1_text'], "എന്നെ വിടൂ.")
+
+        # 6. Malayalam Unicode selection extending to the end
+        r6 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const text = "എനിക്ക് ഒന്നും അറിയില്ല, എന്നെ വിടൂ.";
+            const b = window.editorInstance.createElementBlock('dialogue', text, heading);
+            const ed = b.querySelector('.element-content');
+            const range = document.createRange();
+            range.setStart(ed.firstChild, 24);   // start of "എന്നെ വിടൂ."
+            range.setEnd(ed.firstChild, ed.firstChild.length);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            window.editorInstance.handleEnterKey(b, ed);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                count: blocks.length,
+                b0_type: blocks[0].dataset.type,
+                b0_text: blocks[0].querySelector('.element-content').innerText,
+                b1_type: blocks[1].dataset.type,
+                b1_text: blocks[1].querySelector('.element-content').innerText
+            };
+        """)
+        self.assertEqual(r6['count'], 2)
+        self.assertEqual(r6['b0_type'], 'dialogue')
+        self.assertEqual(r6['b0_text'], "എനിക്ക് ഒന്നും അറിയില്ല,")
+        self.assertEqual(r6['b1_type'], 'action')
+        self.assertEqual(r6['b1_text'], "")
+
+    # ----------------------------------------------------
+    # 44. Note Enter, list continuation, and undo/redo integration
+    # ----------------------------------------------------
+    def test_44_note_enter_and_undo_redo(self):
+        # 1. Ordinary Note line break and immediate Undo / Redo
+        r1 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('note', 'Initial note line', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // Execute handleNoteEnter
+            window.editorInstance.handleNoteEnter(b, ed);
+            const textAfterEnter = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            // Immediate Undo
+            window.editorInstance.undo();
+            const textAfterUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            // Redo
+            window.editorInstance.redo();
+            const textAfterRedo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            return {
+                textAfterEnter: textAfterEnter,
+                textAfterUndo: textAfterUndo,
+                textAfterRedo: textAfterRedo
+            };
+        """)
+        self.assertIn('\n', r1['textAfterEnter'])
+        self.assertEqual(r1['textAfterUndo'].strip(), 'Initial note line')
+        self.assertIn('\n', r1['textAfterRedo'])
+        self.assertEqual(r1['textAfterRedo'].strip(), 'Initial note line')
+
+        # 2. Bullet list continuation and Undo
+        r2 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('note', '- First bullet item', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            window.editorInstance.handleNoteEnter(b, ed);
+            const textAfterEnter = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            window.editorInstance.undo();
+            const textAfterUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            window.editorInstance.redo();
+            const textAfterRedo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            return {
+                textAfterEnter: textAfterEnter,
+                textAfterUndo: textAfterUndo,
+                textAfterRedo: textAfterRedo
+            };
+        """)
+        self.assertIn('- First bullet item\n- ', r2['textAfterEnter'])
+        self.assertEqual(r2['textAfterUndo'].strip(), '- First bullet item')
+        self.assertEqual(r2['textAfterRedo'], r2['textAfterEnter'])
+
+        # 3. Numbered list continuation and Undo
+        r3 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('note', '1. First task', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            window.editorInstance.handleNoteEnter(b, ed);
+            const textAfterEnter = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            window.editorInstance.undo();
+            const textAfterUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            return {
+                textAfterEnter: textAfterEnter,
+                textAfterUndo: textAfterUndo
+            };
+        """)
+        self.assertIn('1. First task\n2. ', r3['textAfterEnter'])
+        self.assertEqual(r3['textAfterUndo'].strip(), '1. First task')
+
+        # 4. Empty list item termination
+        r4 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('note', '- ', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            window.editorInstance.handleNoteEnter(b, ed);
+            const textAfterTerm = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            window.editorInstance.undo();
+            const textAfterUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            return {
+                textAfterTerm: textAfterTerm.trim(),
+                textAfterUndo: textAfterUndo
+            };
+        """)
+        self.assertEqual(r4['textAfterTerm'], '')
+        self.assertIn('- ', r4['textAfterUndo'])
+
+        # 5. Flush pending text edit on Note enter prevents losing typed text
+        r5 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('note', 'Baseline', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+
+            // Simulate typing that starts a pending debounce timer
+            ed.innerText = 'Baseline with pending edit';
+            window.editorInstance.recordTextEdit();
+            const hasPendingTimer = Boolean(window.editorInstance.textEditTimer);
+
+            // Press enter immediately while timer is still pending
+            window.editorInstance.handleNoteEnter(b, ed);
+            const timerAfterEnter = Boolean(window.editorInstance.textEditTimer);
+
+            // Immediate Undo should restore 'Baseline with pending edit'
+            window.editorInstance.undo();
+            const textFirstUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText.trim();
+
+            return {
+                hadPendingTimer: hasPendingTimer,
+                timerAfterEnter: timerAfterEnter,
+                textFirstUndo: textFirstUndo
+            };
+        """)
+        self.assertTrue(r5['hadPendingTimer'])
+        self.assertFalse(r5['timerAfterEnter'])
+        self.assertEqual(r5['textFirstUndo'], 'Baseline with pending edit')
+
+    # ----------------------------------------------------
+    # 45. Shift+Enter soft line breaks and single-line element protection
+    # ----------------------------------------------------
+    def test_45_shift_enter_soft_line_breaks(self):
+        # 1. Action soft break: stays in same element, persists \n, undo/redo works
+        r1 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'First line of action.', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // Dispatch Shift+Enter keydown event
+            const event = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            ed.dispatchEvent(event);
+
+            // Add second line
+            document.execCommand('insertText', false, 'Second line of action.');
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const payload = window.editorInstance.extractScenePayload();
+            const actionElem = (payload.elements || []).find(e => e.element_type === 'action');
+            const currentEd = page.querySelector('.script-element-block[data-type="action"] .element-content');
+            const content = currentEd ? currentEd.innerText : '';
+
+            // Undo
+            window.editorInstance.undo();
+            const undoEd = page.querySelector('.script-element-block[data-type="action"] .element-content');
+            const textAfterUndo = undoEd ? undoEd.innerText.trim() : '';
+
+            // Redo
+            window.editorInstance.redo();
+            const redoEd = page.querySelector('.script-element-block[data-type="action"] .element-content');
+            const textAfterRedo = redoEd ? redoEd.innerText : '';
+
+            return {
+                blockCount: blocks.length,
+                payloadContent: actionElem ? actionElem.content : '',
+                hasNewline: content.includes('\\n'),
+                textAfterUndo: textAfterUndo,
+                textAfterRedo: textAfterRedo
+            };
+        """)
+        self.assertEqual(r1['blockCount'], 1, "Shift+Enter must not create an additional screenplay element")
+        self.assertTrue(r1['hasNewline'], "Soft break must insert a newline")
+        self.assertIn('\n', r1['payloadContent'], "Save payload must retain newline")
+        self.assertEqual(r1['textAfterUndo'], 'First line of action.')
+        self.assertEqual(r1['textAfterRedo'], r1['payloadContent'])
+
+        # 2. Dialogue soft break with Malayalam text
+        r2 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('dialogue', 'ഞാൻ നാളെ വരാം.', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            const event = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            ed.dispatchEvent(event);
+
+            document.execCommand('insertText', false, 'തീർച്ചയായും.');
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const payload = window.editorInstance.extractScenePayload();
+            const dialElem = (payload.elements || []).find(e => e.element_type === 'dialogue');
+            const currentEd = page.querySelector('.script-element-block[data-type="dialogue"] .element-content');
+
+            return {
+                blockCount: blocks.length,
+                payloadType: dialElem ? dialElem.element_type : '',
+                hasNewline: currentEd && currentEd.innerText.includes('\\n'),
+                hasBothParts: currentEd && currentEd.innerText.includes('ഞാൻ നാളെ വരാം.') && currentEd.innerText.includes('തീർച്ചയായും.')
+            };
+        """)
+        self.assertEqual(r2['blockCount'], 1)
+        self.assertEqual(r2['payloadType'], 'dialogue')
+        self.assertTrue(r2['hasNewline'])
+        self.assertTrue(r2['hasBothParts'])
+
+        # 3. Single-line elements (Character & Parenthetical) prevent Shift+Enter
+        r3 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const charBlock = window.editorInstance.createElementBlock('character', 'RAHUL', heading);
+            const charEd = charBlock.querySelector('.element-content');
+            charEd.focus();
+            window.editorInstance.setCursorToEnd(charEd);
+
+            const shiftEnterEvent = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            const charDefaultPrevented = !charEd.dispatchEvent(shiftEnterEvent);
+
+            const parenBlock = window.editorInstance.createElementBlock('parenthetical', '(whispering)', charBlock);
+            const parenEd = parenBlock.querySelector('.element-content');
+            parenEd.focus();
+            window.editorInstance.setCursorToEnd(parenEd);
+
+            const parenDefaultPrevented = !parenEd.dispatchEvent(shiftEnterEvent);
+
+            return {
+                charDefaultPrevented: charDefaultPrevented,
+                parenDefaultPrevented: parenDefaultPrevented,
+                charText: charEd.innerText.trim(),
+                parenText: parenEd.innerText.trim(),
+                blockCount: page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length
+            };
+        """)
+        self.assertTrue(r3['charDefaultPrevented'], "Shift+Enter must be default-prevented in Character")
+        self.assertTrue(r3['parenDefaultPrevented'], "Shift+Enter must be default-prevented in Parenthetical")
+        self.assertEqual(r3['charText'], 'RAHUL')
+        self.assertEqual(r3['parenText'], '(whispering)')
+        self.assertEqual(r3['blockCount'], 2)
+
+        # 4. Scene Heading location input guard
+        r4 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const locInp = heading.querySelector('.heading-location-input');
+            locInp.focus();
+            locInp.value = 'TEST LOCATION';
+
+            const shiftEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            const defaultPrevented = !locInp.dispatchEvent(shiftEnter);
+
+            // Confirm that no action block was created
+            const blocksAfterShiftEnter = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+
+            // Confirm that normal Enter still creates the action block
+            const normalEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false, bubbles: true, cancelable: true });
+            locInp.dispatchEvent(normalEnter);
+            const blocksAfterNormalEnter = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+
+            return {
+                defaultPrevented: defaultPrevented,
+                blocksAfterShiftEnter: blocksAfterShiftEnter,
+                blocksAfterNormalEnter: blocksAfterNormalEnter
+            };
+        """)
+        self.assertTrue(r4['defaultPrevented'], "Shift+Enter in locationInput must be prevented")
+        self.assertEqual(r4['blocksAfterShiftEnter'], 0, "Shift+Enter must not create an action block")
+        self.assertEqual(r4['blocksAfterNormalEnter'], 1, "Normal Enter must still create an action block")
+
+        # 5. Sequence Shot location input guard
+        r5 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            page.innerHTML = '';
+            const shotBlock = window.editorInstance.createElementBlock('shot', '1. INT. CAFE - DAY');
+            const locInp = shotBlock.querySelector('.heading-location-input');
+            locInp.focus();
+
+            const shiftEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            const defaultPrevented = !locInp.dispatchEvent(shiftEnter);
+            const blocksAfterShiftEnter = page.querySelectorAll('.script-element-block').length;
+
+            const normalEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false, bubbles: true, cancelable: true });
+            locInp.dispatchEvent(normalEnter);
+            const blocksAfterNormalEnter = page.querySelectorAll('.script-element-block').length;
+
+            return {
+                defaultPrevented: defaultPrevented,
+                blocksAfterShiftEnter: blocksAfterShiftEnter,
+                blocksAfterNormalEnter: blocksAfterNormalEnter
+            };
+        """)
+        self.assertTrue(r5['defaultPrevented'], "Shift+Enter in sequence shot locationInput must be prevented")
+        self.assertEqual(r5['blocksAfterShiftEnter'], 1, "Shift+Enter must not transition to next block")
+        self.assertEqual(r5['blocksAfterNormalEnter'], 2, "Normal Enter must transition to next block")
+
+
+
+
+
+

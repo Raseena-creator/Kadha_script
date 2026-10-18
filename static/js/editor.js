@@ -492,6 +492,10 @@ class KadhaEditor {
 
             locationInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                        e.preventDefault();
+                        return;
+                    }
                     e.preventDefault();
                     let nextBlock = block.nextElementSibling;
                     if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
@@ -732,6 +736,10 @@ class KadhaEditor {
 
                 locationInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            return;
+                        }
                         e.preventDefault();
                         let nextBlock = block.nextElementSibling;
                         if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
@@ -972,11 +980,27 @@ class KadhaEditor {
                     this.handleNoteEnter(block, editable);
                     return;
                 }
-                if (!e.shiftKey) {
-                    e.preventDefault();
-                    this.handleEnterKey(block, editable);
-                    return;
+
+                if (e.shiftKey) {
+                    if (block.dataset.type === 'action' || block.dataset.type === 'dialogue') {
+                        e.preventDefault();
+                        this.flushPendingTextEdit();
+                        const preSnap = this.captureSnapshot();
+                        document.execCommand('insertLineBreak');
+                        this.pushUndoSnapshot(preSnap);
+                        this.markDirty();
+                        this.calculateLiveStats();
+                        return;
+                    } else {
+                        // Prevent accidental multiline creation in single-line elements
+                        e.preventDefault();
+                        return;
+                    }
                 }
+
+                e.preventDefault();
+                this.handleEnterKey(block, editable);
+                return;
             }
 
             // Tab key handling (Notes insert 2 spaces indent instead of cycling screenplay types)
@@ -1074,11 +1098,19 @@ class KadhaEditor {
     // NOTES NOTEPAD BEHAVIOR (Batch 2, Step 2)
     // ----------------------------------------------------
     handleNoteEnter(block, editable) {
+        this.flushPendingTextEdit();
+        const preSnap = this.captureSnapshot();
+
+        const finishEnter = () => {
+            this.pushUndoSnapshot(preSnap);
+            this.markDirty();
+            this.calculateLiveStats();
+        };
+
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) {
             document.execCommand('insertLineBreak');
-            this.markDirty();
-            this.calculateLiveStats();
+            finishEnter();
             return;
         }
 
@@ -1134,8 +1166,7 @@ class KadhaEditor {
                 sel.removeAllRanges();
                 sel.addRange(newRange);
             }
-            this.markDirty();
-            this.calculateLiveStats();
+            finishEnter();
             return;
         }
 
@@ -1148,8 +1179,7 @@ class KadhaEditor {
                 const indent = bulletMatch[1];
                 const marker = bulletMatch[2];
                 document.execCommand('insertText', false, '\n' + indent + marker + ' ');
-                this.markDirty();
-                this.calculateLiveStats();
+                finishEnter();
                 return;
             }
 
@@ -1158,16 +1188,59 @@ class KadhaEditor {
                 const currentNum = parseInt(numberMatch[2], 10);
                 const nextNum = currentNum + 1;
                 document.execCommand('insertText', false, '\n' + indent + nextNum + '. ');
-                this.markDirty();
-                this.calculateLiveStats();
+                finishEnter();
                 return;
             }
         }
 
         // 3. Ordinary line break
         document.execCommand('insertLineBreak');
-        this.markDirty();
-        this.calculateLiveStats();
+        finishEnter();
+    }
+
+    getCaretSplitText(editable) {
+        const sel = window.getSelection();
+        let leftText = '';
+        let rightText = '';
+        let hasSelectionRange = false;
+        let isCollapsed = true;
+
+        if (sel && sel.rangeCount > 0) {
+            const range = sel.getRangeAt(0);
+            if (editable.contains(range.startContainer) && editable.contains(range.endContainer)) {
+                hasSelectionRange = true;
+                isCollapsed = range.collapsed;
+
+                try {
+                    const preRange = range.cloneRange();
+                    preRange.selectNodeContents(editable);
+                    preRange.setEnd(range.startContainer, range.startOffset);
+                    leftText = preRange.toString();
+
+                    const postRange = range.cloneRange();
+                    postRange.selectNodeContents(editable);
+                    postRange.setStart(range.endContainer, range.endOffset);
+                    rightText = postRange.toString();
+                } catch (err) {
+                    hasSelectionRange = false;
+                }
+            }
+        }
+
+        if (!hasSelectionRange) {
+            leftText = editable.innerText || '';
+            rightText = '';
+            isCollapsed = true;
+        }
+
+        return {
+            leftText,
+            rightText,
+            cleanLeft: leftText.trimEnd(),
+            cleanRight: rightText.trimStart(),
+            isCollapsed,
+            hasSelectionRange
+        };
     }
 
     handleEnterKey(block, editable) {
@@ -1182,45 +1255,11 @@ class KadhaEditor {
         const preSnap = this.captureSnapshot();
 
         // ----------------------------------------------------
-        // ACTION PARAGRAPH SPLITTING (Batch 2, Step 1)
+        // ACTION PARAGRAPH SPLITTING (Batch 2, Step 1 & Batch 2D.3)
         // ----------------------------------------------------
         if (currentType === 'action') {
-            const sel = window.getSelection();
-            let leftText = '';
-            let rightText = '';
-            let hasSelectionRange = false;
-            let isCollapsed = true;
-
-            if (sel && sel.rangeCount > 0) {
-                const range = sel.getRangeAt(0);
-                if (editable.contains(range.startContainer) && editable.contains(range.endContainer)) {
-                    hasSelectionRange = true;
-                    isCollapsed = range.collapsed;
-
-                    try {
-                        const preRange = document.createRange();
-                        preRange.setStart(editable, 0);
-                        preRange.setEnd(range.startContainer, range.startOffset);
-                        leftText = preRange.toString();
-
-                        const postRange = document.createRange();
-                        postRange.setStart(range.endContainer, range.endOffset);
-                        postRange.setEnd(editable, editable.childNodes.length);
-                        rightText = postRange.toString();
-                    } catch (err) {
-                        hasSelectionRange = false;
-                    }
-                }
-            }
-
-            if (!hasSelectionRange) {
-                leftText = editable.innerText;
-                rightText = '';
-                isCollapsed = true;
-            }
-
-            const cleanLeft = leftText.trimEnd();
-            const cleanRight = rightText.trimStart();
+            const split = this.getCaretSplitText(editable);
+            const { cleanLeft, cleanRight, isCollapsed } = split;
 
             // Case B: Cursor at the beginning with no text selection
             if (isCollapsed && cleanLeft === '' && cleanRight !== '') {
@@ -1283,6 +1322,55 @@ class KadhaEditor {
                 this.hideSuggestionPopup();
             }
             return;
+        }
+
+        // ----------------------------------------------------
+        // DIALOGUE SPLITTING (Batch 2D.3 & Batch 2E.2)
+        // ----------------------------------------------------
+        if (currentType === 'dialogue') {
+            const split = this.getCaretSplitText(editable);
+            const { cleanLeft, cleanRight, isCollapsed } = split;
+
+            // Beginning of dialogue with collapsed caret: insert empty dialogue before
+            if (isCollapsed && cleanLeft === '' && cleanRight !== '') {
+                const emptyBlock = this.createElementBlock('dialogue', '');
+                this.pageContainer.insertBefore(emptyBlock, block);
+                document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                block.classList.add('focused');
+                this.activeElementBlock = block;
+                editable.focus();
+                this.setCursorToStart(editable);
+                this.hideSuggestionPopup();
+                this.pushUndoSnapshot(preSnap);
+                this.markDirty();
+                this.calculateLiveStats();
+                return;
+            }
+
+            // Split into two dialogue blocks:
+            // - Middle of dialogue (collapsed or selection)
+            // - Selection at beginning (cleanLeft === '' && cleanRight !== '')
+            if (cleanRight !== '' && (cleanLeft !== '' || !isCollapsed)) {
+                editable.innerText = cleanLeft;
+                const newBlock = this.createElementBlock('dialogue', cleanRight, block);
+                const newEditable = newBlock.querySelector('.element-content:not(.d-none)') || newBlock.querySelector('.element-content');
+                if (newEditable) {
+                    newEditable.focus();
+                    this.setCursorToStart(newEditable);
+                }
+                this.pushUndoSnapshot(preSnap);
+                this.markDirty();
+                this.calculateLiveStats();
+                this.hideSuggestionPopup();
+                return;
+            }
+
+            // End of dialogue (collapsed caret, or selection reaching end of dialogue, or empty dialogue):
+            // If there was a non-collapsed selection reaching the end, delete selected text first
+            if (!isCollapsed) {
+                editable.innerText = cleanLeft;
+            }
+            // Falls through to create new action element after
         }
 
         let nextType = 'action';
@@ -2083,7 +2171,11 @@ class KadhaEditor {
                 }
             } else if (type === 'note') {
                 const contentEl = block.querySelector('.element-content');
-                content = contentEl ? contentEl.innerText.replace(/\r\n/g, '\n').trimEnd() : '';
+                let rawText = contentEl ? contentEl.innerText.replace(/\r\n/g, '\n') : '';
+                if (rawText.endsWith('\n\n')) {
+                    rawText = rawText.slice(0, -1);
+                }
+                content = rawText;
             } else if (type === 'shot' && block.classList.contains('sequence-shot-heading')) {
                 const numSpan = block.querySelector('.sequence-shot-number');
                 const intextSel = block.querySelector('.heading-intext-select');
@@ -7004,7 +7096,7 @@ class KadhaEditor {
             }
         }
 
-                const isLocationInput = targetEditable.tagName === 'INPUT' || targetEditable.tagName === 'TEXTAREA' || targetEditable.classList.contains('heading-location-input');
+        const isLocationInput = targetEditable.tagName === 'INPUT' || targetEditable.tagName === 'TEXTAREA' || targetEditable.classList.contains('heading-location-input');
         const isSingleLine = !externalText.includes('\n');
 
         // Check if external text qualifies for structural screenplay parsing:
@@ -7185,7 +7277,7 @@ class KadhaEditor {
             }
         }
 
-// Insert clean plain text at current caret position
+        // Insert clean plain text at current caret position
         this.insertPlainTextAtCaret(targetEditable, externalText, isTargetAlreadyFocused);
 
         this.pushUndoSnapshot(preSnap);

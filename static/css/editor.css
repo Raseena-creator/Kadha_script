@@ -614,6 +614,8 @@
 .script-element-block[data-type="action"] .element-content {
     font-weight: 400;
     color: #1a1918;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* 3. Character */
@@ -650,6 +652,8 @@
 .script-element-block[data-type="dialogue"] .element-content {
     font-weight: 400;
     color: #1a1918;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* 6. Transition */
@@ -1380,6 +1384,8 @@ body.editor-edit-mode #btnExitEditMode {
 .read-element-block.element-type-action .element-content {
     font-weight: 400;
     color: #1a1918;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .read-element-block.element-type-character {
@@ -1416,6 +1422,8 @@ body.editor-edit-mode #btnExitEditMode {
 .read-element-block.element-type-dialogue .element-content {
     font-weight: 400;
     color: #1a1918;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .read-element-block.element-type-transition {
