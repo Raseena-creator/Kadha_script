@@ -328,14 +328,17 @@ class KadhaEditor {
         let trimmed = text.trim();
         if (!trimmed) return '';
 
-        // Strip any existing outer parentheses (including multiples or unmatched)
-        while (trimmed.startsWith('(') && trimmed.endsWith(')') && trimmed.length >= 2) {
+        // Strip any existing outer parentheses or square brackets (including multiples or unmatched)
+        while (
+            ((trimmed.startsWith('(') && trimmed.endsWith(')')) || (trimmed.startsWith('[') && trimmed.endsWith(']')))
+            && trimmed.length >= 2
+        ) {
             trimmed = trimmed.slice(1, -1).trim();
         }
-        if (trimmed.startsWith('(')) {
+        if (trimmed.startsWith('(') || trimmed.startsWith('[')) {
             trimmed = trimmed.slice(1).trim();
         }
-        if (trimmed.endsWith(')')) {
+        if (trimmed.endsWith(')') || trimmed.endsWith(']')) {
             trimmed = trimmed.slice(0, -1).trim();
         }
 
@@ -597,7 +600,7 @@ class KadhaEditor {
             if (trimmed === 'SONG BEGINS' || trimmed === 'MONTAGE BEGINS') {
                 block.classList.add('sequence-marker', 'sequence-marker-start');
                 block.dataset.sequenceType = trimmed.startsWith('SONG') ? 'song' : 'montage';
-                tag.innerText = 'Sequence';
+                tag.innerText = trimmed.startsWith('SONG') ? 'Song Sequence' : 'Montage';
 
                 const editable = document.createElement('div');
                 editable.className = 'element-content font-screenplay font-malayalam';
@@ -5994,6 +5997,514 @@ class KadhaEditor {
     }
 
     // ----------------------------------------------------
+    // SCREENPLAY TEXT PARSER (Batch 2D - Isolated Utility)
+    // ----------------------------------------------------
+    parseScreenplayText(text, customCharacters = null) {
+        if (!text || typeof text !== 'string') return [];
+
+        const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        if (!normalized.trim()) return [];
+
+        // Build set of known character names
+        const rawChars = customCharacters || this.characters || [];
+        const knownCharSet = new Set();
+        const knownCharSetLower = new Set();
+        rawChars.forEach(c => {
+            const name = typeof c === 'string' ? c.trim() : (c && c.name ? String(c.name).trim() : '');
+            if (name) {
+                knownCharSet.add(name);
+                knownCharSetLower.add(name.toLowerCase());
+            }
+        });
+
+        const sluglineRegex = /^\s*(?:SCENE\s+\d+[:\s—\-]+)?(INT\.?\/EXT\.?|EXT\.?\/INT\.?|INT\.?|EXT\.?|INTERIOR|EXTERIOR|I\/E\.?)\b/i;
+        const transitionExact = new Set([
+            'CUT TO:', 'FADE IN:', 'FADE OUT:', 'DISSOLVE TO:',
+            'SMASH CUT TO:', 'MATCH CUT TO:', 'INTERCUT', 'CUT BACK TO:',
+            'FADE TO BLACK:', 'FADE TO BLACK.', 'BACK TO SCENE:',
+            'CUT TO', 'FADE IN', 'FADE OUT', 'DISSOLVE TO', 'INTERCUT:',
+            'FADE OUT.', 'FADE IN.', 'CUT TO.', 'DISSOLVE TO.'
+        ]);
+        const seqMarkerExact = new Set([
+            'SONG BEGINS', 'MONTAGE BEGINS', 'SONG ENDS', 'MONTAGE ENDS',
+            'SONG BEGINS:', 'MONTAGE BEGINS:', 'SONG ENDS:', 'MONTAGE ENDS:'
+        ]);
+        const numberedShotRegex = /^\s*(\d+)\.\s+(INT\.?\/EXT\.?|EXT\.?\/INT\.?|INT\.?|EXT\.?|INTERIOR|EXTERIOR|I\/E\.?)\b/i;
+
+        const formatParen = (p) => {
+            if (typeof this.formatParenthetical === 'function') {
+                return this.formatParenthetical(p);
+            }
+            let trimmed = (p || '').trim();
+            while ((trimmed.startsWith('(') && trimmed.endsWith(')')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                trimmed = trimmed.slice(1, -1).trim();
+            }
+            return trimmed ? `(${trimmed})` : '';
+        };
+
+        const isExplicitParenthetical = (str) => {
+            if (!str) return false;
+            const t = str.trim();
+            return (t.startsWith('(') && t.endsWith(')') && t.length >= 2) ||
+                   (t.startsWith('[') && t.endsWith(']') && t.length >= 2);
+        };
+
+        // Direction words / participles that can act as parentheticals without parentheses
+        const isBareParentheticalWord = (str) => {
+            if (!str) return false;
+            const t = str.trim();
+            if (t.length === 0 || t.length > 35) return false;
+            if (/[.?!;]$/.test(t)) return false;
+            // Malayalam direction patterns: -ത്തോടെ, -കൊണ്ട്, -ആയി, നിശബ്ദത, etc.
+            if (/[\u0D00-\u0D7F]/.test(t)) {
+                return /(?:ത്തോടെ|ത്തോട്|കൊണ്ട്|ക്കൊണ്ട്|ആയി|നിശബ്ദത|ഇടവേള|ചിരിയോടെ|ദേഷ്യത്തോടെ|കരച്ചിലോടെ|സംശയത്തോടെ|സ്നേഹത്തോടെ|ഭയത്തോടെ|സങ്കടത്തോടെ|ആശ്ചര്യത്തോടെ|ചിരിച്ചുകൊണ്ട്|കരഞ്ഞുകൊണ്ട്|മന്ത്രിച്ചുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|ഓർത്തു)$/.test(t);
+            }
+            // English direction patterns: participles ending in -ing, beat, pause, softly, etc.
+            const lower = t.toLowerCase();
+            const knownEnglishDirections = new Set([
+                'beat', 'pause', 'whispering', 'smiling', 'laughing', 'crying', 'sighs', 'sighing',
+                'softly', 'gently', 'angrily', 'quietly', 'loudly', 'shouting', 'screaming',
+                'hesitant', 'sarcastic', 'surprised', 'confused', 'nodding', 'looking up',
+                'looking away', 'turning', 'turning around', 'to himself', 'to herself',
+                'into phone', 'over phone', 'continuing', 'stopping'
+            ]);
+            if (knownEnglishDirections.has(lower)) return true;
+            if (/^[a-z]+ing$/i.test(t) && t.length <= 20) return true;
+            return false;
+        };
+
+        const isDisallowedForCharacter = (clean) => {
+            if (!clean || clean.length === 0 || clean.length > 40) return true;
+            if (sluglineRegex.test(clean)) return true;
+            if (transitionExact.has(clean.toUpperCase()) || clean.toUpperCase().endsWith(' TO:')) return true;
+            if (seqMarkerExact.has(clean.toUpperCase()) || numberedShotRegex.test(clean)) return true;
+            if (/^\s*\d+[\.\)]\s+/.test(clean)) return true;
+            if (isExplicitParenthetical(clean)) return true;
+            if (clean.startsWith('[[') && clean.endsWith(']]')) return true;
+            if (/^(CHAPTER|PART|ACT|SCENE)\b/i.test(clean)) return true;
+            if (/^(NOTE|NOTICE|WARNING|CAUTION)\b/i.test(clean)) return true;
+            return false;
+        };
+
+        const isNarrativeReporting = (str) => {
+            if (!str) return false;
+            return /(?:said|asked|replied|shouted|whispered|screamed|told|continued|added|yelled|cried)\b/i.test(str) ||
+                   /(?:ചോദിച്ചു|പറഞ്ഞു|തുടങ്ങി|വിളിച്ചു|ഓർത്തു|നോക്കി|നടന്നു|കണ്ടു|നിന്നു|പോയി|വന്നു|ഉത്തരം നൽകി|മറുപടി നൽകി|അറിയിച്ചു)$/.test(str.trim());
+        };
+
+        const isCharacterExtension = (bracketContent) => {
+            if (!bracketContent) return false;
+            let inner = bracketContent.replace(/^[(\[]|[)\]]$/g, '').trim().toUpperCase();
+            const knownExtensions = new Set([
+                'V.O.', 'VO', 'V.O', 'O.S.', 'OS', 'O.S', 'O.C.', 'OC',
+                "CONT'D", 'CONTD', 'CONTINUED',
+                'ON PHONE', 'OVER PHONE', 'INTO PHONE', 'PHONE',
+                'FILTERED', 'PRE-LAP', 'OFF-SCREEN', 'OFF SCREEN',
+                'IN BACKGROUND', 'UNDER BREATH'
+            ]);
+            if (knownExtensions.has(inner)) return true;
+            let innerRaw = bracketContent.replace(/^[(\[]|[)\]]$/g, '').trim();
+            if (/^(?:വോയ്സ്\s*ഓവർ|വോയിസ്\s*ഓവർ|ഫോണിൽ|ശബ്ദം|തുടരുന്നു|തുടർന്ന്|ഓഫ്\s*സ്ക്രീൻ)$/.test(innerRaw)) {
+                return true;
+            }
+            return false;
+        };
+
+        const isNarrativeActionLine = (str) => {
+            if (!str) return false;
+            const t = str.trim();
+            if (t.length === 0) return false;
+
+            // Common English narrative starters
+            if (/^(?:The|A|An|He|She|They|It|His|Her|Their)\s+[A-Za-z]/i.test(t)) {
+                return true;
+            }
+
+            // Malayalam narrative starters: അവൻ, അവൾ, അവർ, അയാൾ, ഇത്, അത്, etc.
+            if (/^(?:അവൻ|അവൾ|അവർ|അയാൾ|ഇവൻ|ഇവൾ|ഇവർ|ആ|ഈ)\s+/i.test(t)) {
+                return true;
+            }
+
+            // Malayalam narrative action endings (verbs in present/past tense)
+            if (/(?:നടക്കുന്നു|നോക്കുന്നു|പോകുന്നു|വരുന്നു|ഇരിക്കുന്നു|നിൽക്കുന്നു|തുടങ്ങുന്നു|എടുക്കുന്നു|കൊടുക്കുന്നു|തുറക്കുന്നു|അടയ്ക്കുന്നു|ചിരിക്കുന്നു|കരയുന്നു|ഓടുന്നു|നടന്നു|നോക്കി|പോയി|വന്നു|ഇരുന്നു|നിന്നു|കണ്ടു|തുറന്നു|അടച്ചു|ചിരിച്ചു|കരഞ്ഞു|ഓടി|എടുത്തു|കൊടുത്തു|പറഞ്ഞു|ചോദിച്ചു)\.?$/.test(t)) {
+                return true;
+            }
+
+            // English sentences with action verbs ending in sentence punctuation
+            if (/[.?!]$/.test(t)) {
+                if (/\b(?:walks|walked|steps|stepped|turns|turned|looks|looked|runs|ran|opens|opened|closes|closed|sits|sat|stands|stood|takes|took|moves|moved|enters|entered|leaves|left|picks|picked|drops|dropped|stares|stared|smiles|smiled|cries|cried|screams|screamed|shouts|shouted|gazes|gazed|approaches|approached)\b/i.test(t)) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        const extractBaseName = (clean) => {
+            if (!clean) return '';
+            let withoutColon = clean.replace(/:$/, '').trim();
+            let baseName = withoutColon.replace(/\s*\([^)]*\)\s*$/, '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+            return baseName;
+        };
+
+        const isPlausibleCharacterCandidate = (rawText) => {
+            if (!rawText) return false;
+            let clean = rawText.trim();
+            if (isDisallowedForCharacter(clean)) return false;
+
+            let withoutColon = clean.replace(/:$/, '').trim();
+            let baseName = extractBaseName(withoutColon);
+            if (!baseName || baseName.length > 40) return false;
+            if (/[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) return false;
+
+            // Disallow common document, email, and meeting prefixes
+            if (/^(agenda|meeting|subject|topic|item|chapter|part|act|section|notice|warning|rule|step|instruction|summary|email|from|to|date|time|location|project|status|review|notes?|tasks?)\b/i.test(baseName)) {
+                return false;
+            }
+            if (/^(അധ്യായം|ഭാഗം|കുറിപ്പ്|വിഷയം|തീരുമാനം)\b/.test(baseName)) {
+                return false;
+            }
+
+            const words = baseName.split(/\s+/).filter(Boolean);
+            if (words.length > 4) return false;
+
+            // Malayalam candidate: 1-4 words, Malayalam script
+            if (/[\u0D00-\u0D7F]/.test(baseName)) {
+                return true;
+            }
+
+            // English candidate
+            const hasLetters = /[A-Za-z]/.test(baseName);
+            if (!hasLetters) return false;
+
+            // English ALL-CAPS: e.g. "JOHN", "OFFICER 1"
+            const isAllUpper = baseName === baseName.toUpperCase() && !/[a-z]/.test(baseName);
+            if (isAllUpper) return true;
+
+            // English Title Case / Capitalized: each word must start with an uppercase letter
+            // Disallow lowercase words like "agenda for tomorrow"
+            const isTitleCased = words.every(w => /^[A-Z]/.test(w) || /^(of|the|de|van|von|la|bin|al)$/i.test(w));
+            if (isTitleCased && /^[A-Z]/.test(words[0])) {
+                if (/^(Then|Suddenly|After|Meanwhile|However|Because|Although|When|While|And|But|So|There|Here)\b/i.test(baseName)) {
+                    return false;
+                }
+                return true;
+            }
+
+            return false;
+        };
+
+        // Tokenize raw lines while expanding inline "CHARACTER: DIALOGUE" lines if appropriate
+        const rawLines = normalized.split('\n');
+        const lines = [];
+        let hadBlank = true;
+
+        for (let idx = 0; idx < rawLines.length; idx++) {
+            const raw = rawLines[idx].trim();
+            if (raw === '') {
+                hadBlank = true;
+                continue;
+            }
+
+            // Check for inline "CHARACTER: DIALOGUE" (e.g. "രാഹുൽ: നീ എവിടെ പോകുന്നു?" or "JOHN: What are you doing?")
+            const inlineColonMatch = raw.match(/^([^\n:]{1,35}):\s+(.+)$/);
+            if (inlineColonMatch &&
+                !sluglineRegex.test(raw) &&
+                !transitionExact.has(raw.toUpperCase()) &&
+                !seqMarkerExact.has(raw.toUpperCase()) &&
+                !numberedShotRegex.test(raw) &&
+                !/^\s*\d+[\.\)]\s+/.test(raw) &&
+                !raw.startsWith('[[') &&
+                !/^(https?|ftp|mailto):/i.test(raw)) {
+
+                const possibleName = inlineColonMatch[1].trim();
+                const possibleDialogue = inlineColonMatch[2].trim();
+
+                if (isPlausibleCharacterCandidate(possibleName)) {
+                    lines.push({ text: possibleName, afterBlank: hadBlank });
+                    lines.push({ text: possibleDialogue, afterBlank: false });
+                    hadBlank = false;
+                    continue;
+                }
+            }
+
+            lines.push({ text: raw, afterBlank: hadBlank });
+            hadBlank = false;
+        }
+
+        if (lines.length === 0) return [];
+
+        // Discovery Pass: multi-pass discovery of character cues in the input text
+        const discoveredCharSet = new Set();
+        const discoveredCharSetLower = new Set();
+
+        const addDiscoveredChar = (name) => {
+            if (!name) return;
+            const clean = name.trim();
+            if (clean.length > 0 && clean.length <= 40) {
+                discoveredCharSet.add(clean);
+                discoveredCharSetLower.add(clean.toLowerCase());
+            }
+        };
+
+        for (let idx = 0; idx < lines.length; idx++) {
+            const curText = lines[idx].text;
+            if (isDisallowedForCharacter(curText)) continue;
+
+            let withoutColon = curText.replace(/:$/, '').trim();
+            let baseName = extractBaseName(curText);
+            if (!baseName || /[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) continue;
+
+            // 1. Explicit known character
+            if (knownCharSet.has(baseName) || knownCharSetLower.has(baseName.toLowerCase())) {
+                addDiscoveredChar(baseName);
+                continue;
+            }
+
+            // 2. Character extension
+            if (/\((?:V\.O\.|O\.S\.|CONT'D|ON PHONE|OFF SCREEN)\)/i.test(withoutColon) ||
+                /\((?:വോയ്സ്\s*ഓവർ|ഫോണിൽ|ശബ്ദം)\)/i.test(withoutColon)) {
+                addDiscoveredChar(baseName);
+                continue;
+            }
+
+            // Must be plausible character candidate
+            if (!isPlausibleCharacterCandidate(curText)) continue;
+
+            // 3. Followed by next non-empty element
+            const nextObj = idx + 1 < lines.length ? lines[idx + 1] : null;
+            if (nextObj) {
+                const nextT = nextObj.text;
+
+                // Parenthetical follower
+                if (isExplicitParenthetical(nextT) || isBareParentheticalWord(nextT)) {
+                    addDiscoveredChar(baseName);
+                    continue;
+                }
+
+                // Trailing colon
+                if (curText.endsWith(':')) {
+                    addDiscoveredChar(baseName);
+                    continue;
+                }
+
+                // Standalone plausible character cue followed by plausible dialogue line
+                if (!isDisallowedForCharacter(nextT)) {
+                    addDiscoveredChar(baseName);
+                    continue;
+                }
+            }
+        }
+
+        const isCharacterLine = (line, nextLine) => {
+            if (!line) return false;
+            let clean = line.trim();
+            if (isDisallowedForCharacter(clean)) return false;
+
+            let withoutColon = clean.replace(/:$/, '').trim();
+            let baseName = extractBaseName(clean);
+            if (!baseName || /[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) return false;
+
+            // 1. Matches known or discovered character
+            if (knownCharSet.has(baseName) || knownCharSetLower.has(baseName.toLowerCase()) ||
+                discoveredCharSet.has(baseName) || discoveredCharSetLower.has(baseName.toLowerCase())) {
+                return true;
+            }
+
+            // 2. Extension match
+            if (/\((?:V\.O\.|O\.S\.|CONT'D|ON PHONE|OFF SCREEN)\)/i.test(withoutColon) ||
+                /\((?:വോയ്സ്\s*ഓവർ|ഫോണിൽ|ശബ്ദം)\)/i.test(withoutColon)) {
+                return true;
+            }
+
+            // Must be plausible character candidate
+            if (!isPlausibleCharacterCandidate(clean)) return false;
+
+            // 3. Trailing colon
+            if (clean.endsWith(':') && nextLine && !isDisallowedForCharacter(nextLine)) {
+                return true;
+            }
+
+            // 4. Followed by parenthetical or dialogue
+            if (nextLine && (isExplicitParenthetical(nextLine) || isBareParentheticalWord(nextLine) || !isDisallowedForCharacter(nextLine))) {
+                return true;
+            }
+
+            return false;
+        };
+
+        const elements = [];
+        let i = 0;
+
+        while (i < lines.length) {
+            const lineObj = lines[i];
+            const text = lineObj.text;
+            const uc = text.toUpperCase();
+            const nextLineObj = i + 1 < lines.length ? lines[i + 1] : null;
+            const nextText = nextLineObj ? nextLineObj.text : null;
+
+            // 1. Note: [[ ... ]]
+            if (text.startsWith('[[') && text.endsWith(']]')) {
+                elements.push({ type: 'note', content: text.slice(2, -2).trim() });
+                i++;
+                continue;
+            }
+
+            // 2. Sequence markers: SONG BEGINS, MONTAGE BEGINS, etc.
+            if (seqMarkerExact.has(uc)) {
+                elements.push({ type: 'shot', content: uc.replace(':', '').trim() });
+                i++;
+                continue;
+            }
+
+            // 3. Numbered shots: 1. INT. LOCATION - DAY
+            if (numberedShotRegex.test(text)) {
+                elements.push({ type: 'shot', content: text });
+                i++;
+                continue;
+            }
+
+            // 4. Scene heading / Slugline
+            if (sluglineRegex.test(text)) {
+                elements.push({ type: 'scene_heading', content: text });
+                i++;
+                continue;
+            }
+
+            // 5. Transition: CUT TO:, FADE OUT., etc.
+            if (transitionExact.has(uc) || (uc.endsWith(' TO:') && uc.length <= 35)) {
+                elements.push({ type: 'transition', content: text });
+                i++;
+                continue;
+            }
+
+            // 6. Character line followed by dialogue / parenthetical
+            if (isCharacterLine(text, nextText)) {
+                let cleanCharName = text.replace(/:$/, '').trim();
+                const bracketMatch = cleanCharName.match(/^(.+?)\s*(\([^)\]]+\)|\[[^)\]]+\])\s*$/);
+                if (bracketMatch) {
+                    const charPart = bracketMatch[1].trim();
+                    const bracketPart = bracketMatch[2].trim();
+                    if (isCharacterExtension(bracketPart)) {
+                        elements.push({ type: 'character', content: `${charPart} ${bracketPart}` });
+                    } else {
+                        elements.push({ type: 'character', content: charPart });
+                        elements.push({ type: 'parenthetical', content: formatParen(bracketPart) });
+                    }
+                    addDiscoveredChar(extractBaseName(charPart));
+                } else {
+                    elements.push({ type: 'character', content: cleanCharName });
+                    let base = extractBaseName(cleanCharName);
+                    addDiscoveredChar(base);
+                }
+                i++;
+
+                // Optional parenthetical immediately following character
+                while (i < lines.length) {
+                    const candidateParen = lines[i].text;
+                    const nextAfterParen = i + 1 < lines.length ? lines[i + 1].text : null;
+                    if (isExplicitParenthetical(candidateParen)) {
+                        elements.push({ type: 'parenthetical', content: formatParen(candidateParen) });
+                        i++;
+                    } else if (nextAfterParen && isBareParentheticalWord(candidateParen)) {
+                        elements.push({ type: 'parenthetical', content: formatParen(candidateParen) });
+                        i++;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Following line(s) are dialogue
+                const dialogueLines = [];
+                while (i < lines.length) {
+                    const dLine = lines[i].text;
+                    const dUc = dLine.toUpperCase();
+                    const dNext = i + 1 < lines.length ? lines[i + 1].text : null;
+
+                    // Stop condition: next element is heading, sequence marker, transition, or new character
+                    if (sluglineRegex.test(dLine) || seqMarkerExact.has(dUc) ||
+                        transitionExact.has(dUc) || (dUc.endsWith(' TO:') && dUc.length <= 35) ||
+                        numberedShotRegex.test(dLine) || isCharacterLine(dLine, dNext)) {
+                        break;
+                    }
+
+                    // Parenthetical inside dialogue block
+                    if (isExplicitParenthetical(dLine)) {
+                        if (dialogueLines.length > 0) {
+                            elements.push({ type: 'dialogue', content: dialogueLines.join('\n') });
+                            dialogueLines.length = 0;
+                        }
+                        elements.push({ type: 'parenthetical', content: formatParen(dLine) });
+                        i++;
+                        continue;
+                    } else if (dNext && isBareParentheticalWord(dLine)) {
+                        if (dialogueLines.length > 0) {
+                            elements.push({ type: 'dialogue', content: dialogueLines.join('\n') });
+                            dialogueLines.length = 0;
+                        }
+                        elements.push({ type: 'parenthetical', content: formatParen(dLine) });
+                        i++;
+                        continue;
+                    }
+
+                    // Stop condition on blank line: blank line indicates end of this dialogue turn
+                    if (lines[i].afterBlank && dialogueLines.length > 0) {
+                        break;
+                    }
+
+                    // Stop condition on action narrative sentence following dialogue
+                    if (dialogueLines.length > 0 && isNarrativeActionLine(dLine)) {
+                        break;
+                    }
+
+                    dialogueLines.push(dLine);
+                    i++;
+                }
+
+                if (dialogueLines.length > 0) {
+                    elements.push({ type: 'dialogue', content: dialogueLines.join('\n') });
+                }
+                continue;
+            }
+
+            // 7. Isolated parenthetical
+            if (isExplicitParenthetical(text)) {
+                const lastType = elements.length > 0 ? elements[elements.length - 1].type : null;
+                if (lastType === 'character' || lastType === 'dialogue') {
+                    elements.push({ type: 'parenthetical', content: formatParen(text) });
+                    i++;
+                    continue;
+                }
+            }
+
+            // 8. Action: collect consecutive action lines within paragraph
+            const actionLines = [text];
+            i++;
+            while (i < lines.length) {
+                if (lines[i].afterBlank) {
+                    break;
+                }
+                const aLine = lines[i].text;
+                const aUc = aLine.toUpperCase();
+                const aNext = i + 1 < lines.length ? lines[i + 1].text : null;
+
+                if (sluglineRegex.test(aLine) || seqMarkerExact.has(aUc) ||
+                    transitionExact.has(aUc) || (aUc.endsWith(' TO:') && aUc.length <= 35) ||
+                    numberedShotRegex.test(aLine) || isCharacterLine(aLine, aNext) ||
+                    (aLine.startsWith('[[') && aLine.endsWith(']]'))) {
+                    break;
+                }
+                actionLines.push(aLine);
+                i++;
+            }
+
+            elements.push({ type: 'action', content: actionLines.join('\n') });
+        }
+
+        return elements;
+    }
+
+    // ----------------------------------------------------
     // SEMANTIC CLIPBOARD & FULL SCENE COPY ENGINE (Batch 1)
     // ----------------------------------------------------
     bindClipboardEvents() {
@@ -6417,7 +6928,7 @@ class KadhaEditor {
         }
 
         // ----------------------------------------------------
-        // BRANCH 2: EXTERNAL CLIPBOARD (PLAIN TEXT ONLY)
+        // BRANCH 2: EXTERNAL CLIPBOARD
         // ----------------------------------------------------
         let externalText = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
         if (!externalText) {
@@ -6427,7 +6938,7 @@ class KadhaEditor {
 
         const preSnap = this.captureSnapshot();
 
-        // Intercept external paste - treat purely as plain text
+        // Intercept external paste
         e.preventDefault();
 
         // Normalize line breaks: CRLF and CR -> LF
@@ -6493,7 +7004,188 @@ class KadhaEditor {
             }
         }
 
-        // Insert clean plain text at current caret position
+                const isLocationInput = targetEditable.tagName === 'INPUT' || targetEditable.tagName === 'TEXTAREA' || targetEditable.classList.contains('heading-location-input');
+        const isSingleLine = !externalText.includes('\n');
+
+        // Check if external text qualifies for structural screenplay parsing:
+        // 1. Must be in a screenplay element (not input/location field)
+        // 2. Must be multiline text
+        if (!isLocationInput && !isSingleLine) {
+            let parsedElements = [];
+            try {
+                parsedElements = this.parseScreenplayText(externalText);
+            } catch (err) {
+                parsedElements = [];
+            }
+
+            // Must contain at least one screenplay-specific element (not merely action/prose)
+            const hasScreenplayElements = parsedElements && parsedElements.length > 0 &&
+                                          parsedElements.some(el => el && el.type && el.type !== 'action');
+
+            const VALID_TYPES = new Set(['scene_heading', 'action', 'character', 'dialogue', 'parenthetical', 'transition', 'shot', 'note']);
+            const isValidPlan = hasScreenplayElements && parsedElements.every(el => el && el.type && VALID_TYPES.has(el.type));
+
+            if (isValidPlan) {
+                const isSequenceScene = !!this.currentSceneIsSequence;
+                const headingElements = parsedElements.filter(e => e.type === 'scene_heading');
+                const hasMultipleHeadings = headingElements.length > 1;
+
+                let updatedSceneHeading = false;
+                const elementsToInsert = [];
+
+                for (let idx = 0; idx < parsedElements.length; idx++) {
+                    const el = parsedElements[idx];
+                    let type = el.type || 'action';
+                    let content = el.content || '';
+
+                    // Context Safety 1: Sequence markers and sequence shots in ordinary scenes
+                    if (!isSequenceScene && type === 'shot') {
+                        const trimmedShot = (content || '').trim().toUpperCase();
+                        if (trimmedShot === 'SONG BEGINS' || trimmedShot === 'MONTAGE BEGINS' ||
+                            trimmedShot === 'SONG ENDS' || trimmedShot === 'MONTAGE ENDS' ||
+                            /^\s*\d+\.\s+/.test(content)) {
+                            type = 'action';
+                        }
+                    }
+
+                    // Context Safety 2: Scene Headings
+                    if (type === 'scene_heading') {
+                        if (isSequenceScene) {
+                            type = 'action';
+                        } else if (hasMultipleHeadings) {
+                            type = 'action';
+                        } else {
+                            const existingHeadingBlock = this.pageContainer.querySelector('.script-element-block[data-type="scene_heading"]');
+                            if (existingHeadingBlock) {
+                                const locInp = existingHeadingBlock.querySelector('.heading-location-input');
+                                const intextSel = existingHeadingBlock.querySelector('.heading-intext-select');
+                                const timeSel = existingHeadingBlock.querySelector('.heading-time-select');
+                                const ed = existingHeadingBlock.querySelector('.element-content');
+
+                                if (locInp && (!locInp.value.trim() || locInp.value.trim() === 'LOCATION') && idx === 0) {
+                                    const parsed = this.parseHeading(content);
+                                    if (intextSel) intextSel.value = parsed.intext;
+                                    if (locInp) locInp.value = parsed.location;
+                                    if (timeSel) timeSel.value = parsed.time;
+                                    if (ed) ed.innerText = this.buildHeading(parsed.intext, parsed.location, parsed.time);
+                                    this.currentSceneHeading = ed ? ed.innerText : content;
+                                    updatedSceneHeading = true;
+                                    continue;
+                                } else {
+                                    type = 'action';
+                                }
+                            }
+                        }
+                    }
+
+                    elementsToInsert.push({ type, content });
+                }
+
+                if (elementsToInsert.length === 0 && updatedSceneHeading) {
+                    this.pushUndoSnapshot(preSnap);
+                    this.markDirty();
+                    this.calculateLiveStats();
+                    return;
+                }
+
+                if (elementsToInsert.length > 0) {
+                    let targetBlock = targetEditable.closest('.script-element-block');
+                    if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
+                        targetBlock = this.activeElementBlock || this.pageContainer.lastElementChild;
+                    }
+
+                    let shouldReplaceTarget = false;
+                    if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
+                        const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+                        if (ed && ed.innerText.trim() === '') {
+                            shouldReplaceTarget = true;
+                        }
+                    }
+
+                    let insertAnchor = targetBlock;
+                    if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
+                        insertAnchor = targetBlock.previousElementSibling;
+                    }
+
+                    const targetBlockNextSibling = shouldReplaceTarget && targetBlock ? targetBlock.nextSibling : null;
+                    let targetBlockRemoved = false;
+
+                    let currentAnchor = insertAnchor;
+                    let firstInserted = null;
+                    let lastInserted = null;
+                    const insertedBlocks = [];
+
+                    try {
+                        for (let k = 0; k < elementsToInsert.length; k++) {
+                            const item = elementsToInsert[k];
+                            let cType = item.type || 'action';
+                            let cContent = item.content || '';
+                            if (cType === 'parenthetical') {
+                                cContent = this.formatParenthetical(cContent);
+                            }
+                            const newBlock = this.createElementBlock(cType, cContent, currentAnchor);
+                            insertedBlocks.push(newBlock);
+                            if (!firstInserted) firstInserted = newBlock;
+                            lastInserted = newBlock;
+                            currentAnchor = newBlock;
+                        }
+
+                        if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
+                            targetBlock.remove();
+                            targetBlockRemoved = true;
+                        }
+
+                        if (lastInserted) {
+                            const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
+                            if (lastEd) {
+                                lastEd.focus();
+                                this.setCursorToEnd(lastEd);
+                            }
+                            document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                            lastInserted.classList.add('focused');
+                            this.activeElementBlock = lastInserted;
+                            this.updateActiveToolbarButton(lastInserted.dataset.type);
+                            if (this.currentTypeEl) {
+                                this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
+                            }
+                        }
+
+                        this.pushUndoSnapshot(preSnap);
+                        this.markDirty();
+                        this.calculateLiveStats();
+                        return;
+                    } catch (insertionErr) {
+                        // Rollback any partially inserted blocks
+                        insertedBlocks.forEach(b => {
+                            if (b && b.parentNode) b.remove();
+                        });
+
+                        // Restore original destination block if it was removed
+                        if (targetBlockRemoved && targetBlock && !targetBlock.parentNode) {
+                            if (targetBlockNextSibling && targetBlockNextSibling.parentNode === this.pageContainer) {
+                                this.pageContainer.insertBefore(targetBlock, targetBlockNextSibling);
+                            } else {
+                                this.pageContainer.appendChild(targetBlock);
+                            }
+                            document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                            targetBlock.classList.add('focused');
+                            this.activeElementBlock = targetBlock;
+                            if (targetEditable) {
+                                targetEditable.focus();
+                                this.setCursorToEnd(targetEditable);
+                            }
+                            this.updateActiveToolbarButton(targetBlock.dataset.type);
+                            if (this.currentTypeEl) {
+                                this.currentTypeEl.innerText = this.formatTypeLabel(targetBlock.dataset.type);
+                            }
+                        }
+                        // Fall back to clean inline plain-text paste below
+                    }
+                }
+            }
+        }
+
+// Insert clean plain text at current caret position
         this.insertPlainTextAtCaret(targetEditable, externalText, isTargetAlreadyFocused);
 
         this.pushUndoSnapshot(preSnap);
@@ -6741,18 +7433,12 @@ class KadhaEditor {
             }
         }
 
-        // Check if any block in the entire scene has ended
-        const sceneHasEnd = blocks.some(b => {
-            const c = (b.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
-            return b.classList.contains('sequence-marker-end') || c === 'SONG ENDS' || c === 'MONTAGE ENDS';
-        });
-
         return {
             inSequence: inSequence && !hasEnded,
             type: sequenceType || (this.currentSceneSequenceType || 'song'),
             startBlock,
             shotCount,
-            hasEnded: hasEnded || sceneHasEnd,
+            hasEnded: hasEnded,
             isSequenceScene: Boolean(this.currentSceneIsSequence || startBlock)
         };
     }
@@ -6809,6 +7495,23 @@ class KadhaEditor {
         const blocks = Array.from(this.pageContainer.querySelectorAll('.script-element-block'));
         let inSeq = Boolean(this.currentSceneIsSequence);
         let counter = 1;
+
+        const montageBlocks = blocks.filter(b => {
+            if (b.dataset.type !== 'shot') return false;
+            const c = (b.querySelector('.element-content')?.innerText || '').trim().toUpperCase();
+            return c === 'MONTAGE BEGINS' || (b.classList.contains('sequence-marker-start') && (b.dataset.sequenceType === 'montage' || c.includes('MONTAGE')));
+        });
+        const totalMontages = montageBlocks.length;
+        const ordinals = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth'];
+
+        montageBlocks.forEach((mBlock, idx) => {
+            const tag = mBlock.querySelector('.element-type-tag');
+            const label = totalMontages > 1 ? `${ordinals[idx] || (idx + 1)} Montage` : 'Montage';
+            mBlock.dataset.sequenceLabel = label;
+            if (tag) {
+                tag.innerText = label;
+            }
+        });
 
         blocks.forEach(block => {
             const type = block.dataset.type;

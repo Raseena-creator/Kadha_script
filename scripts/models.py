@@ -367,6 +367,43 @@ class Scene(models.Model):
         cleaned = re.sub(r'^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+', '', text.strip(), flags=re.IGNORECASE)
         return cleaned.strip() or text.strip()
 
+    def _get_montage_label(self) -> str:
+        """
+        Calculates the ordinal montage label ('First Montage', 'Second Montage', etc. or 'Montage Sequence').
+        Reuses cached or prefetched scenes when available to prevent repeated N+1 queries.
+        """
+        if hasattr(self, '_cached_montage_label'):
+            return self._cached_montage_label
+
+        label = "Montage Sequence"
+        script = getattr(self, 'script', None)
+        if script and self.script_id:
+            montages = getattr(script, '_cached_active_montages', None)
+            if montages is None:
+                prefetched = getattr(script, '_prefetched_objects_cache', {}).get('scenes')
+                if prefetched is not None:
+                    montages = [
+                        s for s in prefetched
+                        if not s.is_deleted and s.is_sequence and s.sequence_type == 'montage'
+                    ]
+                else:
+                    montages = [
+                        s for s in script.scenes.filter(is_deleted=False).order_by('order', 'id')
+                        if s.is_sequence and s.sequence_type == 'montage'
+                    ]
+                script._cached_active_montages = montages
+
+            if len(montages) > 1:
+                try:
+                    idx = [s.id for s in montages].index(self.id)
+                    ordinals = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"]
+                    label = f"{ordinals[idx]} Montage" if idx < len(ordinals) else f"Montage {idx + 1}"
+                except ValueError:
+                    pass
+
+        self._cached_montage_label = label
+        return label
+
     @property
     def scene_identifier(self) -> str:
         """
@@ -377,7 +414,9 @@ class Scene(models.Model):
         Intercut main scene: 'Scene 2' (retains source scene number without duplicate suffix)
         """
         if self.is_sequence:
-            return "Song Sequence" if self.sequence_type == 'song' else "Montage Sequence"
+            if self.sequence_type == 'montage':
+                return self._get_montage_label()
+            return "Song Sequence"
         if self.is_sub_scene and self.parent_scene:
             base = f"Scene {self.parent_scene.scene_number}.{self.sub_letter}"
             suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
@@ -395,7 +434,9 @@ class Scene(models.Model):
         e.g., 'Scene 1', 'Scene 2A', 'Song Sequence', 'Montage Sequence'
         """
         if self.is_sequence:
-            return "Song Sequence" if self.sequence_type == 'song' else "Montage Sequence"
+            if self.sequence_type == 'montage':
+                return self._get_montage_label()
+            return "Song Sequence"
         if self.is_sub_scene and self.parent_scene:
             base = f"Scene {self.parent_scene.scene_number}{self.sub_letter}"
             suffix = self.duplicate_suffix or (self.parent_scene.duplicate_suffix if not self.is_duplicate else "")
