@@ -266,6 +266,15 @@
 #sequenceDropdownContainer .dropdown-menu {
     z-index: 1060 !important;
 }
+@media (max-width: 576px) {
+    #sequenceDropdownContainer .dropdown-menu,
+    .editor-scene-toolbar-right .dropdown-menu,
+    .editor-toolbar .dropdown-menu {
+        max-width: calc(100vw - 1rem);
+        box-sizing: border-box;
+        word-wrap: break-word;
+    }
+}
 
 /* Topmost Toolbar: Scene Management (Row 1) */
 .editor-toolbar.editor-scene-toolbar {
@@ -1212,34 +1221,37 @@
    ========================================================================== */
 .scene-nav-item {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 8px;
+    row-gap: 1px;
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
 }
 
 .scene-nav-number {
-    display: block;
+    display: inline-block;
     white-space: nowrap;
     font-weight: 700;
     font-size: 12px;
     color: var(--ks-accent, #2A9D8F);
-    line-height: 1.25;
+    line-height: 1.3;
     letter-spacing: 0.2px;
-    width: 100%;
+    flex-shrink: 0;
 }
 
 .scene-nav-location {
-    display: block;
+    display: inline-block;
     font-size: 12px;
     color: #1d1b18;
     font-weight: 700;
     line-height: 1.3;
-    width: 100%;
     word-break: break-word;
     overflow-wrap: anywhere;
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .scene-nav-separator {
@@ -1251,6 +1263,7 @@
     color: #6c757d;
     line-height: 1.35;
     width: 100%;
+    flex-basis: 100%;
     word-break: break-word;
     overflow-wrap: anywhere;
     display: -webkit-box;

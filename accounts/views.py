@@ -29,12 +29,23 @@ def login_view(request):
     if request.method == 'POST':
         form = UserLoginForm(request.POST)
         if form.is_valid():
-            username = form.cleaned_data['username']
+            login_input = form.cleaned_data['username'].strip()
             password = form.cleaned_data['password']
-            user = authenticate(request, username=username, password=password)
+
+            username_to_auth = login_input
+            if '@' in login_input:
+                from django.contrib.auth.models import User
+                try:
+                    user_matched = User.objects.get(email__iexact=login_input)
+                    username_to_auth = user_matched.username
+                except (User.DoesNotExist, User.MultipleObjectsReturned):
+                    username_to_auth = login_input
+
+            user = authenticate(request, username=username_to_auth, password=password)
             if user is not None:
                 login(request, user)
-                messages.success(request, f'Welcome back, {user.username}!')
+                display_name = user.first_name or user.username
+                messages.success(request, f'Welcome back, {display_name}!')
                 next_url = request.GET.get('next') or 'dashboard'
                 return redirect(next_url)
             else:
@@ -85,3 +96,16 @@ def change_password_view(request):
     else:
         form = PasswordChangeForm(request.user)
     return render(request, 'accounts/change_password.html', {'form': form})
+
+import logging
+from django.contrib.auth import views as auth_views
+
+logger = logging.getLogger(__name__)
+
+class CustomPasswordResetView(auth_views.PasswordResetView):
+    def form_valid(self, form):
+        try:
+            return super().form_valid(form)
+        except Exception as e:
+            logger.error("Failed to send password reset email: %s", type(e).__name__)
+            return redirect(self.get_success_url())

@@ -25,6 +25,11 @@
     --ks-radius-lg: 12px;
 }
 
+html, body {
+    max-width: 100vw;
+    overflow-x: hidden;
+}
+
 body {
     background-color: var(--ks-bg);
     color: var(--ks-text);
@@ -52,22 +57,45 @@ body {
     padding: 0.75rem 1.5rem;
 }
 
+@media (max-width: 768px) {
+    .ks-brand span.fs-6,
+    .ks-brand .ks-brand-subtitle {
+        display: none !important;
+    }
+}
+
 @media (max-width: 576px) {
     .ks-navbar {
-        padding: 0.65rem 1rem;
+        padding: 0.5rem 0.75rem;
+        gap: 0.5rem;
+    }
+    .ks-brand {
+        font-size: 1.15rem;
+        gap: 0.35rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+    .ks-navbar .btn-outline-ks,
+    .ks-navbar .btn-primary-ks {
+        padding: 0.28rem 0.65rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
     }
 }
 
 @media (max-width: 360px) {
     .ks-navbar {
-        padding: 0.5rem 0.75rem;
-    }
-    .ks-brand {
-        font-size: 1.1rem;
+        padding: 0.45rem 0.5rem;
         gap: 0.35rem;
     }
-    .ks-brand span.fs-6 {
-        display: none;
+    .ks-brand {
+        font-size: 1rem;
+        gap: 0.25rem;
+    }
+    .ks-navbar .btn-outline-ks,
+    .ks-navbar .btn-primary-ks {
+        padding: 0.22rem 0.5rem;
+        font-size: 0.75rem;
     }
 }
 

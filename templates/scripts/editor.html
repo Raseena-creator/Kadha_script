@@ -399,7 +399,7 @@
                             <button type="button"
                                 class="btn btn-sm btn-outline-ks py-1 px-3 d-inline-flex align-items-center btn-scene-control dropdown-toggle"
                                 id="btnSequenceDropdown" data-bs-toggle="dropdown"
-                                data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false"
+                                data-bs-popper-config='{"strategy":"fixed","modifiers":[{"name":"preventOverflow","options":{"boundary":"viewport","padding":8}}]}' aria-expanded="false"
                                 title="Sequence (Song / Montage)">
                                 <i class="bi bi-music-note-list me-1 d-none d-sm-inline"></i><span>Sequence</span>
                             </button>
@@ -433,7 +433,7 @@
                 <!-- Right: More tools dropdown -->
                 <div class="dropdown editor-scene-toolbar-right">
                     <button class="btn btn-sm btn-light border py-1 px-2 dropdown-toggle" type="button"
-                        data-bs-toggle="dropdown" title="More Tools">
+                        data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed","modifiers":[{"name":"preventOverflow","options":{"boundary":"viewport","padding":8}}]}' title="More Tools">
                         <i class="bi bi-three-dots-vertical"></i>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end shadow-sm border small">

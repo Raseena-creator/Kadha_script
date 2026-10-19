@@ -5229,7 +5229,18 @@ class KadhaEditor {
         if (btnSequenceDropdown) {
             if (window.bootstrap && window.bootstrap.Dropdown) {
                 window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown, {
-                    popperConfig: { strategy: 'fixed' }
+                    popperConfig: {
+                        strategy: 'fixed',
+                        modifiers: [
+                            {
+                                name: 'preventOverflow',
+                                options: {
+                                    boundary: 'viewport',
+                                    padding: 8
+                                }
+                            }
+                        ]
+                    }
                 });
             }
             const pinnedToolbars = document.getElementById('editorTopToolbarsPinned');

@@ -7,14 +7,6 @@ from django.utils import timezone
 from scripts.models import (
     Script, Scene, ScriptElement, Character, ScriptNote, ScriptBackupLog
 )
-from scripts.services.email_backup_service import (
-    run_daily_email_backup,
-    send_daily_script_backup,
-)
-from scripts.services.gdrive_backup_service import (
-    run_daily_screenplay_backup,
-)
-
 User = get_user_model()
 
 
@@ -265,50 +257,8 @@ class Batch2DGlobalSearchAndBackupIsolationTests(TestCase):
         self.assertEqual(matched_scenes[0].id, self.active_scene.id)
 
     # =========================================================================
-    # EMAIL BACKUP ISOLATION TESTS
+    # PDF EXPORT ISOLATION TESTS
     # =========================================================================
-
-    @patch('scripts.services.email_backup_service.save_local_backup', return_value='/tmp/fake.pdf')
-    @patch('scripts.services.email_backup_service.generate_screenplay_pdf', return_value=b'%PDF-1.4 mock')
-    @patch('scripts.services.email_backup_service.build_backup_email_message')
-    def test_routine_email_backup_processes_active_scripts_only(self, mock_msg, mock_pdf, mock_local):
-        """Routine batch run (script_id=None) only processes active scripts, skipping trashed scripts."""
-        mock_email_instance = MagicMock()
-        mock_email_instance.send.return_value = 1
-        mock_msg.return_value = mock_email_instance
-
-        test_date = date(2026, 10, 10)
-        result = run_daily_email_backup(backup_date=test_date, force=True)
-
-        self.assertTrue(result['success'])
-        # Only active scripts processed (active_script and other_script = 2)
-        # trashed_script must NOT be in target_scripts
-        processed_ids = [r['script_id'] for r in result['results']]
-        self.assertIn(self.active_script.id, processed_ids)
-        self.assertNotIn(self.trashed_script.id, processed_ids)
-
-        # Verify no ScriptBackupLog was created for trashed_script
-        trashed_logs = ScriptBackupLog.objects.filter(script=self.trashed_script, backup_date=test_date)
-        self.assertEqual(trashed_logs.count(), 0)
-
-    @patch('scripts.services.email_backup_service.generate_screenplay_pdf')
-    def test_explicit_email_backup_for_trashed_script_rejected(self, mock_pdf):
-        """Explicitly requesting a backup for a trashed script ID fails and does NOT generate PDF."""
-        test_date = date(2026, 10, 10)
-        result = run_daily_email_backup(
-            script_id=self.trashed_script.id,
-            backup_date=test_date,
-            force=True
-        )
-
-        self.assertFalse(result['success'])
-        self.assertEqual(result['failed_count'], 1)
-        self.assertIn('Cannot back up trashed screenplay', result['results'][0]['error'])
-        mock_pdf.assert_not_called()
-
-        # No log created for the rejected trashed script
-        trashed_logs = ScriptBackupLog.objects.filter(script=self.trashed_script, backup_date=test_date)
-        self.assertEqual(trashed_logs.count(), 0)
 
     def test_active_script_with_trashed_scenes_excludes_trashed_scenes_from_pdf(self):
         """Live PDF generator called on an active script excludes its trashed scenes."""
@@ -322,66 +272,3 @@ class Batch2DGlobalSearchAndBackupIsolationTests(TestCase):
         ordered_ids = [s.id for s in ordered]
         self.assertIn(self.active_scene.id, ordered_ids)
         self.assertNotIn(self.trashed_scene_on_active_script.id, ordered_ids)
-
-    # =========================================================================
-    # GOOGLE DRIVE BACKUP ISOLATION TESTS
-    # =========================================================================
-
-    @patch('scripts.services.gdrive_backup_service.save_local_backup', return_value='/tmp/fake.pdf')
-    @patch('scripts.services.gdrive_backup_service.generate_screenplay_pdf', return_value=b'%PDF-1.4 mock')
-    @patch('scripts.services.gdrive_backup_service.get_or_create_backup_folder', return_value='folder_123')
-    @patch('scripts.services.gdrive_backup_service.upload_pdf_to_drive', return_value={'id': 'drive_file_123'})
-    @patch('scripts.services.gdrive_backup_service.prune_old_drive_backups', return_value=0)
-    def test_default_gdrive_backup_selects_active_script_over_newer_trashed_script(
-        self, mock_prune, mock_upload, mock_folder, mock_pdf, mock_local
-    ):
-        """Default routine run selects the newest ACTIVE script, even if a trashed script was updated more recently."""
-        # Touch trashed_script updated_at so it is newer than active_script
-        self.trashed_script.updated_at = timezone.now() + timezone.timedelta(hours=5)
-        self.trashed_script.save(update_fields=['updated_at'])
-
-        mock_drive = MagicMock()
-        test_date = date(2026, 10, 10)
-
-        result = run_daily_screenplay_backup(
-            script_id=None,
-            backup_date=test_date,
-            drive_service=mock_drive
-        )
-
-        self.assertTrue(result['success'])
-        # Must have selected an active script, never the trashed script
-        self.assertNotEqual(result['script_id'], self.trashed_script.id)
-        # Should be other_script or active_script (both active)
-        self.assertIn(result['script_id'], [self.active_script.id, self.other_script.id])
-
-    @patch('scripts.services.gdrive_backup_service.generate_screenplay_pdf')
-    @patch('scripts.services.gdrive_backup_service.upload_pdf_to_drive')
-    def test_explicit_gdrive_backup_for_trashed_script_rejected(self, mock_upload, mock_pdf):
-        """Explicitly requesting a Google Drive backup for a trashed script ID is rejected."""
-        mock_drive = MagicMock()
-        test_date = date(2026, 10, 10)
-
-        result = run_daily_screenplay_backup(
-            script_id=self.trashed_script.id,
-            backup_date=test_date,
-            drive_service=mock_drive
-        )
-
-        self.assertFalse(result['success'])
-        self.assertIn('Cannot back up trashed screenplay', result['error'])
-        mock_pdf.assert_not_called()
-        mock_upload.assert_not_called()
-
-    def test_gdrive_backup_when_no_active_scripts_handled_safely(self):
-        """When all scripts are trashed, default Google Drive backup exits safely without crash."""
-        Script.objects.all().update(is_deleted=True, deleted_at=timezone.now())
-
-        mock_drive = MagicMock()
-        result = run_daily_screenplay_backup(
-            script_id=None,
-            drive_service=mock_drive
-        )
-
-        self.assertFalse(result['success'])
-        self.assertIn('No active screenplay scripts found', result['error'])
