@@ -95,6 +95,12 @@ class KadhaEditor {
         this.textEditTimerSceneId = null;
         this.isComposing = false;
         this.lastCapturedSnapshot = null;
+        this._enterHandledInKeydown = false;
+        this._lineBreakHandledInKeydown = false;
+        this._enterHandledKeydownToken = 0;
+        this._lineBreakHandledKeydownToken = 0;
+        this._enterEventToken = 0;
+        this._lineBreakEventToken = 0;
 
         window.editor = this;
         window.editorInstance = this;
@@ -492,11 +498,10 @@ class KadhaEditor {
 
             locationInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        e.preventDefault();
-                        return;
-                    }
+                    if (e.isComposing || this.isComposing || e.keyCode === 229) return;
                     e.preventDefault();
+                    if (e.shiftKey) return;
+                    this.markEnterHandledInKeydown(locationInput);
                     let nextBlock = block.nextElementSibling;
                     if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
                         nextBlock = this.createElementBlock('action', '', block);
@@ -506,6 +511,33 @@ class KadhaEditor {
                         nextEditable.focus();
                         this.setCursorToStart(nextEditable);
                     }
+                }
+            });
+
+            locationInput.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') {
+                    this.clearEnterHandledInKeydown();
+                }
+            });
+
+            locationInput.addEventListener('beforeinput', (e) => {
+                if (e.inputType === 'insertParagraph') {
+                    e.preventDefault();
+                    if (e.isComposing || this.isComposing) return;
+                    if (this.isEnterHandledInKeydown(locationInput)) {
+                        return;
+                    }
+                    let nextBlock = block.nextElementSibling;
+                    if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
+                        nextBlock = this.createElementBlock('action', '', block);
+                    }
+                    const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
+                    if (nextEditable) {
+                        nextEditable.focus();
+                        this.setCursorToStart(nextEditable);
+                    }
+                } else if (e.inputType === 'insertLineBreak') {
+                    e.preventDefault();
                 }
             });
 
@@ -736,11 +768,10 @@ class KadhaEditor {
 
                 locationInput.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') {
-                        if (e.shiftKey) {
-                            e.preventDefault();
-                            return;
-                        }
+                        if (e.isComposing || this.isComposing || e.keyCode === 229) return;
                         e.preventDefault();
+                        if (e.shiftKey) return;
+                        this.markEnterHandledInKeydown(locationInput);
                         let nextBlock = block.nextElementSibling;
                         if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
                             nextBlock = this.createElementBlock('action', '', block);
@@ -750,6 +781,33 @@ class KadhaEditor {
                             nextEditable.focus();
                             this.setCursorToStart(nextEditable);
                         }
+                    }
+                });
+
+                locationInput.addEventListener('keyup', (e) => {
+                    if (e.key === 'Enter') {
+                        this.clearEnterHandledInKeydown();
+                    }
+                });
+
+                locationInput.addEventListener('beforeinput', (e) => {
+                    if (e.inputType === 'insertParagraph') {
+                        e.preventDefault();
+                        if (e.isComposing || this.isComposing) return;
+                        if (this.isEnterHandledInKeydown(locationInput)) {
+                            return;
+                        }
+                        let nextBlock = block.nextElementSibling;
+                        if (!nextBlock || !nextBlock.classList.contains('script-element-block')) {
+                            nextBlock = this.createElementBlock('action', '', block);
+                        }
+                        const nextEditable = nextBlock.querySelector('.element-content:not(.d-none)') || nextBlock.querySelector('.element-content');
+                        if (nextEditable) {
+                            nextEditable.focus();
+                            this.setCursorToStart(nextEditable);
+                        }
+                    } else if (e.inputType === 'insertLineBreak') {
+                        e.preventDefault();
                     }
                 });
 
@@ -940,9 +998,11 @@ class KadhaEditor {
                     this.navigateSuggestions(-1);
                     return;
                 } else if (e.key === 'Enter') {
+                    if (e.isComposing || this.isComposing || e.keyCode === 229) return;
                     const chips = this.suggestionPopup.querySelectorAll('.suggestion-chip');
                     if (this.activeSuggestionIndex >= 0 && chips[this.activeSuggestionIndex]) {
                         e.preventDefault();
+                        this.markEnterHandledInKeydown();
                         const sugType = chips[this.activeSuggestionIndex].dataset.suggestion;
                         this.applySuggestion(sugType, this.activeSuggestionBlock || block);
                         return;
@@ -963,7 +1023,13 @@ class KadhaEditor {
                     e.preventDefault();
                     this.navigateAutocomplete(-1);
                     return;
-                } else if (e.key === 'Enter' || e.key === 'Tab') {
+                } else if (e.key === 'Enter') {
+                    if (e.isComposing || this.isComposing || e.keyCode === 229) return;
+                    e.preventDefault();
+                    this.markEnterHandledInKeydown();
+                    this.selectAutocompleteItem();
+                    return;
+                } else if (e.key === 'Tab') {
                     e.preventDefault();
                     this.selectAutocompleteItem();
                     return;
@@ -973,33 +1039,19 @@ class KadhaEditor {
                 }
             }
 
-            // Enter key handling (Notes support multiline notepad behavior)
+            // Enter key handling (Unified desktop keydown & mobile beforeinput)
             if (e.key === 'Enter') {
-                if (block.dataset.type === 'note') {
-                    e.preventDefault();
-                    this.handleNoteEnter(block, editable);
+                if (e.isComposing || this.isComposing || e.keyCode === 229) {
                     return;
                 }
-
-                if (e.shiftKey) {
-                    if (block.dataset.type === 'action' || block.dataset.type === 'dialogue') {
-                        e.preventDefault();
-                        this.flushPendingTextEdit();
-                        const preSnap = this.captureSnapshot();
-                        document.execCommand('insertLineBreak');
-                        this.pushUndoSnapshot(preSnap);
-                        this.markDirty();
-                        this.calculateLiveStats();
-                        return;
-                    } else {
-                        // Prevent accidental multiline creation in single-line elements
-                        e.preventDefault();
-                        return;
-                    }
-                }
-
                 e.preventDefault();
-                this.handleEnterKey(block, editable);
+                if (e.shiftKey) {
+                    this.markLineBreakHandledInKeydown(editable);
+                    this.executeLineBreak(block, editable);
+                } else {
+                    this.markEnterHandledInKeydown(editable);
+                    this.executeEnter(block, editable);
+                }
                 return;
             }
 
@@ -1092,6 +1144,163 @@ class KadhaEditor {
                 }
             }
         });
+
+        editable.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                this.clearEnterHandledInKeydown();
+                this.clearLineBreakHandledInKeydown();
+            }
+        });
+
+        editable.addEventListener('beforeinput', (e) => {
+            if (e.inputType === 'insertParagraph') {
+                e.preventDefault();
+                if (e.isComposing || this.isComposing) {
+                    return;
+                }
+                if (this.isEnterHandledInKeydown(editable)) {
+                    return;
+                }
+                this.executeEnter(block, editable);
+                return;
+            }
+            if (e.inputType === 'insertLineBreak') {
+                e.preventDefault();
+                if (e.isComposing || this.isComposing) {
+                    return;
+                }
+                if (this.isLineBreakHandledInKeydown(editable)) {
+                    return;
+                }
+                this.executeLineBreak(block, editable);
+                return;
+            }
+        });
+    }
+
+    // ----------------------------------------------------
+    // UNIFIED ENTER & LINE BREAK HANDLING (Batch 2F: Mobile & Desktop)
+    // ----------------------------------------------------
+    markEnterHandledInKeydown(element = null) {
+        this._enterEventToken = (this._enterEventToken || 0) + 1;
+        const token = this._enterEventToken;
+        this._enterHandledKeydownToken = token;
+        this._enterHandledElement = element;
+        this._enterHandledInKeydown = true;
+
+        if (this._enterSafetyTimer) {
+            clearTimeout(this._enterSafetyTimer);
+        }
+        this._enterSafetyTimer = setTimeout(() => {
+            if (this._enterHandledKeydownToken === token) {
+                this.clearEnterHandledInKeydown();
+            }
+        }, 1500);
+        return token;
+    }
+
+    isEnterHandledInKeydown(element = null) {
+        if (this._enterHandledKeydownToken) {
+            if (element && this._enterHandledElement && this._enterHandledElement !== element) {
+                return false;
+            }
+            this.clearEnterHandledInKeydown();
+            return true;
+        }
+        return false;
+    }
+
+    clearEnterHandledInKeydown() {
+        if (this._enterSafetyTimer) {
+            clearTimeout(this._enterSafetyTimer);
+            this._enterSafetyTimer = null;
+        }
+        this._enterHandledKeydownToken = 0;
+        this._enterHandledElement = null;
+        this._enterHandledInKeydown = false;
+    }
+
+    markLineBreakHandledInKeydown(element = null) {
+        this._lineBreakEventToken = (this._lineBreakEventToken || 0) + 1;
+        const token = this._lineBreakEventToken;
+        this._lineBreakHandledKeydownToken = token;
+        this._lineBreakHandledElement = element;
+        this._lineBreakHandledInKeydown = true;
+
+        if (this._lineBreakSafetyTimer) {
+            clearTimeout(this._lineBreakSafetyTimer);
+        }
+        this._lineBreakSafetyTimer = setTimeout(() => {
+            if (this._lineBreakHandledKeydownToken === token) {
+                this.clearLineBreakHandledInKeydown();
+            }
+        }, 1500);
+        return token;
+    }
+
+    isLineBreakHandledInKeydown(element = null) {
+        if (this._lineBreakHandledKeydownToken) {
+            if (element && this._lineBreakHandledElement && this._lineBreakHandledElement !== element) {
+                return false;
+            }
+            this.clearLineBreakHandledInKeydown();
+            return true;
+        }
+        return false;
+    }
+
+    clearLineBreakHandledInKeydown() {
+        if (this._lineBreakSafetyTimer) {
+            clearTimeout(this._lineBreakSafetyTimer);
+            this._lineBreakSafetyTimer = null;
+        }
+        this._lineBreakHandledKeydownToken = 0;
+        this._lineBreakHandledElement = null;
+        this._lineBreakHandledInKeydown = false;
+    }
+
+    executeEnter(block, editable) {
+        if (this.suggestionPopup && this.suggestionPopup.style.display === 'inline-flex') {
+            const chips = this.suggestionPopup.querySelectorAll('.suggestion-chip');
+            if (this.activeSuggestionIndex >= 0 && chips[this.activeSuggestionIndex]) {
+                const sugType = chips[this.activeSuggestionIndex].dataset.suggestion;
+                this.applySuggestion(sugType, this.activeSuggestionBlock || block);
+                return;
+            }
+        }
+        if (this.autocompleteDropdown && this.autocompleteDropdown.style.display === 'block') {
+            this.selectAutocompleteItem();
+            return;
+        }
+        if (this.isComposing) {
+            return;
+        }
+        this.flushPendingTextEdit();
+        if (block.dataset.type === 'note') {
+            this.handleNoteEnter(block, editable);
+        } else {
+            this.handleEnterKey(block, editable);
+        }
+    }
+
+    executeLineBreak(block, editable) {
+        if (this.isComposing) {
+            return;
+        }
+        if (block.dataset.type === 'note') {
+            this.handleNoteEnter(block, editable);
+            return;
+        }
+        if (block.dataset.type === 'action' || block.dataset.type === 'dialogue') {
+            this.flushPendingTextEdit();
+            const preSnap = this.captureSnapshot();
+            document.execCommand('insertLineBreak');
+            this.pushUndoSnapshot(preSnap);
+            this.markDirty();
+            this.calculateLiveStats();
+        } else {
+            // Prevent accidental multiline creation in single-line elements
+        }
     }
 
     // ----------------------------------------------------
@@ -5023,9 +5232,43 @@ class KadhaEditor {
                     popperConfig: { strategy: 'fixed' }
                 });
             }
+            const pinnedToolbars = document.getElementById('editorTopToolbarsPinned');
+            const removeDropdownOpen = () => {
+                if (pinnedToolbars) {
+                    pinnedToolbars.classList.remove('has-dropdown-open');
+                }
+            };
             btnSequenceDropdown.addEventListener('show.bs.dropdown', () => {
-                this.updateSequenceToolbarState();
+                if (pinnedToolbars) {
+                    pinnedToolbars.classList.add('has-dropdown-open');
+                }
+                try {
+                    this.updateSequenceToolbarState();
+                } catch (err) {
+                    console.error("Error updating sequence toolbar state:", err);
+                }
             });
+            btnSequenceDropdown.addEventListener('hide.bs.dropdown', removeDropdownOpen);
+            btnSequenceDropdown.addEventListener('hidden.bs.dropdown', removeDropdownOpen);
+
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', () => {
+                    const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
+                    if (inst && inst._popper) {
+                        inst._popper.update();
+                    }
+                });
+            }
+
+            const toolbarLeft = document.querySelector('.editor-scene-toolbar-left');
+            if (toolbarLeft) {
+                toolbarLeft.addEventListener('scroll', () => {
+                    const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
+                    if (inst && inst._popper) {
+                        inst._popper.update();
+                    }
+                }, { passive: true });
+            }
         }
 
         const btnToolbarUndo = document.getElementById('btnToolbarUndo');
@@ -5204,6 +5447,30 @@ class KadhaEditor {
                 e.returnValue = 'You have unsaved changes in your screenplay!';
                 return e.returnValue;
             }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter') {
+                this.clearEnterHandledInKeydown();
+                this.clearLineBreakHandledInKeydown();
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') {
+                this.clearEnterHandledInKeydown();
+                this.clearLineBreakHandledInKeydown();
+            }
+        });
+
+        document.addEventListener('pointerdown', () => {
+            this.clearEnterHandledInKeydown();
+            this.clearLineBreakHandledInKeydown();
+        }, { passive: true });
+
+        window.addEventListener('blur', () => {
+            this.clearEnterHandledInKeydown();
+            this.clearLineBreakHandledInKeydown();
         });
 
         document.addEventListener('click', (e) => {

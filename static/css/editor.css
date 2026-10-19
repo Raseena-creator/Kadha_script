@@ -247,6 +247,26 @@
     top: auto;
 }
 
+/* Sequence Dropdown Stacking & Visibility Fix (Batch 3 Step 4) */
+.editor-top-toolbars-pinned.has-dropdown-open {
+    z-index: 1050 !important;
+}
+.editor-top-toolbars-pinned.has-dropdown-open .editor-toolbar.editor-scene-toolbar {
+    z-index: 1050 !important;
+}
+.editor-top-toolbars-pinned.has-dropdown-open .editor-scene-toolbar-left {
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: auto !important;
+}
+#sequenceDropdownContainer {
+    position: relative;
+    z-index: 1055 !important;
+}
+#sequenceDropdownContainer .dropdown-menu {
+    z-index: 1060 !important;
+}
+
 /* Topmost Toolbar: Scene Management (Row 1) */
 .editor-toolbar.editor-scene-toolbar {
     background-color: #ffffff;

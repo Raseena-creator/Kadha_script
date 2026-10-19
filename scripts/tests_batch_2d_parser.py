@@ -2142,8 +2142,823 @@ Prepare call sheet for shoot."""
         self.assertEqual(r5['blocksAfterShiftEnter'], 1, "Shift+Enter must not transition to next block")
         self.assertEqual(r5['blocksAfterNormalEnter'], 2, "Normal Enter must transition to next block")
 
+    # ----------------------------------------------------
+    # 46. Batch 2F: Android Keyboard and Enter Handling
+    # ----------------------------------------------------
+    def test_46_android_keyboard_and_enter_handling(self):
+        # 1. Normal Desktop Enter: keydown Enter produces expected element advance
+        r1 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'First action line', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
 
+            const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true });
+            const defaultPrevented = !ed.dispatchEvent(enterEvent);
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                defaultPrevented: defaultPrevented,
+                blockCount: blocks.length,
+                secondBlockType: blocks[1] ? blocks[1].dataset.type : null
+            };
+        """)
+        self.assertTrue(r1['defaultPrevented'], "Desktop Enter keydown must be defaultPrevented")
+        self.assertEqual(r1['blockCount'], 2, "Desktop Enter must create a second block")
+        self.assertEqual(r1['secondBlockType'], 'action')
 
+        # 2. Mobile-style beforeinput with insertParagraph (keydown 229 / Unidentified)
+        r2 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'Mobile action line', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
 
+            // Emulate Android soft keyboard: keydown 229 Unidentified
+            const kdEvent = new KeyboardEvent('keydown', { key: 'Unidentified', code: '', keyCode: 229, which: 229, bubbles: true, cancelable: true });
+            const kdHandled = !ed.dispatchEvent(kdEvent);
 
+            // Followed by beforeinput insertParagraph
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            const biPrevented = !ed.dispatchEvent(biEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                kdHandled: kdHandled,
+                biPrevented: biPrevented,
+                blockCount: blocks.length,
+                secondBlockType: blocks[1] ? blocks[1].dataset.type : null
+            };
+        """)
+        self.assertFalse(r2['kdHandled'], "Unidentified keydown 229 must not be intercepted by keydown Enter handler")
+        self.assertTrue(r2['biPrevented'], "beforeinput insertParagraph must be defaultPrevented")
+        self.assertEqual(r2['blockCount'], 2, "Mobile beforeinput insertParagraph must advance and create a second block")
+        self.assertEqual(r2['secondBlockType'], 'action')
+
+        # 3. Keydown Enter and beforeinput insertParagraph across microtask checkpoint: exactly ONE element created
+        r3 = self.driver.execute_async_script("""
+            const done = arguments[arguments.length - 1];
+            (async () => {
+                const page = window.editorInstance.pageContainer;
+                const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+                page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+                const b = window.editorInstance.createElementBlock('action', 'Simultaneous event line', heading);
+                const ed = b.querySelector('.element-content');
+                ed.focus();
+                window.editorInstance.setCursorToEnd(ed);
+
+                // Both keydown and beforeinput fire for the same physical Return, separated by microtask checkpoint
+                const kdEvent = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true });
+                ed.dispatchEvent(kdEvent);
+
+                // Drain microtask queue explicitly to test deduplication beyond microtasks
+                await Promise.resolve();
+                await new Promise(res => queueMicrotask(res));
+
+                const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                const biPrevented = !ed.dispatchEvent(biEvent);
+
+                const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+                done({
+                    biPrevented: biPrevented,
+                    blockCount: blocks.length
+                });
+            })();
+        """)
+        self.assertTrue(r3['biPrevented'], "beforeinput following handled keydown must be prevented")
+        self.assertEqual(r3['blockCount'], 2, "Keydown and beforeinput separated by microtasks must not create duplicate blocks")
+
+        # 3b. Keyup clears token and allows subsequent legitimate Enter
+        r3b = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const activeBlock = window.editorInstance.activeElementBlock;
+            const activeEd = activeBlock ? activeBlock.querySelector('.element-content') : null;
+            if (activeEd) {
+                activeEd.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+                // Subsequent legitimate Enter
+                const bi2 = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                activeEd.dispatchEvent(bi2);
+            }
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                blockCount: blocks.length
+            };
+        """)
+        self.assertEqual(r3b['blockCount'], 3, "Subsequent legitimate Enter after keyup must create third block")
+
+        # 4. Rapid consecutive Enter actions execute properly without suppression
+        r4 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'First line', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // First Enter
+            const biEvent1 = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent1);
+
+            // Second Enter on newly focused active block
+            const activeBlock = window.editorInstance.activeElementBlock;
+            const activeEd = activeBlock ? activeBlock.querySelector('.element-content') : null;
+            if (activeEd) {
+                const biEvent2 = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                activeEd.dispatchEvent(biEvent2);
+            }
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                blockCount: blocks.length
+            };
+        """)
+        self.assertEqual(r4['blockCount'], 3, "Consecutive Enter presses must not be suppressed")
+
+        # 5. Dialogue splitting at caret via beforeinput
+        r5 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const charBlock = window.editorInstance.createElementBlock('character', 'ANAND', heading);
+            const dialBlock = window.editorInstance.createElementBlock('dialogue', 'First half Second half', charBlock);
+            const ed = dialBlock.querySelector('.element-content');
+            ed.focus();
+
+            // Set caret between 'First half' and 'Second half'
+            const textNode = ed.firstChild;
+            const range = document.createRange();
+            range.setStart(textNode, 10); // after 'First half'
+            range.setEnd(textNode, 10);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const dial1 = blocks[1] ? blocks[1].querySelector('.element-content').innerText.trim() : '';
+            const dial2 = blocks[2] ? blocks[2].querySelector('.element-content').innerText.trim() : '';
+            return {
+                blockCount: blocks.length,
+                dial1Text: dial1,
+                dial2Text: dial2,
+                dial2Type: blocks[2] ? blocks[2].dataset.type : null
+            };
+        """)
+        self.assertEqual(r5['blockCount'], 3)
+        self.assertEqual(r5['dial1Text'], 'First half')
+        self.assertEqual(r5['dial2Text'], 'Second half')
+        self.assertEqual(r5['dial2Type'], 'dialogue')
+
+        # 6. Dialogue selection replacement via beforeinput
+        r6 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const charBlock = window.editorInstance.createElementBlock('character', 'ANAND', heading);
+            const dialBlock = window.editorInstance.createElementBlock('dialogue', 'Prefix MIDDLE Suffix', charBlock);
+            const ed = dialBlock.querySelector('.element-content');
+            ed.focus();
+
+            // Select 'MIDDLE ' (index 7 to 14)
+            const textNode = ed.firstChild;
+            const range = document.createRange();
+            range.setStart(textNode, 7);
+            range.setEnd(textNode, 14);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const dial1 = blocks[1] ? blocks[1].querySelector('.element-content').innerText.trim() : '';
+            const dial2 = blocks[2] ? blocks[2].querySelector('.element-content').innerText.trim() : '';
+            return {
+                blockCount: blocks.length,
+                dial1Text: dial1,
+                dial2Text: dial2
+            };
+        """)
+        self.assertEqual(r6['blockCount'], 3)
+        self.assertEqual(r6['dial1Text'], 'Prefix')
+        self.assertEqual(r6['dial2Text'], 'Suffix')
+
+        # 7. Enter in empty Dialogue via beforeinput
+        r7 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const dialBlock = window.editorInstance.createElementBlock('dialogue', '', heading);
+            const ed = dialBlock.querySelector('.element-content');
+            ed.focus();
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                blockCount: blocks.length,
+                secondType: blocks[1] ? blocks[1].dataset.type : null
+            };
+        """)
+        self.assertEqual(r7['blockCount'], 2)
+        self.assertEqual(r7['secondType'], 'action')
+
+        # 8. Numbered-note continuation via beforeinput
+        r8 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const noteBlock = window.editorInstance.createElementBlock('note', '1. First note line', heading);
+            const ed = noteBlock.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            return {
+                text: ed.innerText
+            };
+        """)
+        self.assertIn('1. First note line', r8['text'])
+        self.assertIn('2. ', r8['text'])
+
+        # 9. Bullet-note continuation via beforeinput
+        r9 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const noteBlock = window.editorInstance.createElementBlock('note', '- First bullet item', heading);
+            const ed = noteBlock.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            return {
+                text: ed.innerText
+            };
+        """)
+        self.assertIn('- First bullet item', r9['text'])
+        self.assertIn('- ', r9['text'])
+
+        # 10. Empty-note list termination via beforeinput
+        r10 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const noteBlock = window.editorInstance.createElementBlock('note', '- ', heading);
+            const ed = noteBlock.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // Establish history baseline
+            const sid = Number(window.editorInstance.currentSceneId);
+            window.editorInstance.undoStacks[sid] = [window.editorInstance.captureSnapshot()];
+
+            // Enter on empty '- ' terminates the bullet list
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            const textAfterTerm = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText.trim();
+
+            // Undo restores '- '
+            window.editorInstance.undo();
+            const textAfterUndo = page.querySelector('.script-element-block[data-type="note"] .element-content').innerText;
+
+            return {
+                textAfterTerm: textAfterTerm,
+                textAfterUndo: textAfterUndo
+            };
+        """)
+        self.assertEqual(r10['textAfterTerm'], '')
+        self.assertIn('- ', r10['textAfterUndo'])
+
+        # 11. Single-line element protection on beforeinput
+        r11 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const charBlock = window.editorInstance.createElementBlock('character', 'VINOD', heading);
+            const charEd = charBlock.querySelector('.element-content');
+            charEd.focus();
+
+            // Attempt to insertLineBreak into single-line character
+            const biBreak = new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true });
+            const charPrevented = !charEd.dispatchEvent(biBreak);
+
+            // Attempt to insertLineBreak into scene heading locationInput
+            const locInp = heading.querySelector('.heading-location-input');
+            locInp.focus();
+            const headingPrevented = !locInp.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true }));
+
+            return {
+                charPrevented: charPrevented,
+                charText: charEd.innerText.trim(),
+                headingPrevented: headingPrevented
+            };
+        """)
+        self.assertTrue(r11['charPrevented'], "insertLineBreak in Character must be default-prevented")
+        self.assertEqual(r11['charText'], 'VINOD', "Character must remain single-line")
+        self.assertTrue(r11['headingPrevented'], "insertLineBreak in Scene Heading must be default-prevented")
+
+        # 12. Desktop Shift+Enter in Action and Dialogue
+        r12 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'Action line 1', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            const shiftEnter = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true, cancelable: true });
+            ed.dispatchEvent(shiftEnter);
+            document.execCommand('insertText', false, 'Action line 2');
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                blockCount: blocks.length,
+                text: ed.innerText
+            };
+        """)
+        self.assertEqual(r12['blockCount'], 1, "Shift+Enter must not create a new element")
+        self.assertTrue('\n' in r12['text'] or '\r' in r12['text'])
+
+        # 13. Mobile beforeinput with insertLineBreak in Action
+        r13 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'Mobile line 1', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            const biBreak = new InputEvent('beforeinput', { inputType: 'insertLineBreak', bubbles: true, cancelable: true });
+            const prevented = !ed.dispatchEvent(biBreak);
+            document.execCommand('insertText', false, 'Mobile line 2');
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                prevented: prevented,
+                blockCount: blocks.length,
+                text: ed.innerText
+            };
+        """)
+        self.assertTrue(r13['prevented'])
+        self.assertEqual(r13['blockCount'], 1)
+        self.assertTrue('Mobile line 2' in r13['text'])
+
+        # 14. Malayalam and mixed-language Unicode preservation through beforeinput Enter
+        r14 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const charBlock = window.editorInstance.createElementBlock('character', 'മോഹൻലാൽ', heading);
+            const dialBlock = window.editorInstance.createElementBlock('dialogue', 'ഞാൻ ഇവിടെ ഉണ്ടാകും. എവിടെയും പോകില്ല.', charBlock);
+            const ed = dialBlock.querySelector('.element-content');
+            ed.focus();
+
+            // Set cursor right after 'ഞാൻ ഇവിടെ ഉണ്ടാകും. '
+            const splitPos = 'ഞാൻ ഇവിടെ ഉണ്ടാകും. '.length;
+            const textNode = ed.firstChild;
+            const range = document.createRange();
+            range.setStart(textNode, splitPos);
+            range.setEnd(textNode, splitPos);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+            ed.dispatchEvent(biEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const dial1 = blocks[1] ? blocks[1].querySelector('.element-content').innerText.trim() : '';
+            const dial2 = blocks[2] ? blocks[2].querySelector('.element-content').innerText.trim() : '';
+            return {
+                blockCount: blocks.length,
+                dial1Text: dial1,
+                dial2Text: dial2
+            };
+        """)
+        self.assertEqual(r14['blockCount'], 3)
+        self.assertEqual(r14['dial1Text'], 'ഞാൻ ഇവിടെ ഉണ്ടാകും.')
+        self.assertEqual(r14['dial2Text'], 'എവിടെയും പോകില്ല.')
+
+        # 15. IME composition lifecycle: active composition candidate Enter immunity, commit, and subsequent normal Enter
+        r15 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'Composing: ', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // 15a. IME Composition begins
+            ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            const composingDuring = window.editorInstance.isComposing;
+
+            // Typing during composition
+            document.execCommand('insertText', false, 'നമസ്കാരം');
+            window.editorInstance.recordTextEdit(); // Should be skipped while isComposing
+
+            // 15b. Enter pressed during active composition to confirm candidate (isComposing: true, keyCode: 229)
+            const imeKdEvent = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, which: 229, isComposing: true, bubbles: true, cancelable: true });
+            const imeKdPrevented = !ed.dispatchEvent(imeKdEvent);
+
+            // 15c. beforeinput during active composition (isComposing: true) must be prevented to stop raw <p> insertion, but must NOT split block
+            const imeBiEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', isComposing: true, bubbles: true, cancelable: true });
+            const imeBiPrevented = !ed.dispatchEvent(imeBiEvent);
+
+            const countDuringComp = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+
+            // 15d. IME commits candidate text
+            ed.dispatchEvent(new CompositionEvent('compositionend', { data: 'നമസ്കാരം', bubbles: true }));
+            const composingAfter = window.editorInstance.isComposing;
+
+            // 15e. Normal Enter after compositionend splits block
+            const normalBiEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', isComposing: false, bubbles: true, cancelable: true });
+            ed.dispatchEvent(normalBiEvent);
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                composingDuring: composingDuring,
+                imeKdPrevented: imeKdPrevented,
+                imeBiPrevented: imeBiPrevented,
+                countDuringComp: countDuringComp,
+                composingAfter: composingAfter,
+                blockCount: blocks.length,
+                firstBlockText: blocks[0].querySelector('.element-content').innerText.trim()
+            };
+        """)
+        self.assertTrue(r15['composingDuring'])
+        self.assertFalse(r15['imeKdPrevented'], "Enter keydown during active composition must NOT be default-prevented")
+        self.assertTrue(r15['imeBiPrevented'], "beforeinput during active composition must be default-prevented")
+        self.assertEqual(r15['countDuringComp'], 1, "Enter during composition must not split block")
+        self.assertFalse(r15['composingAfter'])
+        self.assertEqual(r15['blockCount'], 2, "Normal Enter after compositionend must split block")
+        self.assertEqual(r15['firstBlockText'], 'Composing: നമസ്കാരം')
+
+        # 16. Undo/Redo after committed composition
+        r16 = self.driver.execute_script("""
+            // Undo the Enter split
+            window.editorInstance.undo();
+            const page = window.editorInstance.pageContainer;
+            const blocksAfterUndo = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const textAfterUndo = blocksAfterUndo[0] ? blocksAfterUndo[0].querySelector('.element-content').innerText.trim() : '';
+
+            // Redo the Enter split
+            window.editorInstance.redo();
+            const blocksAfterRedo = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+
+            return {
+                countAfterUndo: blocksAfterUndo.length,
+                textAfterUndo: textAfterUndo,
+                countAfterRedo: blocksAfterRedo.length
+            };
+        """)
+        self.assertEqual(r16['countAfterUndo'], 1, "Undo must restore single action block")
+        self.assertEqual(r16['textAfterUndo'], 'Composing: നമസ്കാരം', "Undo must retain committed composition text")
+        self.assertEqual(r16['countAfterRedo'], 2, "Redo must restore split second block")
+
+        # 17. Save persistence in database after Enter and Shift+Enter
+        self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b1 = window.editorInstance.createElementBlock('action', 'Persisted Line 1\\nPersisted Line 2', heading);
+            const b2 = window.editorInstance.createElementBlock('dialogue', 'Persisted Dialogue', b1);
+            window.editorInstance.markDirty();
+        """)
+        # Trigger save
+        self.driver.execute_script("return window.editorInstance.flushSave();")
+        time.sleep(1.0)
+        # Check database
+        db_elements = list(ScriptElement.objects.filter(scene=self.scene).order_by('order').values('element_type', 'content'))
+        action_elements = [e for e in db_elements if e['element_type'] == 'action']
+        self.assertTrue(len(action_elements) >= 1)
+        self.assertIn('Persisted Line 1\nPersisted Line 2', [e['content'] for e in action_elements])
+
+        # 18. External screenplay paste and recovery regression safety
+        self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = window.editorInstance.createElementBlock('action', '', heading);
+            const ed = emptyAction.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.activeElementBlock = emptyAction;
+        """)
+        raw_screenplay = "JOHN\nHello world!"
+        pasted = self.simulate_external_paste(raw_screenplay)
+        pasted_types = [e['element_type'] for e in pasted.get('elements', []) if e['element_type'] != 'scene_heading']
+        self.assertEqual(pasted_types, ['character', 'dialogue'])
+
+        # 19. Scene switching and queued save behavior regression safety
+        r19 = self.driver.execute_script("""
+            return {
+                isDirty: window.editorInstance.isDirty,
+                isSaving: window.editorInstance.isSaving,
+                hasPage: Boolean(window.editorInstance.pageContainer)
+            };
+        """)
+        self.assertTrue(r19['hasPage'])
+
+        # 20. Scene-heading locationInput Enter deduplication across microtasks
+        r20 = self.driver.execute_async_script("""
+            const done = arguments[arguments.length - 1];
+            (async () => {
+                try {
+                    const page = window.editorInstance.pageContainer;
+                    const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+                    page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+                    const locInp = heading.querySelector('.heading-location-input');
+                    locInp.value = 'LIVING ROOM';
+                    locInp.focus();
+
+                    const kd = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true });
+                    locInp.dispatchEvent(kd);
+
+                    await Promise.resolve();
+                    await new Promise(res => queueMicrotask(res));
+
+                    const bi = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                    const biPrevented = !locInp.dispatchEvent(bi);
+
+                    const blocks = Array.from(page.querySelectorAll('.script-element-block'));
+                    done({
+                        biPrevented: biPrevented,
+                        blockCount: blocks.length,
+                        nextBlockType: blocks[1] ? blocks[1].dataset.type : null
+                    });
+                } catch (err) {
+                    done({ error: err.message });
+                }
+            })();
+        """)
+        self.assertNotIn('error', r20, f"Case 20 failed: {r20.get('error')}")
+        self.assertTrue(r20['biPrevented'], "Scene-heading beforeinput must be prevented")
+        self.assertEqual(r20['blockCount'], 2, "Scene-heading Enter must create exactly ONE next block")
+        self.assertEqual(r20['nextBlockType'], 'action')
+
+        # 21. Sequence-shot locationInput Enter deduplication across microtasks
+        r21 = self.driver.execute_async_script("""
+            const done = arguments[arguments.length - 1];
+            (async () => {
+                try {
+                    const page = window.editorInstance.pageContainer;
+                    const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+                    page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+                    const shotBlock = window.editorInstance.createElementBlock('shot', '1. INT. CLOSE UP - DAY', heading);
+                    const locInp = shotBlock.querySelector('.heading-location-input');
+                    if (locInp) {
+                        locInp.focus();
+                    }
+
+                    const kd = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true });
+                    (locInp || shotBlock).dispatchEvent(kd);
+
+                    await Promise.resolve();
+                    await new Promise(res => queueMicrotask(res));
+
+                    const bi = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                    const biPrevented = !(locInp || shotBlock).dispatchEvent(bi);
+
+                    const blocks = Array.from(page.querySelectorAll('.script-element-block'));
+                    done({
+                        biPrevented: biPrevented,
+                        blockCount: blocks.length
+                    });
+                } catch (err) {
+                    done({ error: err.message });
+                }
+            })();
+        """)
+        self.assertNotIn('error', r21, f"Case 21 failed: {r21.get('error')}")
+        self.assertTrue(r21['biPrevented'], "Sequence-shot beforeinput must be prevented")
+        self.assertEqual(r21['blockCount'], 3, "Sequence-shot Enter must create exactly ONE next block")
+
+        # 22. Delayed beforeinput: keydown handled, event-loop turn delay, then beforeinput arrives.
+        # Tests that deduplication survives asynchronous event-loop turns, prevents duplicate block execution,
+        # and permits subsequent legitimate Enter actions.
+        r22 = self.driver.execute_async_script("""
+            const done = arguments[arguments.length - 1];
+            (async () => {
+                const page = window.editorInstance.pageContainer;
+                const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+                page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+                const b = window.editorInstance.createElementBlock('action', 'Delayed beforeinput test', heading);
+                const ed = b.querySelector('.element-content');
+                ed.focus();
+                window.editorInstance.setCursorToEnd(ed);
+
+                // Step 1: keydown Enter handled
+                const kd = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true });
+                ed.dispatchEvent(kd);
+                const blocksAfterKd = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+
+                // Step 2: Asynchronous event-loop delay across macro/microtask checkpoints without key release
+                await Promise.resolve();
+                await new Promise(res => queueMicrotask(res));
+                await new Promise(res => setTimeout(res, 85));
+
+                // Step 3: Delayed beforeinput arrives on ed
+                const bi = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                const biPrevented = !ed.dispatchEvent(bi);
+                const blocksAfterBi = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+
+                // Step 4: Subsequent legitimate Enter on newly focused block
+                const activeBlock = window.editorInstance.activeElementBlock;
+                const activeEd = activeBlock ? activeBlock.querySelector('.element-content') : null;
+                let blocksAfterNextEnter = blocksAfterBi;
+                if (activeEd) {
+                    activeEd.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+                    const nextBi = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true });
+                    activeEd.dispatchEvent(nextBi);
+                    blocksAfterNextEnter = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+                }
+
+                done({
+                    blocksAfterKd: blocksAfterKd,
+                    blocksAfterBi: blocksAfterBi,
+                    biPrevented: biPrevented,
+                    duplicateOccurred: (blocksAfterBi > blocksAfterKd),
+                    blocksAfterNextEnter: blocksAfterNextEnter
+                });
+            })();
+        """)
+        self.assertFalse(r22['duplicateOccurred'], f"Delayed beforeinput must not execute duplicate block operation (blocksAfterKd={r22['blocksAfterKd']}, blocksAfterBi={r22['blocksAfterBi']})")
+        self.assertEqual(r22['blocksAfterBi'], 2, "Custom Enter operation must execute exactly once")
+        self.assertTrue(r22['biPrevented'], "Delayed beforeinput must be prevented")
+        self.assertEqual(r22['blocksAfterNextEnter'], 3, "Subsequent legitimate Enter must execute and create a third block")
+
+        # 23. Overlapping tokens: older timeout cannot clear a newer token
+        r23 = self.driver.execute_script("""
+            const ed = window.editorInstance;
+            // Token 1 created
+            const token1 = ed.markEnterHandledInKeydown(document.body);
+            // Token 2 created
+            const token2 = ed.markEnterHandledInKeydown(document.body);
+
+            // Stale callback for token 1 fires
+            if (ed._enterHandledKeydownToken === token1) {
+                ed.clearEnterHandledInKeydown();
+            }
+
+            const tokenAfterStaleCallback = ed._enterHandledKeydownToken;
+            const isHandled = ed.isEnterHandledInKeydown(document.body);
+
+            return {
+                token1: token1,
+                token2: token2,
+                tokenAfterStaleCallback: tokenAfterStaleCallback,
+                isHandled: isHandled
+            };
+        """)
+        self.assertNotEqual(r23['token1'], r23['token2'], "Tokens must increment")
+        self.assertEqual(r23['tokenAfterStaleCallback'], r23['token2'], "Older cleanup callback must not clear newer token")
+        self.assertTrue(r23['isHandled'], "Newer token must still be valid and consumable")
+
+        # 24. Key release, focus changes, unrelated keypress, and pointer interactions
+        r24 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b1 = window.editorInstance.createElementBlock('action', 'Focus change line 1', heading);
+            const ed1 = b1.querySelector('.element-content');
+            ed1.focus();
+
+            // Set Enter token on ed1
+            const token = window.editorInstance.markEnterHandledInKeydown(ed1);
+
+            // 1. Unrelated keyup (e.g., 'Shift', 'a') on ed1 or window must NOT clear Enter token
+            window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }));
+            ed1.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+            const tokenAfterUnrelatedKeyup = window.editorInstance._enterHandledKeydownToken;
+
+            // 2. Focus change to another element b2: legitimate Enter on ed2 not suppressed
+            const b2 = window.editorInstance.createElementBlock('action', 'Focus change line 2', b1);
+            const ed2 = b2.querySelector('.element-content');
+            ed1.blur();
+            ed2.focus();
+            const ed2EnterPrevented = !ed2.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true }));
+
+            // 3. Unrelated keydown on window clears any remaining stale token
+            window.editorInstance.markEnterHandledInKeydown(ed2);
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            const tokenAfterUnrelatedKeydown = window.editorInstance._enterHandledKeydownToken;
+
+            // 4. Pointerdown on document clears any remaining stale token
+            window.editorInstance.markEnterHandledInKeydown(ed2);
+            document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            const tokenAfterPointerdown = window.editorInstance._enterHandledKeydownToken;
+
+            const blocks = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            return {
+                tokenPreservedAfterUnrelatedKeyup: (tokenAfterUnrelatedKeyup === token),
+                ed2EnterPrevented: ed2EnterPrevented,
+                tokenClearedOnUnrelatedKeydown: (tokenAfterUnrelatedKeydown === 0),
+                tokenClearedOnPointerdown: (tokenAfterPointerdown === 0),
+                blockCount: blocks.length
+            };
+        """)
+        self.assertTrue(r24['tokenPreservedAfterUnrelatedKeyup'], "Unrelated keyup must not clear Enter token")
+        self.assertTrue(r24['ed2EnterPrevented'], "beforeinput on ed2 must be handled")
+        self.assertTrue(r24['tokenClearedOnUnrelatedKeydown'], "Unrelated keydown must clear stale token")
+        self.assertTrue(r24['tokenClearedOnPointerdown'], "Pointerdown must clear stale token")
+        self.assertEqual(r24['blockCount'], 3, "Legitimate Enter on ed2 must create third block")
+
+        # 25. Composition paragraph event: beforeinput insertParagraph while isComposing: true
+        r25 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'Comp Paragraph Test: ', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // Start composition
+            ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            document.execCommand('insertText', false, 'എഴുത്ത്');
+
+            // Dispatch beforeinput insertParagraph with isComposing: true
+            const biEvent = new InputEvent('beforeinput', { inputType: 'insertParagraph', isComposing: true, bubbles: true, cancelable: true });
+            const biPrevented = !ed.dispatchEvent(biEvent);
+
+            const blocksDuringComp = page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').length;
+            const isComposingDuring = window.editorInstance.isComposing;
+
+            // End composition
+            ed.dispatchEvent(new CompositionEvent('compositionend', { data: 'എഴുത്ത്', bubbles: true }));
+            const isComposingAfter = window.editorInstance.isComposing;
+
+            return {
+                biPrevented: biPrevented,
+                blocksDuringComp: blocksDuringComp,
+                isComposingDuring: isComposingDuring,
+                isComposingAfter: isComposingAfter,
+                content: ed.innerText.trim()
+            };
+        """)
+        self.assertTrue(r25['biPrevented'], "beforeinput during composition must be defaultPrevented")
+        self.assertEqual(r25['blocksDuringComp'], 1, "Editor must not split block during active composition")
+        self.assertTrue(r25['isComposingDuring'], "Composition state must remain active")
+        self.assertFalse(r25['isComposingAfter'], "Composition state must be false after compositionend")
+        self.assertIn('എഴുത്ത്', r25['content'], "Text composed must be present")
+
+        # 26. Composition commit, normal Enter afterward, and undo/redo restoration
+        r26 = self.driver.execute_script("""
+            const page = window.editorInstance.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const b = window.editorInstance.createElementBlock('action', 'മലയാളം: ', heading);
+            const ed = b.querySelector('.element-content');
+            ed.focus();
+            window.editorInstance.setCursorToEnd(ed);
+
+            // Composition session
+            ed.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+            document.execCommand('insertText', false, 'തിരക്കഥ');
+            ed.dispatchEvent(new CompositionEvent('compositionend', { data: 'തിരക്കഥ', bubbles: true }));
+
+            // Next legitimate Enter after composition
+            const enterEv = new InputEvent('beforeinput', { inputType: 'insertParagraph', isComposing: false, bubbles: true, cancelable: true });
+            ed.dispatchEvent(enterEv);
+
+            const blocksAfterEnter = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+
+            // Undo the Enter
+            window.editorInstance.undo();
+            const blocksAfterUndo = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+            const textAfterUndo = blocksAfterUndo[0] ? blocksAfterUndo[0].querySelector('.element-content').innerText.trim() : '';
+
+            // Redo the Enter
+            window.editorInstance.redo();
+            const blocksAfterRedo = Array.from(page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])'));
+
+            return {
+                blocksAfterEnterCount: blocksAfterEnter.length,
+                blocksAfterUndoCount: blocksAfterUndo.length,
+                textAfterUndo: textAfterUndo,
+                blocksAfterRedoCount: blocksAfterRedo.length
+            };
+        """)
+        self.assertEqual(r26['blocksAfterEnterCount'], 2, "Normal Enter after composition must split into exactly two blocks")
+        self.assertEqual(r26['blocksAfterUndoCount'], 1, "Undo must restore single block")
+        self.assertIn('മലയാളം: തിരക്കഥ', r26['textAfterUndo'], "Committed Malayalam text must remain intact after undo")
+        self.assertEqual(r26['blocksAfterRedoCount'], 2, "Redo must restore split block")
 
