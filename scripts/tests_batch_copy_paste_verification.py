@@ -518,3 +518,290 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
         """)
         # Exactly 1 character block named ACTOR should exist, not duplicates
         self.assertEqual(res['actorCount'], 1, f"Expected exactly 1 ACTOR block, found {res['actorCount']}")
+
+    def test_13_character_with_long_dialogue_over_40_chars(self):
+        """13. Regression: Character followed by dialogue over 40 chars is not misclassified as Action."""
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const text = 'RAHUL\\nWe need to secure the northern gate before the monsoon flood reaches the courtyard.';
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return text;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """)
+        elems = payload.get('elements', [])
+        char = next((e for e in elems if e['element_type'] == 'character' and e['content'] == 'RAHUL'), None)
+        dia = next((e for e in elems if e['element_type'] == 'dialogue' and 'northern gate' in e['content']), None)
+        self.assertIsNotNone(char, "RAHUL must be classified as character, not action")
+        self.assertIsNotNone(dia, "Dialogue >40 chars must be classified as dialogue, not action")
+        self.assertEqual(char['content'], 'RAHUL')
+        self.assertEqual(dia['content'], 'We need to secure the northern gate before the monsoon flood reaches the courtyard.')
+
+    def test_14_multiple_character_dialogue_exchanges_with_no_blank_lines(self):
+        """14. Multiple character/dialogue exchanges with long dialogue and no blank lines are parsed correctly."""
+        raw_text = (
+            "JOHN\n"
+            "I have been waiting here for over two hours and nobody has arrived yet.\n"
+            "MARY\n"
+            "The train was delayed at the central terminal because of heavy rain.\n"
+            "JOHN\n"
+            "We must leave before the security guards lock the main entrance gate."
+        )
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = inst.createElementBlock('action', '', heading);
+            emptyAction.querySelector('.element-content').focus();
+            inst.activeElementBlock = emptyAction;
+
+            const text = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return text;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, raw_text)
+        elems = [e for e in payload.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elems]
+        expected_types = ['character', 'dialogue', 'character', 'dialogue', 'character', 'dialogue']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, got {types}")
+        self.assertEqual(elems[0]['content'], 'JOHN')
+        self.assertEqual(elems[1]['content'], 'I have been waiting here for over two hours and nobody has arrived yet.')
+        self.assertEqual(elems[2]['content'], 'MARY')
+        self.assertEqual(elems[3]['content'], 'The train was delayed at the central terminal because of heavy rain.')
+        self.assertEqual(elems[4]['content'], 'JOHN')
+        self.assertEqual(elems[5]['content'], 'We must leave before the security guards lock the main entrance gate.')
+
+    def test_15_parentheticals_before_and_within_dialogue_and_action(self):
+        """15. Parentheticals at start of paste, within dialogue, and around action are preserved."""
+        raw_text = (
+            "The heavy wooden door swings slowly open.\n\n"
+            "PETER\n"
+            "(turning to face the window)\n"
+            "I knew you would come back before midnight.\n"
+            "(softly)\n"
+            "Even when everyone else doubted your innocence.\n\n"
+            "A loud thunderclap rattles the entire room."
+        )
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = inst.createElementBlock('action', '', heading);
+            emptyAction.querySelector('.element-content').focus();
+            inst.activeElementBlock = emptyAction;
+
+            const text = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return text;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, raw_text)
+        elems = [e for e in payload.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elems]
+        expected_types = ['action', 'character', 'parenthetical', 'dialogue', 'parenthetical', 'dialogue', 'action']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, got {types}")
+        self.assertEqual(elems[0]['content'], 'The heavy wooden door swings slowly open.')
+        self.assertEqual(elems[1]['content'], 'PETER')
+        self.assertEqual(elems[2]['content'], '(turning to face the window)')
+        self.assertEqual(elems[3]['content'], 'I knew you would come back before midnight.')
+        self.assertEqual(elems[4]['content'], '(softly)')
+        self.assertEqual(elems[5]['content'], 'Even when everyone else doubted your innocence.')
+        self.assertEqual(elems[6]['content'], 'A loud thunderclap rattles the entire room.')
+
+    def test_16_uppercase_action_lines_resembling_characters(self):
+        """16. Uppercase action phrases (e.g. HE TURNS, SUDDENLY) are not misclassified as characters."""
+        raw_text = (
+            "HE TURNS\n\n"
+            "DAVID\n"
+            "Did you hear the footsteps in the corridor?\n\n"
+            "SUDDENLY\n\n"
+            "The hallway lights flicker and extinguish completely."
+        )
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = inst.createElementBlock('action', '', heading);
+            emptyAction.querySelector('.element-content').focus();
+            inst.activeElementBlock = emptyAction;
+
+            const text = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return text;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, raw_text)
+        elems = [e for e in payload.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elems]
+        expected_types = ['action', 'character', 'dialogue', 'action', 'action']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, got {types}")
+        self.assertEqual(elems[0]['content'], 'HE TURNS')
+        self.assertEqual(elems[1]['content'], 'DAVID')
+        self.assertEqual(elems[2]['content'], 'Did you hear the footsteps in the corridor?')
+        self.assertEqual(elems[3]['content'], 'SUDDENLY')
+        self.assertEqual(elems[4]['content'], 'The hallway lights flicker and extinguish completely.')
+
+    def test_17_google_docs_mobile_html_payload_with_nbsp_and_crlf(self):
+        """17. Google Docs mobile HTML payload with &nbsp;, spans, and CRLF is cleanly parsed."""
+        docs_html = (
+            '<meta charset="utf-8">'
+            '<p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">'
+            '<span style="font-size:12pt;font-family:Courier New;color:#000000;background-color:transparent;font-weight:700;">'
+            'SARAH</span></p>'
+            '<p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">'
+            '<span style="font-size:12pt;font-family:Courier New;color:#000000;background-color:transparent;font-style:italic;">'
+            '(whispering)&nbsp;</span></p>'
+            '<p dir="ltr" style="line-height:1.38;margin-top:0pt;margin-bottom:0pt;">'
+            '<span style="font-size:12pt;font-family:Courier New;color:#000000;background-color:transparent;">'
+            'Do&nbsp;not&nbsp;make&nbsp;a&nbsp;sound&nbsp;until&nbsp;the&nbsp;guards&nbsp;leave&nbsp;the&nbsp;area.</span></p>'
+        )
+        plain_text = "SARAH\r\n(whispering)\u00A0\r\nDo\u00A0not\u00A0make\u00A0a\u00A0sound\u00A0until\u00A0the\u00A0guards\u00A0leave\u00A0the\u00A0area."
+
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const htmlContent = arguments[0];
+            const plainText = arguments[1];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/html') return htmlContent;
+                    if (format === 'text/plain') return plainText;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, docs_html, plain_text)
+        elems = payload.get('elements', [])
+        char = next((e for e in elems if e['element_type'] == 'character' and e['content'] == 'SARAH'), None)
+        paren = next((e for e in elems if e['element_type'] == 'parenthetical' and '(whispering)' in e['content']), None)
+        dia = next((e for e in elems if e['element_type'] == 'dialogue' and 'Do not make a sound' in e['content']), None)
+        self.assertIsNotNone(char, "SARAH must be character")
+        self.assertIsNotNone(paren, "(whispering) must be parenthetical")
+        self.assertIsNotNone(dia, "Dialogue must be dialogue")
+        self.assertNotIn('\u00A0', dia['content'], "Non-breaking spaces should be normalized")
+        self.assertNotIn('<span', dia['content'], "HTML spans must be stripped")
+
+    def test_18_malayalam_character_and_long_dialogue_and_mixed(self):
+        """18. Malayalam character with dialogue > 40 chars and mixed English preserves element types."""
+        raw_text = (
+            "മമ്മൂട്ടി\n"
+            "നമ്മൾ ഉദ്ദേശിച്ചതുപോലെ കാര്യങ്ങൾ മുന്നോട്ട് പോകുന്നില്ലെന്ന് എനിക്ക് വ്യക്തമായി തോന്നുന്നു.\n"
+            "(ചിരിച്ചുകൊണ്ട്)\n"
+            "Don't worry about the consequences, everything is planned carefully."
+        )
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = inst.createElementBlock('action', '', heading);
+            emptyAction.querySelector('.element-content').focus();
+            inst.activeElementBlock = emptyAction;
+
+            inst.characters = ['മമ്മൂട്ടി'];
+            const text = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return text;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, raw_text)
+        elems = [e for e in payload.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elems]
+        expected_types = ['character', 'dialogue', 'parenthetical', 'dialogue']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, got {types}")
+        self.assertEqual(elems[0]['content'], 'മമ്മൂട്ടി')
+        self.assertEqual(elems[1]['content'], 'നമ്മൾ ഉദ്ദേശിച്ചതുപോലെ കാര്യങ്ങൾ മുന്നോട്ട് പോകുന്നില്ലെന്ന് എനിക്ക് വ്യക്തമായി തോന്നുന്നു.')
+        self.assertEqual(elems[2]['content'], '(ചിരിച്ചുകൊണ്ട്)')
+        self.assertEqual(elems[3]['content'], "Don't worry about the consequences, everything is planned carefully.")
+
+    def test_19_internal_multiblock_touch_selection_and_safari_fallback(self):
+        """19. Simulates mobile touch copy where custom MIME is stripped and iOS Safari HTML fallback is used."""
+        safari_sanitized_html = (
+            '<div class="kadhascript-element element-type-action" data-element-type="action">A gentle morning breeze.</div>'
+            '<div class="kadhascript-element element-type-character" data-element-type="character">KAVYA</div>'
+            '<div class="kadhascript-element element-type-dialogue" data-element-type="dialogue">Are we ready to begin the shoot today?</div>'
+        )
+        payload = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const emptyAction = inst.createElementBlock('action', '', heading);
+            emptyAction.querySelector('.element-content').focus();
+            inst.activeElementBlock = emptyAction;
+
+            const htmlContent = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/html') return htmlContent;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, safari_sanitized_html)
+        elems = [e for e in payload.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elems]
+        expected_types = ['action', 'character', 'dialogue']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, got {types}")
+        self.assertEqual(elems[0]['content'], 'A gentle morning breeze.')
+        self.assertEqual(elems[1]['content'], 'KAVYA')
+        self.assertEqual(elems[2]['content'], 'Are we ready to begin the shoot today?')
+
+    def test_20_mobile_viewports_responsiveness_and_paste(self):
+        """20. Mobile viewports at 320px, 375px, and 414px handle copy/paste correctly without UI breakage."""
+        viewports = [(320, 568), (375, 667), (414, 896)]
+        for width, height in viewports:
+            self.driver.set_window_size(width, height)
+            time.sleep(0.2)
+            payload = self.driver.execute_script("""
+                const inst = window.editorInstance;
+                const text = 'ALEX\\nTesting mobile viewport paste at current resolution.';
+                const event = new Event('paste', { bubbles: true, cancelable: true });
+                event.clipboardData = {
+                    getData: function(format) {
+                        if (format === 'text/plain') return text;
+                        return '';
+                    }
+                };
+                inst.handlePaste(event);
+                return inst.extractScenePayload();
+            """)
+            elems = payload.get('elements', [])
+            char = next((e for e in elems if e['element_type'] == 'character' and e['content'] == 'ALEX'), None)
+            dia = next((e for e in elems if e['element_type'] == 'dialogue' and 'mobile viewport' in e['content']), None)
+            self.assertIsNotNone(char, f"Character ALEX must be created at viewport {width}x{height}")
+            self.assertIsNotNone(dia, f"Dialogue must be created at viewport {width}x{height}")
+        # Reset window size to standard test size
+        self.driver.set_window_size(1280, 900)

@@ -6372,7 +6372,11 @@ class KadhaEditor {
     parseScreenplayText(text, customCharacters = null) {
         if (!text || typeof text !== 'string') return [];
 
-        const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const normalized = text
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            .replace(/\u00A0/g, ' ')
+            .replace(/[\u200B-\u200D\uFEFF]/g, '');
         if (!normalized.trim()) return [];
 
         // Build set of known character names
@@ -6419,7 +6423,6 @@ class KadhaEditor {
                    (t.startsWith('[') && t.endsWith(']') && t.length >= 2);
         };
 
-        // Direction words / participles that can act as parentheticals without parentheses
         const isBareParentheticalWord = (str) => {
             if (!str) return false;
             const t = str.trim();
@@ -6486,12 +6489,15 @@ class KadhaEditor {
             if (t.length === 0) return false;
 
             // Common English narrative starters
-            if (/^(?:The|A|An|He|She|They|It|His|Her|Their)\s+[A-Za-z]/i.test(t)) {
+            if (/^(?:The|A|An|He|She|They|It|His|Her|Their|We|There|Suddenly|Then|After|Meanwhile|However|Because|Although|When|While|Outside|Inside|Later|Soon)\s+[A-Za-z]/i.test(t)) {
+                return true;
+            }
+            if (/^(?:THE|A|AN|HE|SHE|THEY|IT|HIS|HER|THEIR|WE|THERE|SUDDENLY|THEN|AFTER|MEANWHILE|HOWEVER|OUTSIDE|INSIDE|LATER|SOON)\s+[A-Z]/i.test(t)) {
                 return true;
             }
 
             // Malayalam narrative starters: അവൻ, അവൾ, അവർ, അയാൾ, ഇത്, അത്, etc.
-            if (/^(?:അവൻ|അവൾ|അവർ|അയാൾ|ഇവൻ|ഇവൾ|ഇവർ|ആ|ഈ)\s+/i.test(t)) {
+            if (/^(?:അവൻ|അവൾ|അവർ|അയാൾ|ഇവൻ|ഇവൾ|ഇവർ|ആ|ഈ|ഇവിടെ|അവിടെ|അപ്പോൾ|പെട്ടെന്ന്)\s+/.test(t)) {
                 return true;
             }
 
@@ -6504,6 +6510,17 @@ class KadhaEditor {
             if (/[.?!]$/.test(t)) {
                 if (/\b(?:walks|walked|steps|stepped|turns|turned|looks|looked|runs|ran|opens|opened|closes|closed|sits|sat|stands|stood|takes|took|moves|moved|enters|entered|leaves|left|picks|picked|drops|dropped|stares|stared|smiles|smiled|cries|cried|screams|screamed|shouts|shouted|gazes|gazed|approaches|approached)\b/i.test(t)) {
                     return true;
+                }
+            }
+
+            // Short all-caps action phrases with action verbs: "HE TURNS", "DOOR OPENS", "A SHADOW MOVES"
+            const upperWords = t.toUpperCase().split(/\s+/);
+            if (upperWords.length <= 4) {
+                const actionVerbs = new Set(['TURNS', 'LOOKS', 'WALKS', 'RUNS', 'OPENS', 'CLOSES', 'SITS', 'STANDS', 'ENTERS', 'LEAVES', 'STOPS', 'PASSES', 'FALLS', 'MOVES', 'CRASHES', 'EXPLODES', 'SHAKES']);
+                if (upperWords.some(w => actionVerbs.has(w))) {
+                    if (upperWords[0] === 'HE' || upperWords[0] === 'SHE' || upperWords[0] === 'THEY' || upperWords[0] === 'IT' || upperWords[0] === 'THE' || upperWords[0] === 'A' || upperWords[0] === 'AN') {
+                        return true;
+                    }
                 }
             }
 
@@ -6527,6 +6544,9 @@ class KadhaEditor {
             if (!baseName || baseName.length > 40) return false;
             if (/[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) return false;
 
+            // Action line should never be considered a character candidate
+            if (isNarrativeActionLine(baseName)) return false;
+
             // Disallow common document, email, and meeting prefixes
             if (/^(agenda|meeting|subject|topic|item|chapter|part|act|section|notice|warning|rule|step|instruction|summary|email|from|to|date|time|location|project|status|review|notes?|tasks?)\b/i.test(baseName)) {
                 return false;
@@ -6537,6 +6557,11 @@ class KadhaEditor {
 
             const words = baseName.split(/\s+/).filter(Boolean);
             if (words.length > 4) return false;
+
+            // Disallow single-word action adverbs or pronouns
+            const singleUpper = baseName.toUpperCase();
+            const disallowedSingles = new Set(['SUDDENLY', 'MEANWHILE', 'LATER', 'SOON', 'THEN', 'OUTSIDE', 'INSIDE', 'THERE', 'HERE', 'CONTINUOUS', 'DAY', 'NIGHT', 'SILENCE', 'MOMENTS LATER']);
+            if (disallowedSingles.has(singleUpper)) return false;
 
             // Malayalam candidate: 1-4 words, Malayalam script
             if (/[\u0D00-\u0D7F]/.test(baseName)) {
@@ -6562,6 +6587,24 @@ class KadhaEditor {
             }
 
             return false;
+        };
+
+        // Helper: Is a line plausible dialogue? Note that dialogue CAN be of any length!
+        const isPlausibleDialogue = (line) => {
+            if (!line) return false;
+            const t = line.trim();
+            if (t.length === 0) return false;
+            if (sluglineRegex.test(t)) return false;
+            const uc = t.toUpperCase();
+            if (transitionExact.has(uc) || (uc.endsWith(' TO:') && uc.length <= 35)) return false;
+            if (seqMarkerExact.has(uc) || numberedShotRegex.test(t)) return false;
+            if (t.startsWith('[[') && t.endsWith(']]')) return false;
+            return true;
+        };
+
+        const isPlausibleDialogueOrParen = (line) => {
+            if (!line) return false;
+            return isExplicitParenthetical(line) || isBareParentheticalWord(line) || isPlausibleDialogue(line);
         };
 
         // Tokenize raw lines while expanding inline "CHARACTER: DIALOGUE" lines if appropriate
@@ -6659,7 +6702,7 @@ class KadhaEditor {
                 }
 
                 // Standalone plausible character cue followed by plausible dialogue line
-                if (!isDisallowedForCharacter(nextT)) {
+                if (isPlausibleDialogue(nextT)) {
                     addDiscoveredChar(baseName);
                     continue;
                 }
@@ -6691,12 +6734,12 @@ class KadhaEditor {
             if (!isPlausibleCharacterCandidate(clean)) return false;
 
             // 3. Trailing colon
-            if (clean.endsWith(':') && nextLine && !isDisallowedForCharacter(nextLine)) {
+            if (clean.endsWith(':') && nextLine && isPlausibleDialogueOrParen(nextLine)) {
                 return true;
             }
 
             // 4. Followed by parenthetical or dialogue
-            if (nextLine && (isExplicitParenthetical(nextLine) || isBareParentheticalWord(nextLine) || !isDisallowedForCharacter(nextLine))) {
+            if (nextLine && isPlausibleDialogueOrParen(nextLine)) {
                 return true;
             }
 
@@ -6769,7 +6812,7 @@ class KadhaEditor {
                 }
                 i++;
 
-                // Optional parenthetical immediately following character
+                // Optional parentheticals immediately following character
                 while (i < lines.length) {
                     const candidateParen = lines[i].text;
                     const nextAfterParen = i + 1 < lines.length ? lines[i + 1].text : null;
@@ -6837,14 +6880,38 @@ class KadhaEditor {
                 continue;
             }
 
-            // 7. Isolated parenthetical
+            // 7. Explicit Parenthetical (standalone or starting a block)
             if (isExplicitParenthetical(text)) {
-                const lastType = elements.length > 0 ? elements[elements.length - 1].type : null;
-                if (lastType === 'character' || lastType === 'dialogue') {
-                    elements.push({ type: 'parenthetical', content: formatParen(text) });
+                elements.push({ type: 'parenthetical', content: formatParen(text) });
+                i++;
+                // If followed by dialogue, parse subsequent dialogue line(s)
+                const dialogueLines = [];
+                while (i < lines.length) {
+                    const dLine = lines[i].text;
+                    const dUc = dLine.toUpperCase();
+                    const dNext = i + 1 < lines.length ? lines[i + 1].text : null;
+                    if (sluglineRegex.test(dLine) || seqMarkerExact.has(dUc) ||
+                        transitionExact.has(dUc) || (dUc.endsWith(' TO:') && dUc.length <= 35) ||
+                        numberedShotRegex.test(dLine) || isCharacterLine(dLine, dNext) ||
+                        isNarrativeActionLine(dLine) || (lines[i].afterBlank && dialogueLines.length > 0)) {
+                        break;
+                    }
+                    if (isExplicitParenthetical(dLine)) {
+                        if (dialogueLines.length > 0) {
+                            elements.push({ type: 'dialogue', content: dialogueLines.join('\n') });
+                            dialogueLines.length = 0;
+                        }
+                        elements.push({ type: 'parenthetical', content: formatParen(dLine) });
+                        i++;
+                        continue;
+                    }
+                    dialogueLines.push(dLine);
                     i++;
-                    continue;
                 }
+                if (dialogueLines.length > 0) {
+                    elements.push({ type: 'dialogue', content: dialogueLines.join('\n') });
+                }
+                continue;
             }
 
             // 8. Action: collect consecutive action lines within paragraph
@@ -6861,6 +6928,7 @@ class KadhaEditor {
                 if (sluglineRegex.test(aLine) || seqMarkerExact.has(aUc) ||
                     transitionExact.has(aUc) || (aUc.endsWith(' TO:') && aUc.length <= 35) ||
                     numberedShotRegex.test(aLine) || isCharacterLine(aLine, aNext) ||
+                    isExplicitParenthetical(aLine) ||
                     (aLine.startsWith('[[') && aLine.endsWith(']]'))) {
                     break;
                 }
@@ -6872,6 +6940,23 @@ class KadhaEditor {
         }
 
         return elements;
+    }
+
+    extractTextFromHtml(html) {
+        if (!html || typeof html !== 'string') return '';
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            doc.querySelectorAll('script, style, noscript').forEach(s => s.remove());
+            doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+            const blocks = doc.querySelectorAll('p, div, h1, h2, h3, h4, h5, h6, li, tr');
+            blocks.forEach(b => {
+                b.append('\n');
+            });
+            return (doc.body.textContent || '').replace(/\u00A0/g, ' ');
+        } catch (err) {
+            return '';
+        }
     }
 
     // ----------------------------------------------------
@@ -7059,12 +7144,8 @@ class KadhaEditor {
             // Check if this is a complete-block selection or a partial-text selection
             const isComplete = selectedBlocks.every(block => this.isBlockFullySelected(block, range));
 
-            if (!isComplete) {
-                const parts = selectedBlocks.map((block, idx) => {
-                    return this.extractBlockPartialText(block, range, idx === 0, idx === selectedBlocks.length - 1);
-                });
-                const partialText = parts.join('\n');
-
+            if (!isComplete && selectedBlocks.length === 1) {
+                const partialText = this.extractBlockPartialText(selectedBlocks[0], range, true, true);
                 this.lastCopiedPayload = null;
 
                 if (e.clipboardData) {
@@ -7074,7 +7155,7 @@ class KadhaEditor {
                 return;
             }
 
-            selectedBlocks.forEach(block => {
+            selectedBlocks.forEach((block, idx) => {
                 let type = block.dataset.type || 'action';
                 let content = '';
                 if (type === 'scene_heading') {
@@ -7086,13 +7167,19 @@ class KadhaEditor {
                         content = block.querySelector('.element-content')?.innerText.trim() || 'INT. LOCATION - DAY';
                     }
                 } else {
-                    const ed = block.querySelector('.element-content:not(.d-none)') || block.querySelector('.element-content');
-                    content = ed ? ed.innerText.trim() : '';
+                    if (isComplete) {
+                        const ed = block.querySelector('.element-content:not(.d-none)') || block.querySelector('.element-content');
+                        content = ed ? ed.innerText.trim() : '';
+                    } else {
+                        content = this.extractBlockPartialText(block, range, idx === 0, idx === selectedBlocks.length - 1).trim();
+                    }
                     if (type === 'parenthetical') {
                         content = this.formatParenthetical(content);
                     }
                 }
-                elements.push({ type, content });
+                if (content || type === 'scene_heading') {
+                    elements.push({ type, content });
+                }
             });
         } else if (isInsideRead) {
             const allReadItems = Array.from(this.readModeContainer.querySelectorAll('.read-scene-heading, .read-element-block'));
@@ -7108,12 +7195,8 @@ class KadhaEditor {
 
             const isComplete = selectedItems.every(item => this.isBlockFullySelected(item, range));
 
-            if (!isComplete) {
-                const parts = selectedItems.map((item, idx) => {
-                    return this.extractBlockPartialText(item, range, idx === 0, idx === selectedItems.length - 1);
-                });
-                const partialText = parts.join('\n');
-
+            if (!isComplete && selectedItems.length === 1) {
+                const partialText = this.extractBlockPartialText(selectedItems[0], range, true, true);
                 this.lastCopiedPayload = null;
 
                 if (e.clipboardData) {
@@ -7123,7 +7206,7 @@ class KadhaEditor {
                 return;
             }
 
-            selectedItems.forEach(item => {
+            selectedItems.forEach((item, idx) => {
                 if (item.classList.contains('read-scene-heading')) {
                     const content = item.querySelector('.read-scene-identifier')?.innerText.trim() || item.innerText.trim();
                     elements.push({ type: 'scene_heading', content });
@@ -7135,11 +7218,18 @@ class KadhaEditor {
                             break;
                         }
                     }
-                    let content = item.querySelector('.element-content')?.innerText.trim() || '';
+                    let content = '';
+                    if (isComplete) {
+                        content = item.querySelector('.element-content')?.innerText.trim() || '';
+                    } else {
+                        content = this.extractBlockPartialText(item, range, idx === 0, idx === selectedItems.length - 1).trim();
+                    }
                     if (type === 'parenthetical') {
                         content = this.formatParenthetical(content);
                     }
-                    elements.push({ type, content });
+                    if (content || type === 'scene_heading') {
+                        elements.push({ type, content });
+                    }
                 }
             });
         }
@@ -7196,7 +7286,7 @@ class KadhaEditor {
             }
         }
 
-        // Fallback: check text/html data attribute
+        // Fallback 1: check text/html data attribute
         if (!payload && e.clipboardData) {
             const rawHtml = e.clipboardData.getData('text/html');
             if (rawHtml && rawHtml.includes('data-kadhascript-elements=')) {
@@ -7212,12 +7302,56 @@ class KadhaEditor {
             }
         }
 
+        // Fallback 2: check text/html for sanitized kadhascript-element blocks (e.g. on iOS Safari / Android)
+        if (!payload && e.clipboardData) {
+            const rawHtml = e.clipboardData.getData('text/html');
+            if (rawHtml && (rawHtml.includes('kadhascript-element') || rawHtml.includes('data-element-type='))) {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(rawHtml, 'text/html');
+                    const kElements = doc.querySelectorAll('.kadhascript-element, [data-element-type]');
+                    if (kElements.length > 0) {
+                        const extracted = [];
+                        kElements.forEach(el => {
+                            let type = el.getAttribute('data-element-type');
+                            if (!type) {
+                                for (const cls of el.classList) {
+                                    if (cls.startsWith('element-type-')) {
+                                        type = cls.replace('element-type-', '');
+                                        break;
+                                    }
+                                }
+                            }
+                            type = type || 'action';
+                            const content = el.textContent.trim();
+                            if (content || type === 'scene_heading') {
+                                extracted.push({ type, content });
+                            }
+                        });
+                        if (extracted.length > 0) {
+                            payload = {
+                                version: "1.0",
+                                source: "kadhascript",
+                                elements: extracted
+                            };
+                        }
+                    }
+                } catch (err) {
+                    payload = null;
+                }
+            }
+        }
+
         // In-memory fallback if within same browser session
         if (!payload && this.lastCopiedPayload && e.clipboardData) {
             const pastedText = e.clipboardData.getData('text/plain');
             const expectedText = this.formatElementsToPlainText(this.lastCopiedPayload.elements);
-            if (pastedText && expectedText && pastedText.trim() === expectedText.trim()) {
-                payload = this.lastCopiedPayload;
+            if (pastedText && expectedText) {
+                const normPasted = pastedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim();
+                const normExpected = expectedText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim();
+                if (normPasted === normExpected || normPasted.replace(/\s+/g, ' ') === normExpected.replace(/\s+/g, ' ')) {
+                    payload = this.lastCopiedPayload;
+                }
             }
         }
 
@@ -7301,6 +7435,12 @@ class KadhaEditor {
         // BRANCH 2: EXTERNAL CLIPBOARD
         // ----------------------------------------------------
         let externalText = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+        if (!externalText && e.clipboardData) {
+            const rawHtml = e.clipboardData.getData('text/html');
+            if (rawHtml) {
+                externalText = this.extractTextFromHtml(rawHtml);
+            }
+        }
         if (!externalText) {
             // Nothing to paste
             return;
@@ -7311,8 +7451,8 @@ class KadhaEditor {
         // Intercept external paste
         e.preventDefault();
 
-        // Normalize line breaks: CRLF and CR -> LF
-        externalText = externalText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        // Normalize line breaks: CRLF and CR -> LF, and non-breaking spaces
+        externalText = externalText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ');
 
         // Resolve target editable element
         let targetEditable = null;
