@@ -1175,6 +1175,11 @@ class KadhaEditor {
                 this.executeLineBreak(block, editable);
                 return;
             }
+
+            // Android-style clipboard and virtual keyboard paste handling
+            if (this.handleBeforeInputPaste && this.handleBeforeInputPaste(e, block, editable)) {
+                return;
+            }
         });
     }
 
@@ -7265,6 +7270,29 @@ class KadhaEditor {
         // Only intercept in Edit Mode inside page container
         if (this.editorMode !== 'edit' || !this.pageContainer) return;
 
+        // Deduplication: suppress only if a companion beforeinput event belonging to the
+        // same user paste operation was already handled recently (<300ms) with matching content.
+        const now = Date.now();
+        if (this._lastPasteHandledSource === 'beforeinput' &&
+            this._lastPasteHandledTime &&
+            (now - this._lastPasteHandledTime < 300)) {
+            let incomingText = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+            if (!incomingText && e.clipboardData) {
+                const rawHtml = e.clipboardData.getData('text/html');
+                if (rawHtml) {
+                    incomingText = this.extractTextFromHtml(rawHtml);
+                }
+            }
+            const normIncoming = (incomingText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim().slice(0, 100);
+            if (normIncoming && this._lastPasteHandledText &&
+                (normIncoming === this._lastPasteHandledText ||
+                 this._lastPasteHandledText.startsWith(normIncoming) ||
+                 normIncoming.startsWith(this._lastPasteHandledText))) {
+                e.preventDefault();
+                return;
+            }
+        }
+
         // Do not intercept if active element is a search input or modal input
         const activeEl = document.activeElement;
         if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.closest('.modal'))) {
@@ -7359,6 +7387,8 @@ class KadhaEditor {
         // BRANCH 1: INTERNAL KADHASCRIPT SEMANTIC CLIPBOARD
         // ----------------------------------------------------
         if (payload && payload.elements && Array.isArray(payload.elements) && payload.elements.length > 0) {
+            const internalText = this.formatElementsToPlainText(payload.elements);
+            this._recordPasteHandled('paste', internalText || 'internal-kadhascript');
             e.preventDefault();
             const preSnap = this.captureSnapshot();
 
@@ -7536,171 +7566,371 @@ class KadhaEditor {
             const isValidPlan = hasScreenplayElements && parsedElements.every(el => el && el.type && VALID_TYPES.has(el.type));
 
             if (isValidPlan) {
-                const isSequenceScene = !!this.currentSceneIsSequence;
-                const headingElements = parsedElements.filter(e => e.type === 'scene_heading');
-                const hasMultipleHeadings = headingElements.length > 1;
-
-                let updatedSceneHeading = false;
-                const elementsToInsert = [];
-
-                for (let idx = 0; idx < parsedElements.length; idx++) {
-                    const el = parsedElements[idx];
-                    let type = el.type || 'action';
-                    let content = el.content || '';
-
-                    // Context Safety 1: Sequence markers and sequence shots in ordinary scenes
-                    if (!isSequenceScene && type === 'shot') {
-                        const trimmedShot = (content || '').trim().toUpperCase();
-                        if (trimmedShot === 'SONG BEGINS' || trimmedShot === 'MONTAGE BEGINS' ||
-                            trimmedShot === 'SONG ENDS' || trimmedShot === 'MONTAGE ENDS' ||
-                            /^\s*\d+\.\s+/.test(content)) {
-                            type = 'action';
-                        }
-                    }
-
-                    // Context Safety 2: Scene Headings
-                    if (type === 'scene_heading') {
-                        if (isSequenceScene) {
-                            type = 'action';
-                        } else if (hasMultipleHeadings) {
-                            type = 'action';
-                        } else {
-                            const existingHeadingBlock = this.pageContainer.querySelector('.script-element-block[data-type="scene_heading"]');
-                            if (existingHeadingBlock) {
-                                const locInp = existingHeadingBlock.querySelector('.heading-location-input');
-                                const intextSel = existingHeadingBlock.querySelector('.heading-intext-select');
-                                const timeSel = existingHeadingBlock.querySelector('.heading-time-select');
-                                const ed = existingHeadingBlock.querySelector('.element-content');
-
-                                if (locInp && (!locInp.value.trim() || locInp.value.trim() === 'LOCATION') && idx === 0) {
-                                    const parsed = this.parseHeading(content);
-                                    if (intextSel) intextSel.value = parsed.intext;
-                                    if (locInp) locInp.value = parsed.location;
-                                    if (timeSel) timeSel.value = parsed.time;
-                                    if (ed) ed.innerText = this.buildHeading(parsed.intext, parsed.location, parsed.time);
-                                    this.currentSceneHeading = ed ? ed.innerText : content;
-                                    updatedSceneHeading = true;
-                                    continue;
-                                } else {
-                                    type = 'action';
-                                }
-                            }
-                        }
-                    }
-
-                    elementsToInsert.push({ type, content });
-                }
-
-                if (elementsToInsert.length === 0 && updatedSceneHeading) {
-                    this.pushUndoSnapshot(preSnap);
-                    this.markDirty();
-                    this.calculateLiveStats();
+                const inserted = this.insertParsedScreenplayPlan(parsedElements, targetEditable, preSnap);
+                if (inserted) {
+                    this._recordPasteHandled('paste', externalText);
                     return;
-                }
-
-                if (elementsToInsert.length > 0) {
-                    let targetBlock = targetEditable.closest('.script-element-block');
-                    if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
-                        targetBlock = this.activeElementBlock || this.pageContainer.lastElementChild;
-                    }
-
-                    let shouldReplaceTarget = false;
-                    if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
-                        const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
-                        if (ed && ed.innerText.trim() === '') {
-                            shouldReplaceTarget = true;
-                        }
-                    }
-
-                    let insertAnchor = targetBlock;
-                    if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
-                        insertAnchor = targetBlock.previousElementSibling;
-                    }
-
-                    const targetBlockNextSibling = shouldReplaceTarget && targetBlock ? targetBlock.nextSibling : null;
-                    let targetBlockRemoved = false;
-
-                    let currentAnchor = insertAnchor;
-                    let firstInserted = null;
-                    let lastInserted = null;
-                    const insertedBlocks = [];
-
-                    try {
-                        for (let k = 0; k < elementsToInsert.length; k++) {
-                            const item = elementsToInsert[k];
-                            let cType = item.type || 'action';
-                            let cContent = item.content || '';
-                            if (cType === 'parenthetical') {
-                                cContent = this.formatParenthetical(cContent);
-                            }
-                            const newBlock = this.createElementBlock(cType, cContent, currentAnchor);
-                            insertedBlocks.push(newBlock);
-                            if (!firstInserted) firstInserted = newBlock;
-                            lastInserted = newBlock;
-                            currentAnchor = newBlock;
-                        }
-
-                        if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
-                            targetBlock.remove();
-                            targetBlockRemoved = true;
-                        }
-
-                        if (lastInserted) {
-                            const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
-                            if (lastEd) {
-                                lastEd.focus();
-                                this.setCursorToEnd(lastEd);
-                            }
-                            document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
-                            lastInserted.classList.add('focused');
-                            this.activeElementBlock = lastInserted;
-                            this.updateActiveToolbarButton(lastInserted.dataset.type);
-                            if (this.currentTypeEl) {
-                                this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
-                            }
-                        }
-
-                        this.pushUndoSnapshot(preSnap);
-                        this.markDirty();
-                        this.calculateLiveStats();
-                        return;
-                    } catch (insertionErr) {
-                        // Rollback any partially inserted blocks
-                        insertedBlocks.forEach(b => {
-                            if (b && b.parentNode) b.remove();
-                        });
-
-                        // Restore original destination block if it was removed
-                        if (targetBlockRemoved && targetBlock && !targetBlock.parentNode) {
-                            if (targetBlockNextSibling && targetBlockNextSibling.parentNode === this.pageContainer) {
-                                this.pageContainer.insertBefore(targetBlock, targetBlockNextSibling);
-                            } else {
-                                this.pageContainer.appendChild(targetBlock);
-                            }
-                            document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
-                            targetBlock.classList.add('focused');
-                            this.activeElementBlock = targetBlock;
-                            if (targetEditable) {
-                                targetEditable.focus();
-                                this.setCursorToEnd(targetEditable);
-                            }
-                            this.updateActiveToolbarButton(targetBlock.dataset.type);
-                            if (this.currentTypeEl) {
-                                this.currentTypeEl.innerText = this.formatTypeLabel(targetBlock.dataset.type);
-                            }
-                        }
-                        // Fall back to clean inline plain-text paste below
-                    }
+                } else {
+                    // Structured insertion took responsibility for screenplay paste, but failed & rolled back.
+                    // DO NOT fall through to insertPlainTextAtCaret, which dumps
+                    // the entire multiline screenplay into a single Action element!
+                    console.error('KadhaScript: Structured screenplay paste insertion failed and was safely rolled back.');
+                    this.setSaveStatus('error', 'Paste formatting failed. Original content preserved.');
+                    return;
                 }
             }
         }
 
         // Insert clean plain text at current caret position
         this.insertPlainTextAtCaret(targetEditable, externalText, isTargetAlreadyFocused);
+        this._recordPasteHandled('paste', externalText);
 
         this.pushUndoSnapshot(preSnap);
         this.markDirty();
         this.calculateLiveStats();
+    }
+
+    _recordPasteHandled(source = 'paste', text = '') {
+        this._lastPasteHandledSource = source; // 'paste' or 'beforeinput'
+        this._lastPasteHandledTime = Date.now();
+        this._lastPasteHandledText = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim().slice(0, 100);
+    }
+
+    // ----------------------------------------------------
+    // ANDROID VIRTUAL KEYBOARD / BEFOREINPUT PASTE HANDLER
+    // ----------------------------------------------------
+    handleBeforeInputPaste(e, block, editable) {
+        if (!e) return false;
+        if (this.editorMode !== 'edit' || !this.pageContainer) return false;
+        if (e.isComposing || this.isComposing) return false;
+
+        // Never intercept inside location input or non-element content
+        if (!editable || editable.tagName === 'INPUT' || editable.tagName === 'TEXTAREA' || editable.classList.contains('heading-location-input')) {
+            return false;
+        }
+
+        const inputType = e.inputType || '';
+        const isPasteType = inputType === 'insertFromPaste' || inputType === 'insertFromPasteAsQuotation';
+        const isTextType = inputType === 'insertText';
+
+        if (!isPasteType && !isTextType) {
+            return false;
+        }
+
+        // Deduplication: suppress only if a companion paste event belonging to the
+        // same user paste operation was already handled recently (<300ms) with matching content.
+        const now = Date.now();
+        if (this._lastPasteHandledSource === 'paste' &&
+            this._lastPasteHandledTime &&
+            (now - this._lastPasteHandledTime < 300)) {
+            let rawIncoming = (typeof e.data === 'string' ? e.data : '');
+            if (!rawIncoming && e.dataTransfer) {
+                try {
+                    rawIncoming = e.dataTransfer.getData('text/plain') || '';
+                } catch (err) {
+                    rawIncoming = '';
+                }
+            }
+            const normIncoming = rawIncoming.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim().slice(0, 100);
+            if (normIncoming && this._lastPasteHandledText &&
+                (normIncoming === this._lastPasteHandledText ||
+                 this._lastPasteHandledText.startsWith(normIncoming) ||
+                 normIncoming.startsWith(this._lastPasteHandledText))) {
+                e.preventDefault();
+                return true;
+            }
+        }
+
+        // 1. Extract text safely from available event properties without assuming dataTransfer exists
+        let rawText = '';
+        if (typeof e.data === 'string' && e.data.length > 0) {
+            rawText = e.data;
+        } else if (e.dataTransfer) {
+            try {
+                rawText = e.dataTransfer.getData('text/plain') || '';
+                if (!rawText) {
+                    const rawHtml = e.dataTransfer.getData('text/html');
+                    if (rawHtml) {
+                        rawText = this.extractTextFromHtml(rawHtml);
+                    }
+                }
+            } catch (err) {
+                rawText = '';
+            }
+        }
+
+        // 2. Check explicit semantic KadhaScript payload ONLY if explicitly attached or matching current rawText
+        let semanticPayload = null;
+        if (e.dataTransfer) {
+            try {
+                const customData = e.dataTransfer.getData('application/x-kadhascript-elements');
+                if (customData) {
+                    semanticPayload = JSON.parse(customData);
+                }
+            } catch (err) {
+                semanticPayload = null;
+            }
+            if (!semanticPayload) {
+                try {
+                    const rawHtml = e.dataTransfer.getData('text/html');
+                    if (rawHtml && rawHtml.includes('data-kadhascript-elements=')) {
+                        const match = rawHtml.match(/data-kadhascript-elements=["']([^"']+)["']/);
+                        if (match && match[1]) {
+                            semanticPayload = JSON.parse(this.unescapeAttribute(match[1]));
+                        }
+                    }
+                } catch (err) {
+                    semanticPayload = null;
+                }
+            }
+        }
+
+        // In-memory fallback ONLY when rawText is present and matches the cached payload
+        if (!semanticPayload && isPasteType && this.lastCopiedPayload && this.lastCopiedPayload.elements && rawText) {
+            const expected = this.formatElementsToPlainText(this.lastCopiedPayload.elements);
+            const normRaw = rawText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim();
+            const normExp = (expected || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ').trim();
+            if (normRaw && normExp && (normRaw === normExp || normRaw.replace(/\s+/g, ' ') === normExp.replace(/\s+/g, ' '))) {
+                semanticPayload = this.lastCopiedPayload;
+            }
+        }
+
+        // Missing or unidentifiable data: leave event unprevented and let native browser / companion handling proceed
+        if (!rawText && !semanticPayload) {
+            return false;
+        }
+
+        const normalized = (rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\u00A0/g, ' ');
+
+        // For insertText, only intercept multiline screenplay text to avoid blocking normal typing or IME
+        if (isTextType && !normalized.includes('\n')) {
+            return false;
+        }
+
+        // If semantic payload is available from internal copy, apply semantic insertion
+        if (semanticPayload && semanticPayload.elements && Array.isArray(semanticPayload.elements) && semanticPayload.elements.length > 0) {
+            e.preventDefault();
+            const preSnap = this.captureSnapshot();
+            const inserted = this.insertParsedScreenplayPlan(semanticPayload.elements, editable, preSnap);
+            if (inserted) {
+                const plainText = this.formatElementsToPlainText(semanticPayload.elements);
+                this._recordPasteHandled('beforeinput', plainText || rawText || 'internal-kadhascript');
+                return true;
+            } else {
+                console.error('KadhaScript: Semantic beforeinput paste insertion failed and was safely rolled back.');
+                this.setSaveStatus('error', 'Paste formatting failed. Original content preserved.');
+                return false;
+            }
+        }
+
+        // Structural screenplay parsing for multiline external paste
+        if (normalized.includes('\n')) {
+            let parsedElements = [];
+            try {
+                parsedElements = this.parseScreenplayText(normalized);
+            } catch (err) {
+                parsedElements = [];
+            }
+
+            const VALID_TYPES = new Set(['scene_heading', 'action', 'character', 'dialogue', 'parenthetical', 'transition', 'shot', 'note']);
+            const hasScreenplayElements = parsedElements && parsedElements.length > 0 &&
+                                          parsedElements.some(el => el && el.type && el.type !== 'action');
+            const isValidPlan = hasScreenplayElements && parsedElements.every(el => el && el.type && VALID_TYPES.has(el.type));
+
+            if (isValidPlan) {
+                e.preventDefault();
+                const preSnap = this.captureSnapshot();
+                const inserted = this.insertParsedScreenplayPlan(parsedElements, editable, preSnap);
+                if (inserted) {
+                    this._recordPasteHandled('beforeinput', normalized);
+                    return true;
+                } else {
+                    console.error('KadhaScript: Structured beforeinput paste insertion failed and was safely rolled back.');
+                    this.setSaveStatus('error', 'Paste formatting failed. Original content preserved.');
+                    return false;
+                }
+            }
+        }
+
+        // For insertFromPaste with single-line or non-screenplay text, prevent native contenteditable mess
+        // and insert clean plain text at caret
+        if (isPasteType) {
+            e.preventDefault();
+            const preSnap = this.captureSnapshot();
+            this.insertPlainTextAtCaret(editable, normalized, true);
+            this._recordPasteHandled('beforeinput', normalized);
+            this.pushUndoSnapshot(preSnap);
+            this.markDirty();
+            this.calculateLiveStats();
+            return true;
+        }
+
+        return false;
+    }
+
+    insertParsedScreenplayPlan(parsedElements, targetEditable, preSnap) {
+        if (!parsedElements || !Array.isArray(parsedElements) || parsedElements.length === 0) {
+            return false;
+        }
+
+        const isSequenceScene = !!this.currentSceneIsSequence;
+        const headingElements = parsedElements.filter(e => e && e.type === 'scene_heading');
+        const hasMultipleHeadings = headingElements.length > 1;
+
+        let updatedSceneHeading = false;
+        const elementsToInsert = [];
+
+        for (let idx = 0; idx < parsedElements.length; idx++) {
+            const el = parsedElements[idx];
+            if (!el) continue;
+            let type = el.type || 'action';
+            let content = el.content || '';
+
+            // Context Safety 1: Sequence markers and sequence shots in ordinary scenes
+            if (!isSequenceScene && type === 'shot') {
+                const trimmedShot = (content || '').trim().toUpperCase();
+                if (trimmedShot === 'SONG BEGINS' || trimmedShot === 'MONTAGE BEGINS' ||
+                    trimmedShot === 'SONG ENDS' || trimmedShot === 'MONTAGE ENDS' ||
+                    /^\s*\d+\.\s+/.test(content)) {
+                    type = 'action';
+                }
+            }
+
+            // Context Safety 2: Scene Headings
+            if (type === 'scene_heading') {
+                if (isSequenceScene) {
+                    type = 'action';
+                } else if (hasMultipleHeadings) {
+                    type = 'action';
+                } else {
+                    const existingHeadingBlock = this.pageContainer.querySelector('.script-element-block[data-type="scene_heading"]');
+                    if (existingHeadingBlock) {
+                        const locInp = existingHeadingBlock.querySelector('.heading-location-input');
+                        const intextSel = existingHeadingBlock.querySelector('.heading-intext-select');
+                        const timeSel = existingHeadingBlock.querySelector('.heading-time-select');
+                        const ed = existingHeadingBlock.querySelector('.element-content');
+
+                        if (locInp && (!locInp.value.trim() || locInp.value.trim() === 'LOCATION') && idx === 0) {
+                            const parsed = this.parseHeading(content);
+                            if (intextSel) intextSel.value = parsed.intext;
+                            if (locInp) locInp.value = parsed.location;
+                            if (timeSel) timeSel.value = parsed.time;
+                            if (ed) ed.innerText = this.buildHeading(parsed.intext, parsed.location, parsed.time);
+                            this.currentSceneHeading = ed ? ed.innerText : content;
+                            updatedSceneHeading = true;
+                            continue;
+                        } else {
+                            type = 'action';
+                        }
+                    }
+                }
+            }
+
+            elementsToInsert.push({ type, content });
+        }
+
+        if (elementsToInsert.length === 0 && updatedSceneHeading) {
+            this.pushUndoSnapshot(preSnap);
+            this.markDirty();
+            this.calculateLiveStats();
+            return true;
+        }
+
+        if (elementsToInsert.length > 0) {
+            let targetBlock = targetEditable ? targetEditable.closest('.script-element-block') : null;
+            if (!targetBlock || targetBlock.parentNode !== this.pageContainer) {
+                targetBlock = this.activeElementBlock || this.pageContainer.lastElementChild;
+            }
+
+            let shouldReplaceTarget = false;
+            if (targetBlock && targetBlock.dataset.type !== 'scene_heading') {
+                const ed = targetBlock.querySelector('.element-content:not(.d-none)') || targetBlock.querySelector('.element-content');
+                if (ed && ed.innerText.trim() === '') {
+                    shouldReplaceTarget = true;
+                }
+            }
+
+            let insertAnchor = targetBlock;
+            if (shouldReplaceTarget && targetBlock && targetBlock.previousElementSibling) {
+                insertAnchor = targetBlock.previousElementSibling;
+            }
+
+            const targetBlockNextSibling = shouldReplaceTarget && targetBlock ? targetBlock.nextSibling : null;
+            let targetBlockRemoved = false;
+
+            let currentAnchor = insertAnchor;
+            let firstInserted = null;
+            let lastInserted = null;
+            const insertedBlocks = [];
+
+            try {
+                for (let k = 0; k < elementsToInsert.length; k++) {
+                    const item = elementsToInsert[k];
+                    let cType = item.type || 'action';
+                    let cContent = item.content || '';
+                    if (cType === 'parenthetical') {
+                        cContent = this.formatParenthetical(cContent);
+                    }
+                    const newBlock = this.createElementBlock(cType, cContent, currentAnchor);
+                    insertedBlocks.push(newBlock);
+                    if (!firstInserted) firstInserted = newBlock;
+                    lastInserted = newBlock;
+                    currentAnchor = newBlock;
+                }
+
+                if (shouldReplaceTarget && targetBlock && targetBlock.parentNode) {
+                    targetBlock.remove();
+                    targetBlockRemoved = true;
+                }
+
+                if (lastInserted) {
+                    const lastEd = lastInserted.querySelector('.element-content:not(.d-none)') || lastInserted.querySelector('.element-content');
+                    if (lastEd) {
+                        lastEd.focus();
+                        this.setCursorToEnd(lastEd);
+                    }
+                    document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                    lastInserted.classList.add('focused');
+                    this.activeElementBlock = lastInserted;
+                    this.updateActiveToolbarButton(lastInserted.dataset.type);
+                    if (this.currentTypeEl) {
+                        this.currentTypeEl.innerText = this.formatTypeLabel(lastInserted.dataset.type);
+                    }
+                }
+
+                this.pushUndoSnapshot(preSnap);
+                this.markDirty();
+                this.calculateLiveStats();
+                return true;
+            } catch (insertionErr) {
+                // Rollback any partially inserted blocks
+                insertedBlocks.forEach(b => {
+                    if (b && b.parentNode) b.remove();
+                });
+
+                // Restore original destination block if it was removed
+                if (targetBlockRemoved && targetBlock && !targetBlock.parentNode) {
+                    if (targetBlockNextSibling && targetBlockNextSibling.parentNode === this.pageContainer) {
+                        this.pageContainer.insertBefore(targetBlock, targetBlockNextSibling);
+                    } else {
+                        this.pageContainer.appendChild(targetBlock);
+                    }
+                    document.querySelectorAll('.script-element-block.focused').forEach(b => b.classList.remove('focused'));
+                    targetBlock.classList.add('focused');
+                    this.activeElementBlock = targetBlock;
+                    if (targetEditable) {
+                        targetEditable.focus();
+                        this.setCursorToEnd(targetEditable);
+                    }
+                    this.updateActiveToolbarButton(targetBlock.dataset.type);
+                    if (this.currentTypeEl) {
+                        this.currentTypeEl.innerText = this.formatTypeLabel(targetBlock.dataset.type);
+                    }
+                }
+                return false;
+            }
+        }
+        return false;
     }
 
     insertPlainTextAtCaret(targetEditable, text, isTargetAlreadyFocused) {
