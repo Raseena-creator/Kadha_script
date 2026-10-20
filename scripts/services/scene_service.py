@@ -135,7 +135,9 @@ def duplicate_scene(script: Script, source_scene: Scene) -> Scene:
                 summary=source_scene.summary,
                 order=insert_order,
                 is_duplicate=True,
-                duplicate_number=next_dup_num
+                duplicate_number=next_dup_num,
+                is_intercut=source_scene.is_intercut,
+                intercut_source=source_scene.intercut_source
             )
 
             # Copy elements
@@ -393,23 +395,72 @@ def create_sequence_scene(script: Script, reference_scene_id: int = None, sequen
         return new_scene
 
 
+def resolve_canonical_main_scene(script: Script, scene: Scene) -> Scene:
+    """
+    Resolves any scene, sub-scene, or intercut transition scene to its canonical active main scene.
+    - If scene is an intercut entry, follows intercut_source to the actual source scene.
+      Safely raises ValueError if intercut_source is missing, deleted, or circular.
+    - If scene (or resolved source) is a sub-scene, resolves its parent main scene.
+      Safely raises ValueError if the parent scene is missing or deleted.
+    - If scene is an active main scene, returns it directly.
+    """
+    curr = scene
+    seen_intercut_ids = {curr.id}
+    while curr.is_intercut:
+        source = curr.intercut_source
+        if not source or source.is_deleted or source.script_id != script.id:
+            raise ValueError("Cannot create a sub-scene from an intercut scene whose source scene is missing or deleted.")
+        if source.id in seen_intercut_ids:
+            raise ValueError("Circular intercut relationship detected.")
+        seen_intercut_ids.add(source.id)
+        curr = source
+
+    if curr.is_sub_scene:
+        parent = curr.parent_scene
+        if not parent or parent.is_deleted or parent.script_id != script.id:
+            raise ValueError("Cannot create a sub-scene because the parent scene of the sub-scene is missing or deleted.")
+        curr = parent
+
+    return curr
+
+
 def create_sub_scene(script: Script, parent_scene_id: int, heading: str = 'INT. LOCATION - DAY', summary: str = '') -> Scene:
     """
     Creates a new sub-scene under the specified parent scene.
+    - If parent_scene_id refers to an ordinary scene or sub-scene, it is inserted into the
+      canonical parent's top cluster with is_intercut=False.
+    - If parent_scene_id refers to a Cut Back / intercut entry, it is inserted immediately after
+      that specific entry in the timeline with is_intercut=True and intercut_source pointing to
+      the original source scene, while still belonging to the canonical main scene for numbering (e.g. 17B).
     """
     heading = (heading or 'INT. LOCATION - DAY').strip()
     summary = (summary or '').strip()
 
     with transaction.atomic():
-        parent = script.scenes.get(id=parent_scene_id, is_deleted=False)
-        if parent.parent_scene and not parent.parent_scene.is_deleted:
-            parent = parent.parent_scene
-
-        # Find the last active sub-scene of this parent or the parent itself
-        last_sub = parent.sub_scenes.filter(is_deleted=False).order_by('-order', '-id').first()
-        ref_scene = last_sub if last_sub else parent
+        raw_scene = script.scenes.get(id=parent_scene_id, is_deleted=False)
+        parent = resolve_canonical_main_scene(script, raw_scene)
 
         all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
+
+        if raw_scene.is_intercut:
+            ref_scene = raw_scene
+            # Resolve original source scene (not intermediate cutback)
+            curr_src = raw_scene.intercut_source
+            seen_intercut = {raw_scene.id}
+            while curr_src and curr_src.is_intercut and not curr_src.is_sub_scene:
+                if curr_src.id in seen_intercut:
+                    break
+                seen_intercut.add(curr_src.id)
+                curr_src = curr_src.intercut_source
+            source_scene = curr_src if curr_src else raw_scene
+            is_intercut_entry = True
+        else:
+            # Ordinary scene: place after the last active standard sub-scene of this parent or parent itself
+            last_sub = parent.sub_scenes.filter(is_deleted=False, is_intercut=False).order_by('-order', '-id').first()
+            ref_scene = last_sub if last_sub else parent
+            source_scene = None
+            is_intercut_entry = False
+
         try:
             ref_idx = [s.id for s in all_scenes].index(ref_scene.id)
             target_order = ref_idx + 1
@@ -427,7 +478,9 @@ def create_sub_scene(script: Script, parent_scene_id: int, heading: str = 'INT. 
             scene_number=parent.scene_number,
             heading=heading,
             summary=summary,
-            order=target_order
+            order=target_order,
+            is_intercut=is_intercut_entry,
+            intercut_source=source_scene
         )
 
         ScriptElement.objects.create(scene=new_sub, element_type='scene_heading', content=heading, order=0)
@@ -450,7 +503,7 @@ def create_sub_scene_2(script: Script, source_scene_id: int, current_scene_id: i
     """
     with transaction.atomic():
         source_scene = script.scenes.get(id=source_scene_id, is_deleted=False)
-        parent = source_scene.parent_scene if (source_scene.parent_scene and not source_scene.parent_scene.is_deleted) else source_scene
+        parent = resolve_canonical_main_scene(script, source_scene)
 
         all_scenes = list(script.scenes.filter(is_deleted=False).order_by('order', 'id'))
         current_scene = None
@@ -990,6 +1043,7 @@ def serialize_scenes_hierarchy(script: Script) -> list:
             'is_duplicate': sc.is_duplicate,
             'duplicate_number': sc.duplicate_number,
             'is_intercut': sc.is_intercut,
+            'intercut_source_id': sc.intercut_source_id,
             'is_sequence': sc.is_sequence,
             'sequence_type': sc.sequence_type,
             'scene_number': sc.scene_number,

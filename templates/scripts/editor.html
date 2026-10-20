@@ -186,7 +186,7 @@
                         <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
                                 data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
                                     class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub-Scene After</button></li>
-                        <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.parent_scene_id|default:sc.id }}"
+                        <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{% if sc.is_intercut %}{{ sc.id }}{% else %}{{ sc.parent_scene_id|default:sc.id }}{% endif %}"
                                 data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                         <li>
                             <hr class="dropdown-divider">
@@ -293,7 +293,7 @@
                             <li><button type="button" class="dropdown-item btn-action-insert-after" data-id="{{ sc.id }}"
                                     data-is-sub="true" data-heading="{{ sc.heading|escape }}"><i
                                         class="bi bi-arrow-down-circle me-2 text-success"></i>Insert Sub-Scene After</button></li>
-                            <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{{ sc.parent_scene_id|default:sc.id }}"
+                            <li><button type="button" class="dropdown-item btn-action-add-sub" data-id="{% if sc.is_intercut %}{{ sc.id }}{% else %}{{ sc.parent_scene_id|default:sc.id }}{% endif %}"
                                     data-heading="{{ sc.heading|escape }}"><i class="bi bi-diagram-3 me-2 text-info"></i>Add Sub-Scene</button></li>
                             <li>
                                 <hr class="dropdown-divider">

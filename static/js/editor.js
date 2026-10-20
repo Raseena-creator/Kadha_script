@@ -163,7 +163,11 @@ class KadhaEditor {
             this.currentSceneIsSequence = Boolean(data.scene.is_sequence);
             this.currentSceneSequenceType = data.scene.sequence_type || '';
             this.currentSceneHeading = data.scene.heading || '';
-            this.currentMainSceneId = data.scene.parent_scene_id || data.scene.id;
+            if (data.scene.is_intercut && data.scene.intercut_source_id) {
+                this.currentMainSceneId = this.getMainSceneIdForScene(data.scene.intercut_source_id);
+            } else {
+                this.currentMainSceneId = data.scene.parent_scene_id || data.scene.id;
+            }
             const fallbackIdent = data.scene.nav_identifier
                 || data.scene.display_number
                 || (data.scene.scene_number ? ('Scene ' + data.scene.scene_number + (data.scene.is_sub_scene ? '.A' : '')) : (data.scene.is_sub_scene ? 'Sub-Scene' : 'Scene'));
@@ -2427,18 +2431,31 @@ class KadhaEditor {
         };
     }
 
-    getMainSceneIdForScene(sceneId) {
+    getMainSceneIdForScene(sceneId, seenIds = null) {
         if (!this.scenesTree || !sceneId) return Number(sceneId);
         const sid = Number(sceneId);
+        if (isNaN(sid)) return sceneId;
+        if (!seenIds) seenIds = new Set();
+        if (seenIds.has(sid)) return sid;
+        seenIds.add(sid);
+
         const directMatch = this.scenesTree.find(s => Number(s.id) === sid);
         if (directMatch) {
+            if (directMatch.is_intercut && directMatch.intercut_source_id) {
+                return this.getMainSceneIdForScene(directMatch.intercut_source_id, seenIds);
+            }
             if (directMatch.is_sub_scene && directMatch.parent_scene_id) {
                 return Number(directMatch.parent_scene_id);
             }
             return Number(directMatch.id);
         }
         for (const mainSc of this.scenesTree) {
-            if (Number(mainSc.id) === sid) return Number(mainSc.id);
+            if (Number(mainSc.id) === sid) {
+                if (mainSc.is_intercut && mainSc.intercut_source_id) {
+                    return this.getMainSceneIdForScene(mainSc.intercut_source_id, seenIds);
+                }
+                return Number(mainSc.id);
+            }
             if (mainSc.sub_scenes && Array.isArray(mainSc.sub_scenes)) {
                 for (const subSc of mainSc.sub_scenes) {
                     if (Number(subSc.id) === sid) return Number(mainSc.id);
@@ -2774,7 +2791,7 @@ class KadhaEditor {
 
             const beforeLabel = isSub ? 'Insert Sub-Scene Before' : 'Insert Scene Before';
             const afterLabel = isSub ? 'Insert Sub-Scene After' : 'Insert Scene After';
-            const targetParentId = isSub ? parentId : sc.id;
+            const targetParentId = (isSub && !sc.is_intercut) ? parentId : sc.id;
 
             const actionsMenuHtml = `
                 <div class="scene-item-actions dropdown">
@@ -3153,6 +3170,13 @@ class KadhaEditor {
             });
 
             this.currentSceneId = targetId;
+            if (this.editorMode === 'read') {
+                this.readModeActiveSceneId = targetId;
+                const targetEl = document.getElementById(`read-scene-${targetId}`);
+                if (targetEl) {
+                    targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }
             window.history.replaceState(null, '', `?scene=${targetId}`);
             await this.loadCurrentScene();
         })();
@@ -3242,6 +3266,35 @@ class KadhaEditor {
         }
     }
 
+    resolveSubSceneTargetId(explicitId = null) {
+        let rawId = null;
+        if (explicitId !== null && explicitId !== undefined && explicitId !== '') {
+            rawId = Number(explicitId);
+        } else if (this.editorMode === 'read' && this.readModeActiveSceneId) {
+            rawId = Number(this.readModeActiveSceneId);
+        } else {
+            rawId = Number(this.currentSceneId);
+        }
+
+        if (!rawId || isNaN(rawId)) {
+            return Number(this.currentSceneId) || null;
+        }
+
+        const targetScene = this.scenesTree
+            ? this.scenesTree.find(s => Number(s.id) === rawId)
+            : null;
+
+        if (targetScene && targetScene.is_intercut) {
+            return rawId;
+        }
+
+        if (targetScene && targetScene.is_sub_scene && targetScene.parent_scene_id) {
+            return Number(targetScene.parent_scene_id);
+        }
+
+        return (rawId && this.getMainSceneIdForScene(rawId)) || this.currentMainSceneId || rawId;
+    }
+
     async addSubSceneDirect() {
         try {
             await this.flushSave();
@@ -3252,8 +3305,7 @@ class KadhaEditor {
         }
 
         try {
-            this.setSaveStatus('saving', 'Creating sub-scene...');
-            const parentId = this.currentMainSceneId || this.currentSceneId;
+            const parentId = this.resolveSubSceneTargetId();
             const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${parentId}/subscene/`, {
                 method: 'POST',
                 headers: this.getHeaders(),
@@ -3261,7 +3313,10 @@ class KadhaEditor {
                     heading: 'INT. LOCATION - CONTINUOUS'
                 })
             });
-            if (!res.ok) throw new Error('Could not create sub-scene');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Could not create sub-scene');
+            }
             const data = await res.json();
 
             this.renderScenesTree(data.scenes_tree);
@@ -3303,11 +3358,12 @@ class KadhaEditor {
     }
 
     openSubSceneModal(parentSceneId = null, heading = '') {
-        const pId = parentSceneId || this.currentSceneId;
+        const pId = this.resolveSubSceneTargetId(parentSceneId);
         const defaultHeading = heading || 'INT. LOCATION - DAY';
         const parsed = this.parseHeading(defaultHeading);
 
-        document.getElementById('editorSubSceneParentId').value = pId;
+        const parentInput = document.getElementById('editorSubSceneParentId');
+        if (parentInput) parentInput.value = pId;
 
         const intextEl = document.getElementById('editorSubSceneIntext');
         if (intextEl) intextEl.value = parsed.intext;
@@ -3316,7 +3372,8 @@ class KadhaEditor {
         const timeEl = document.getElementById('editorSubSceneTime');
         if (timeEl) timeEl.value = parsed.time;
 
-        document.getElementById('editorSubSceneSummary').value = '';
+        const summaryEl = document.getElementById('editorSubSceneSummary');
+        if (summaryEl) summaryEl.value = '';
         
         if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
             this.bsOffcanvas.hide();
@@ -3380,7 +3437,8 @@ class KadhaEditor {
 
         try {
             this.setSaveStatus('saving', 'Creating sub-scene...');
-            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${parentId}/subscene/`, {
+            const targetParentId = this.resolveSubSceneTargetId(parentId);
+            const res = await fetch(`/scripts/api/${this.scriptId}/scenes/${targetParentId}/subscene/`, {
                 method: 'POST',
                 headers: this.getHeaders(),
                 body: JSON.stringify({
@@ -3388,7 +3446,10 @@ class KadhaEditor {
                     summary: summary
                 })
             });
-            if (!res.ok) throw new Error('Could not create sub-scene');
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Could not create sub-scene');
+            }
             const data = await res.json();
 
             if (this.bsSubSceneModal) this.bsSubSceneModal.hide();
@@ -4245,7 +4306,7 @@ class KadhaEditor {
         const btnOffcanvasSub = document.getElementById('btnOffcanvasSubScene');
         if (btnOffcanvasSub) {
             btnOffcanvasSub.addEventListener('click', () => {
-                this.openSubSceneModal(this.currentSceneId);
+                this.openSubSceneModal();
             });
         }
 
@@ -4265,7 +4326,7 @@ class KadhaEditor {
         const btnSidebarSub = document.getElementById('btnSidebarSubScene');
         if (btnSidebarSub) {
             btnSidebarSub.addEventListener('click', () => {
-                this.openSubSceneModal(this.currentSceneId);
+                this.openSubSceneModal();
             });
         }
 
@@ -4280,7 +4341,7 @@ class KadhaEditor {
         if (btnTbInsertAfter) btnTbInsertAfter.addEventListener('click', () => this.openInsertModal(this.currentSceneId, 'after', '', this.currentSceneIsSub));
 
         const btnTbSub = document.getElementById('btnToolbarAddSubScene');
-        if (btnTbSub) btnTbSub.addEventListener('click', () => this.openSubSceneModal(this.currentSceneId));
+        if (btnTbSub) btnTbSub.addEventListener('click', () => this.openSubSceneModal());
     }
 
     // ----------------------------------------------------

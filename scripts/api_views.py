@@ -391,7 +391,12 @@ def api_create_sub_scene(request, script_id, parent_scene_id):
     heading = data.get('heading', f'{parent_scene.heading} - SUB SCENE').strip()
     summary = data.get('summary', '').strip()
 
-    new_sub_scene = create_sub_scene(script, parent_scene_id=parent_scene.id, heading=heading, summary=summary)
+    try:
+        new_sub_scene = create_sub_scene(script, parent_scene_id=parent_scene.id, heading=heading, summary=summary)
+    except ValueError as ve:
+        return JsonResponse({'status': 'error', 'message': str(ve)}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Failed to create sub-scene: {str(e)}'}, status=500)
 
     return JsonResponse({
         'status': 'ok',
@@ -434,7 +439,12 @@ def api_create_sub_scene_2(request, script_id):
     if current_scene_id:
         get_object_or_404(Scene, id=current_scene_id, script=script, is_deleted=False)
 
-    new_sub = create_sub_scene_2(script, source_scene_id=source_scene_id, current_scene_id=current_scene_id)
+    try:
+        new_sub = create_sub_scene_2(script, source_scene_id=source_scene_id, current_scene_id=current_scene_id)
+    except ValueError as ve:
+        return JsonResponse({'status': 'error', 'message': str(ve)}, status=400)
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': f'Failed to create sub-scene: {str(e)}'}, status=500)
 
     return JsonResponse({
         'status': 'ok',
