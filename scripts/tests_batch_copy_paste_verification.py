@@ -1581,3 +1581,219 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
 
         # Test C: Normal insertText typing is NOT prevented
         self.assertFalse(res['typingPrevented'], "Normal insertText typing must NOT be prevented")
+
+    def test_34_malayalam_parser_classification_batch_a(self):
+        """34. [Batch A] Malayalam screenplay text classification: Action & Stage Directions vs Character & Dialogue."""
+        # Test Case 1: Jyothi as character followed by dialogue
+        raw_char_jyothi = "ജ്യോതി\nഞാൻ ഉടൻ തിരികെ വരാം."
+        elems_char_jyothi = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_char_jyothi
+        )
+        self.assertEqual(len(elems_char_jyothi), 2)
+        self.assertEqual(elems_char_jyothi[0]['type'], 'character')
+        self.assertEqual(elems_char_jyothi[0]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_char_jyothi[1]['type'], 'dialogue')
+        self.assertEqual(elems_char_jyothi[1]['content'], 'ഞാൻ ഉടൻ തിരികെ വരാം.')
+
+        # Test Case 2: Dasan as character followed by dialogue
+        raw_char_dasan = "ദാസൻ\nനമുക്ക് ഇപ്പോൾ തന്നെ ഇറങ്ങാം."
+        elems_char_dasan = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_char_dasan
+        )
+        self.assertEqual(len(elems_char_dasan), 2)
+        self.assertEqual(elems_char_dasan[0]['type'], 'character')
+        self.assertEqual(elems_char_dasan[0]['content'], 'ദാസൻ')
+        self.assertEqual(elems_char_dasan[1]['type'], 'dialogue')
+        self.assertEqual(elems_char_dasan[1]['content'], 'നമുക്ക് ഇപ്പോൾ തന്നെ ഇറങ്ങാം.')
+
+        # Test Case 3: Action with negative verb - "ജ്യോതി ഒന്നും മിണ്ടുന്നില്ല"
+        # Must be Action, NOT Character + Dialogue
+        raw_neg_action = "ജ്യോതി ഒന്നും മിണ്ടുന്നില്ല\nകുഞ്ഞു വീണ്ടും നിഷ്കളങ്കമായി കുത്തി കുത്തി ചോദിക്കുകയാണ്"
+        elems_neg_action = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_neg_action
+        )
+        for el in elems_neg_action:
+            self.assertNotEqual(el['type'], 'character', "Negative action line must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action', "Consecutive narrative action lines must be classified as Action")
+        self.assertIn('ജ്യോതി ഒന്നും മിണ്ടുന്നില്ല', elems_neg_action[0]['content'])
+        self.assertIn('കുഞ്ഞു വീണ്ടും നിഷ്കളങ്കമായി കുത്തി കുത്തി ചോദിക്കുകയാണ്', elems_neg_action[0]['content'])
+
+        # Test Case 4: Action with participial - "കുഞ്ഞുവിന്റെ കവിളിൽ ഉമ്മ വച്ചുകൊണ്ട്"
+        # Must be Action, followed by character Dasan + dialogue
+        raw_participle = "കുഞ്ഞുവിന്റെ കവിളിൽ ഉമ്മ വച്ചുകൊണ്ട്\n\nദാസൻ\nഞാൻ പോയി വരാം മോളേ."
+        elems_participle = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_participle
+        )
+        self.assertEqual(len(elems_participle), 3)
+        self.assertEqual(elems_participle[0]['type'], 'action')
+        self.assertEqual(elems_participle[0]['content'], 'കുഞ്ഞുവിന്റെ കവിളിൽ ഉമ്മ വച്ചുകൊണ്ട്')
+        self.assertEqual(elems_participle[1]['type'], 'character')
+        self.assertEqual(elems_participle[1]['content'], 'ദാസൻ')
+        self.assertEqual(elems_participle[2]['type'], 'dialogue')
+        self.assertEqual(elems_participle[2]['content'], 'ഞാൻ പോയി വരാം മോളേ.')
+
+        # Test Case 5: Stage direction / Parenthetical context - "അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ"
+        # When following Character cue, correctly becomes Parenthetical; never Character
+        raw_paren_manner = "ദാസൻ\nഅൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ\nനീ എന്താണ് ഉദ്ദേശിക്കുന്നത്?"
+        elems_paren_manner = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_paren_manner
+        )
+        self.assertEqual(len(elems_paren_manner), 3)
+        self.assertEqual(elems_paren_manner[0]['type'], 'character')
+        self.assertEqual(elems_paren_manner[0]['content'], 'ദാസൻ')
+        self.assertEqual(elems_paren_manner[1]['type'], 'parenthetical')
+        self.assertEqual(elems_paren_manner[1]['content'], '(അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ)')
+        self.assertEqual(elems_paren_manner[2]['type'], 'dialogue')
+        self.assertEqual(elems_paren_manner[2]['content'], 'നീ എന്താണ് ഉദ്ദേശിക്കുന്നത്?')
+
+        # When standalone / surrounded by action, correctly remains Action; never Character
+        raw_action_manner = "അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ\nഅയാൾ കസേരയിൽ വന്നിരിക്കുന്നു."
+        elems_action_manner = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_action_manner
+        )
+        for el in elems_action_manner:
+            self.assertNotEqual(el['type'], 'character', "Manner phrase must NEVER be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+
+        # Test Case 6: Stage direction / Parenthetical context - "ഇതിനിടയിൽ പരിഭ്രമത്തോടെ"
+        # Following character cue -> parenthetical
+        raw_paren_paribhramam = "ജ്യോതി\nഇതിനിടയിൽ പരിഭ്രമത്തോടെ\nഎനിക്ക് ഒന്നും അറിയില്ല!"
+        elems_paren_paribhramam = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_paren_paribhramam
+        )
+        self.assertEqual(len(elems_paren_paribhramam), 3)
+        self.assertEqual(elems_paren_paribhramam[0]['type'], 'character')
+        self.assertEqual(elems_paren_paribhramam[0]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_paren_paribhramam[1]['type'], 'parenthetical')
+        self.assertEqual(elems_paren_paribhramam[1]['content'], '(ഇതിനിടയിൽ പരിഭ്രമത്തോടെ)')
+        self.assertEqual(elems_paren_paribhramam[2]['type'], 'dialogue')
+        self.assertEqual(elems_paren_paribhramam[2]['content'], 'എനിക്ക് ഒന്നും അറിയില്ല!')
+
+        # Standalone before action -> Action, never Character
+        raw_action_paribhramam = "ഇതിനിടയിൽ പരിഭ്രമത്തോടെ\nഅവൾ ചുറ്റും നോക്കുകയാണ്."
+        elems_action_paribhramam = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_action_paribhramam
+        )
+        for el in elems_action_paribhramam:
+            self.assertNotEqual(el['type'], 'character', "Stage direction phrase must NEVER be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+
+        # Test Case 7: Full scene paste via handlePaste simulation
+        full_paste_text = (
+            "ജ്യോതി ഒന്നും മിണ്ടുന്നില്ല\n\n"
+            "കുഞ്ഞു വീണ്ടും നിഷ്കളങ്കമായി കുത്തി കുത്തി ചോദിക്കുകയാണ്\n\n"
+            "കുഞ്ഞുവിന്റെ കവിളിൽ ഉമ്മ വച്ചുകൊണ്ട്\n\n"
+            "ദാസൻ\n"
+            "അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ\n"
+            "നീ ഇപ്പോൾ ഉറങ്ങാൻ നോക്ക്.\n\n"
+            "ഇതിനിടയിൽ പരിഭ്രമത്തോടെ\n"
+            "ജ്യോതി വാതിലിലേക്ക് നോക്കുകയാണ്."
+        )
+        res = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            const anchor = inst.createElementBlock('action', '', heading);
+            anchor.querySelector('.element-content').focus();
+            inst.activeElementBlock = anchor;
+
+            const text = arguments[0];
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: (f) => f === 'text/plain' ? text : ''
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """, full_paste_text)
+
+        elements = [e for e in res.get('elements', []) if e['element_type'] != 'scene_heading']
+        types = [e['element_type'] for e in elements]
+        # Expected sequence:
+        # 1. Action: ജ്യോതി ഒന്നും മിണ്ടുന്നില്ല
+        # 2. Action: കുഞ്ഞു വീണ്ടും നിഷ്കളങ്കമായി കുത്തി കുത്തി ചോദിക്കുകയാണ്
+        # 3. Action: കുഞ്ഞുവിന്റെ കവിളിൽ ഉമ്മ വച്ചുകൊണ്ട്
+        # 4. Character: ദാസൻ
+        # 5. Parenthetical: (അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ)
+        # 6. Dialogue: നീ ഇപ്പോൾ ഉറങ്ങാൻ നോക്ക്.
+        # 7. Action: ഇതിനിടയിൽ പരിഭ്രമത്തോടെ\nജ്യോതി വാതിലിലേക്ക് നോക്കുകയാണ്.
+        expected_types = ['action', 'action', 'action', 'character', 'parenthetical', 'dialogue', 'action']
+        self.assertEqual(types, expected_types, f"Expected {expected_types}, but got {types}")
+        self.assertEqual(elements[3]['content'], 'ദാസൻ')
+        self.assertEqual(elements[4]['content'], '(അൽപ്പം ഇറിറ്റേറ്റഡ് ആയ മട്ടിൽ)')
+        self.assertEqual(elements[5]['content'], 'നീ ഇപ്പോൾ ഉറങ്ങാൻ നോക്ക്.')
+
+        # -------------------------------------------------------------------------
+        # Batch A1 Dialogue Regression Tests
+        # -------------------------------------------------------------------------
+
+        # Test A: Dialogue ending in പോകുന്നു
+        raw_test_a = "രാഹുൽ\nഞാൻ ഇപ്പോൾ വീട്ടിലേക്ക് പോകുന്നു."
+        elems_test_a = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_test_a
+        )
+        self.assertEqual(len(elems_test_a), 2)
+        self.assertEqual(elems_test_a[0]['type'], 'character')
+        self.assertEqual(elems_test_a[0]['content'], 'രാഹുൽ')
+        self.assertEqual(elems_test_a[1]['type'], 'dialogue')
+        self.assertEqual(elems_test_a[1]['content'], 'ഞാൻ ഇപ്പോൾ വീട്ടിലേക്ക് പോകുന്നു.')
+
+        # Test B: Dialogue ending in പറയുന്നില്ല (negative verb form)
+        raw_test_b = "ജ്യോതി\nഅവൻ എന്നോട് ഒന്നും പറയുന്നില്ല."
+        elems_test_b = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_test_b
+        )
+        self.assertEqual(len(elems_test_b), 2)
+        self.assertEqual(elems_test_b[0]['type'], 'character')
+        self.assertEqual(elems_test_b[0]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_test_b[1]['type'], 'dialogue')
+        self.assertEqual(elems_test_b[1]['content'], 'അവൻ എന്നോട് ഒന്നും പറയുന്നില്ല.')
+
+        # Test C: Dialogue ending in ചോദിക്കുകയാണ് (continuous verb form)
+        raw_test_c = "കുഞ്ഞു\nഞാൻ നിങ്ങളോട് ചോദിക്കുകയാണ്."
+        elems_test_c = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_test_c
+        )
+        self.assertEqual(len(elems_test_c), 2)
+        self.assertEqual(elems_test_c[0]['type'], 'character')
+        self.assertEqual(elems_test_c[0]['content'], 'കുഞ്ഞു')
+        self.assertEqual(elems_test_c[1]['type'], 'dialogue')
+        self.assertEqual(elems_test_c[1]['content'], 'ഞാൻ നിങ്ങളോട് ചോദിക്കുകയാണ്.')
+
+        # Test D: Multi-line dialogue vs narrative action boundary
+        # Sub-case D1: Multiple lines of spoken dialogue without narrative action starter
+        raw_test_d1 = "ദാസൻ\nഎനിക്ക് പേടിയാകുന്നു.\nനമുക്ക് ഇവിടെ നിന്ന് പോകാം."
+        elems_test_d1 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_test_d1
+        )
+        self.assertEqual(len(elems_test_d1), 2)
+        self.assertEqual(elems_test_d1[0]['type'], 'character')
+        self.assertEqual(elems_test_d1[0]['content'], 'ദാസൻ')
+        self.assertEqual(elems_test_d1[1]['type'], 'dialogue')
+        self.assertEqual(elems_test_d1[1]['content'], 'എനിക്ക് പേടിയാകുന്നു.\nനമുക്ക് ഇവിടെ നിന്ന് പോകാം.')
+
+        # Sub-case D2: Spoken dialogue followed by narrative action line starting with narrative starter അവൻ
+        raw_test_d2 = "ദാസൻ\nഎനിക്ക് പേടിയാകുന്നു.\nഅവൻ വാതിലിലേക്ക് നോക്കുന്നു."
+        elems_test_d2 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_test_d2
+        )
+        self.assertEqual(len(elems_test_d2), 3)
+        self.assertEqual(elems_test_d2[0]['type'], 'character')
+        self.assertEqual(elems_test_d2[0]['content'], 'ദാസൻ')
+        self.assertEqual(elems_test_d2[1]['type'], 'dialogue')
+        self.assertEqual(elems_test_d2[1]['content'], 'എനിക്ക് പേടിയാകുന്നു.')
+        self.assertEqual(elems_test_d2[2]['type'], 'action')
+        self.assertEqual(elems_test_d2[2]['content'], 'അവൻ വാതിലിലേക്ക് നോക്കുന്നു.')

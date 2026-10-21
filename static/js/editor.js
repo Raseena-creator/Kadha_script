@@ -6494,9 +6494,9 @@ class KadhaEditor {
             const t = str.trim();
             if (t.length === 0 || t.length > 35) return false;
             if (/[.?!;]$/.test(t)) return false;
-            // Malayalam direction patterns: -ത്തോടെ, -കൊണ്ട്, -ആയി, നിശബ്ദത, etc.
+            // Malayalam direction patterns: -ത്തോടെ, -കൊണ്ട്, -ആയി, -മട്ടിൽ, -ഭാവത്തിൽ, നിശബ്ദത, etc.
             if (/[\u0D00-\u0D7F]/.test(t)) {
-                return /(?:ത്തോടെ|ത്തോട്|കൊണ്ട്|ക്കൊണ്ട്|ആയി|നിശബ്ദത|ഇടവേള|ചിരിയോടെ|ദേഷ്യത്തോടെ|കരച്ചിലോടെ|സംശയത്തോടെ|സ്നേഹത്തോടെ|ഭയത്തോടെ|സങ്കടത്തോടെ|ആശ്ചര്യത്തോടെ|ചിരിച്ചുകൊണ്ട്|കരഞ്ഞുകൊണ്ട്|മന്ത്രിച്ചുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|ഓർത്തു)$/.test(t);
+                return /(?:ത്തോടെ|ത്തോട്|കൊണ്ട്|ക്കൊണ്ട്|മട്ടിൽ|ഭാവത്തിൽ|ആയി|നിശബ്ദത|ഇടവേള|ചിരിയോടെ|ദേഷ്യത്തോടെ|കരച്ചിലോടെ|സംശയത്തോടെ|സ്നേഹത്തോടെ|ഭയത്തോടെ|സങ്കടത്തോടെ|ആശ്ചര്യത്തോടെ|ചിരിച്ചുകൊണ്ട്|കരഞ്ഞുകൊണ്ട്|മന്ത്രിച്ചുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|ഓർത്തു)$/.test(t);
             }
             // English direction patterns: participles ending in -ing, beat, pause, softly, etc.
             const lower = t.toLowerCase();
@@ -6519,6 +6519,7 @@ class KadhaEditor {
             if (seqMarkerExact.has(clean.toUpperCase()) || numberedShotRegex.test(clean)) return true;
             if (/^\s*\d+[\.\)]\s+/.test(clean)) return true;
             if (isExplicitParenthetical(clean)) return true;
+            if (isBareParentheticalWord(clean)) return true;
             if (clean.startsWith('[[') && clean.endsWith(']]')) return true;
             if (/^(CHAPTER|PART|ACT|SCENE)\b/i.test(clean)) return true;
             if (/^(NOTE|NOTICE|WARNING|CAUTION)\b/i.test(clean)) return true;
@@ -6567,8 +6568,20 @@ class KadhaEditor {
                 return true;
             }
 
-            // Malayalam narrative action endings (verbs in present/past tense)
-            if (/(?:നടക്കുന്നു|നോക്കുന്നു|പോകുന്നു|വരുന്നു|ഇരിക്കുന്നു|നിൽക്കുന്നു|തുടങ്ങുന്നു|എടുക്കുന്നു|കൊടുക്കുന്നു|തുറക്കുന്നു|അടയ്ക്കുന്നു|ചിരിക്കുന്നു|കരയുന്നു|ഓടുന്നു|നടന്നു|നോക്കി|പോയി|വന്നു|ഇരുന്നു|നിന്നു|കണ്ടു|തുറന്നു|അടച്ചു|ചിരിച്ചു|കരഞ്ഞു|ഓടി|എടുത്തു|കൊടുത്തു|പറഞ്ഞു|ചോദിച്ചു)\.?$/.test(t)) {
+            // Malayalam narrative action endings (verbs in present/past tense, negative verbs, continuous/auxiliary forms, participial/manner)
+            if (/(?:നടക്കുന്നു|നോക്കുന്നു|പോകുന്നു|വരുന്നു|ഇരിക്കുന്നു|നിൽക്കുന്നു|തുടങ്ങുന്നു|എടുക്കുന്നു|കൊടുക്കുന്നു|തുറക്കുന്നു|അടയ്ക്കുന്നു|ചിരിക്കുന്നു|കരയുന്നു|ഓടുന്നു|നടന്നു|നോക്കി|പോയി|വന്നു|ഇരുന്നു|നിന്നു|കണ്ടു|തുറന്നു|അടച്ചു|ചിരിച്ചു|കരഞ്ഞു|ഓടി|എടുത്തു|കൊടുത്തു|പറഞ്ഞു|ചോദിച്ചു|മിണ്ടുന്നില്ല|കേൾക്കുന്നില്ല|അറിയുന്നില്ല|പോവുന്നില്ല|പോകുന്നില്ല|ചെയ്യുന്നില്ല|തോന്നുന്നില്ല|കഴിയുന്നില്ല|പറ്റുന്നില്ല|ചോദിക്കുകയാണ്|നോക്കുകയാണ്|നടക്കുകയാണ്|പറയുകയാണ്|വരികയാണ്|പോകുകയാണ്|ചെയ്യുകയാണ്|എടുക്കുകയാണ്|നിൽക്കുകയാണ്|ഇരിക്കുകയാണ്|വച്ചുകൊണ്ട്|വെച്ചുകൊണ്ട്|എടുത്തുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|പറഞ്ഞുകൊണ്ട്|ചോദിച്ചുകൊണ്ട്|മട്ടിൽ|ഭാവത്തിൽ)\.?$/.test(t)) {
+                return true;
+            }
+            // General negative Malayalam verb ending: ...ന്നില്ല / ...കുന്നില്ല
+            if (/(?:ന്നില്ല|ആവുന്നില്ല|പറ്റുന്നില്ല|കഴിയുന്നില്ല|തോന്നുന്നില്ല)\.?$/.test(t)) {
+                return true;
+            }
+            // General continuous Malayalam verb ending: ...ക്കുകയാണ് / ...ുകയാണ്
+            if (/(?:ക്കുകയാണ്|ുകയാണ്)\.?$/.test(t)) {
+                return true;
+            }
+            // General participial / action manner ending: ...കൊണ്ട് / ...ക്കൊണ്ട് / ...ത്തോടെ / ...ത്തോട്
+            if (/(?:കൊണ്ട്|ക്കൊണ്ട്|ത്തോടെ|ത്തോട്)\.?$/.test(t)) {
                 return true;
             }
 
@@ -6907,6 +6920,11 @@ class KadhaEditor {
                         break;
                     }
 
+                    // Stop condition: narrative action line following established dialogue
+                    if (dialogueLines.length > 0 && isNarrativeActionLine(dLine)) {
+                        break;
+                    }
+
                     // Parenthetical inside dialogue block
                     if (isExplicitParenthetical(dLine)) {
                         if (dialogueLines.length > 0) {
@@ -6928,11 +6946,6 @@ class KadhaEditor {
 
                     // Stop condition on blank line: blank line indicates end of this dialogue turn
                     if (lines[i].afterBlank && dialogueLines.length > 0) {
-                        break;
-                    }
-
-                    // Stop condition on action narrative sentence following dialogue
-                    if (dialogueLines.length > 0 && isNarrativeActionLine(dLine)) {
                         break;
                     }
 
@@ -6959,7 +6972,7 @@ class KadhaEditor {
                     if (sluglineRegex.test(dLine) || seqMarkerExact.has(dUc) ||
                         transitionExact.has(dUc) || (dUc.endsWith(' TO:') && dUc.length <= 35) ||
                         numberedShotRegex.test(dLine) || isCharacterLine(dLine, dNext) ||
-                        isNarrativeActionLine(dLine) || (lines[i].afterBlank && dialogueLines.length > 0)) {
+                        (dialogueLines.length > 0 && isNarrativeActionLine(dLine)) || (lines[i].afterBlank && dialogueLines.length > 0)) {
                         break;
                     }
                     if (isExplicitParenthetical(dLine)) {
