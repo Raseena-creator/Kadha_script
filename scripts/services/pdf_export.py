@@ -543,6 +543,14 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
                         continue
 
                 story.append(Paragraph(clean_text.upper(), shot_style))
+            elif elem.element_type == 'note' and include_notes:
+                raw_paras = [p.strip() for p in text.split('\n\n') if p.strip()]
+                if not raw_paras:
+                    raw_paras = [text]
+                for p_text in raw_paras:
+                    p_clean = p_text if (p_text.startswith('[[') and p_text.endswith(']]')) else f"[[ {p_text} ]]"
+                    clean_para = p_clean.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+                    story.append(Paragraph(clean_para, note_style))
 
         # For sequence scenes, ensure ending label is present if not already rendered
         if scene.is_sequence and not rendered_seq_end:

@@ -235,6 +235,20 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
                 run = elem_p.add_run(text.upper())
                 _set_run_font(run, size=Pt(11), bold=True)
 
+            elif elem.element_type == 'note' and include_notes:
+                raw_paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+                if not raw_paragraphs:
+                    raw_paragraphs = [text]
+                for p_idx, para in enumerate(raw_paragraphs):
+                    elem_p = doc.add_paragraph()
+                    elem_p.paragraph_format.left_indent = Inches(0.5)
+                    elem_p.paragraph_format.space_before = Pt(4) if p_idx == 0 else Pt(2)
+                    elem_p.paragraph_format.space_after = Pt(6)
+                    elem_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    note_text = para if (para.startswith('[[') and para.endswith(']]')) else f"[[ {para} ]]"
+                    run = elem_p.add_run(note_text)
+                    _set_run_font(run, size=Pt(10), italic=True, color=RGBColor(119, 119, 119))
+
         # Scene-end transition fallback:
         # If the scene does not already end with an explicit transition element, render scene.transition fallback.
         if not scene.is_sequence and not scene.has_scene_ending_transition(elements):

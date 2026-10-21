@@ -1,5 +1,6 @@
 import io
 import re
+import pypdfium2 as pdfium
 from docx import Document
 from django.test import TestCase, Client
 from django.urls import reverse
@@ -87,12 +88,15 @@ class ExportPaginationTests(TestCase):
         self.assertEqual(len(pages), 10)
 
     def test_notes_excluded_from_pdf_and_docx(self):
-        """Notes must be completely excluded from PDF and DOCX exports."""
-        pdf_bytes = generate_screenplay_pdf(self.script, include_notes=True)
-        self.assertNotIn(b'CONFIDENTIAL NOTE', pdf_bytes)
-        self.assertNotIn(b'Change character costume here', pdf_bytes)
+        """Notes must be completely excluded by default from PDF and DOCX exports, and included when requested."""
+        # 1. Default exclusion (include_notes=False)
+        pdf_bytes = generate_screenplay_pdf(self.script)
+        pdf_doc = pdfium.PdfDocument(pdf_bytes)
+        pdf_text = " ".join([page.get_textpage().get_text_range() for page in pdf_doc])
+        self.assertNotIn('CONFIDENTIAL NOTE', pdf_text)
+        self.assertNotIn('Change character costume here', pdf_text)
 
-        docx_bytes = generate_screenplay_docx(self.script, include_notes=True)
+        docx_bytes = generate_screenplay_docx(self.script)
         doc = Document(io.BytesIO(docx_bytes))
         full_doc_text = " ".join([p.text for p in doc.paragraphs])
         self.assertNotIn('CONFIDENTIAL NOTE', full_doc_text)
@@ -100,6 +104,19 @@ class ExportPaginationTests(TestCase):
         # Verify other elements are present
         self.assertIn('Hero enters the living room.', full_doc_text)
         self.assertIn('HERO', full_doc_text)
+
+        # 2. Explicit inclusion (include_notes=True)
+        pdf_bytes_with_notes = generate_screenplay_pdf(self.script, include_notes=True)
+        pdf_doc_notes = pdfium.PdfDocument(pdf_bytes_with_notes)
+        pdf_text_notes = " ".join([page.get_textpage().get_text_range() for page in pdf_doc_notes])
+        self.assertIn('CONFIDENTIAL NOTE', pdf_text_notes)
+        self.assertIn('Change character costume here', pdf_text_notes)
+
+        docx_bytes_with_notes = generate_screenplay_docx(self.script, include_notes=True)
+        doc_with_notes = Document(io.BytesIO(docx_bytes_with_notes))
+        full_doc_text_with_notes = " ".join([p.text for p in doc_with_notes.paragraphs])
+        self.assertIn('CONFIDENTIAL NOTE', full_doc_text_with_notes)
+        self.assertIn('Change character costume here', full_doc_text_with_notes)
 
     def test_pdf_single_scene_pagination(self):
         """Single scene script should have exactly 2 pages (1 cover page + 1 scene page)."""
