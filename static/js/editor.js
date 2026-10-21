@@ -7700,6 +7700,13 @@ class KadhaEditor {
                 e.preventDefault();
                 return true;
             }
+            // Android Chrome companion beforeinput: insertFromPaste with null/empty data
+            // following an already-handled paste event within the deduplication window must be
+            // prevented to stop native double insertion.
+            if (isPasteType && !normIncoming) {
+                e.preventDefault();
+                return true;
+            }
         }
 
         // 1. Extract text safely from available event properties without assuming dataTransfer exists

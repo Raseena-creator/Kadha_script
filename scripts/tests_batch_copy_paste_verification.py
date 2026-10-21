@@ -1502,3 +1502,82 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
         action_elements = [el for el in res['postContent'] if el['type'] == 'action']
         self.assertEqual(len(action_elements), 1, "Must contain exactly the single original action block without duplicates")
         self.assertEqual(action_elements[0]['content'], 'Detective sits at the desk in silence.')
+
+    def test_33_android_companion_beforeinput_null_data_deduplication(self):
+        """33. [Regression] Handled paste event followed by Android companion beforeinput (data=null) is prevented with no duplicate insertion; insertText unaffected."""
+        res = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            page.querySelectorAll('.script-element-block').forEach(b => b.remove());
+
+            const block = inst.createElementBlock('action', '', null);
+            const ed = block.querySelector('.element-content');
+            ed.focus();
+            inst.activeElementBlock = block;
+
+            const text = 'VIKRAM\\nI am ready.';
+
+            // 1. Dispatch successful paste event
+            const pasteEvent = new Event('paste', { bubbles: true, cancelable: true });
+            pasteEvent.clipboardData = {
+                getData: (f) => f === 'text/plain' ? text : ''
+            };
+            document.dispatchEvent(pasteEvent);
+
+            const blocksAfterPaste = page.querySelectorAll('.script-element-block').length;
+            const pastePrevented = pasteEvent.defaultPrevented;
+
+            // 2. Dispatch Android companion beforeinput with null data and unavailable dataTransfer
+            const companionEvent = new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertFromPaste',
+                data: null
+            });
+            if ('dataTransfer' in companionEvent && companionEvent.dataTransfer !== null && companionEvent.dataTransfer !== undefined) {
+                try { delete companionEvent.dataTransfer; } catch (e) {}
+            }
+            const activeEd = (inst.activeElementBlock || page.lastElementChild).querySelector('.element-content');
+            activeEd.dispatchEvent(companionEvent);
+
+            const companionPrevented = companionEvent.defaultPrevented;
+            const blocksAfterCompanion = page.querySelectorAll('.script-element-block').length;
+
+            // 3. Dispatch ordinary insertText (normal typing) to ensure it is not blocked
+            const typingEvent = new InputEvent('beforeinput', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: 'A'
+            });
+            activeEd.dispatchEvent(typingEvent);
+            const typingPrevented = typingEvent.defaultPrevented;
+
+            const contentAfter = Array.from(page.querySelectorAll('.script-element-block')).map(b => ({
+                type: b.dataset.type,
+                content: (b.querySelector('.element-content:not(.d-none)') || b.querySelector('.element-content') || {}).innerText || ''
+            }));
+
+            return {
+                pastePrevented,
+                blocksAfterPaste,
+                companionPrevented,
+                blocksAfterCompanion,
+                typingPrevented,
+                contentAfter
+            };
+        """)
+
+        # Test A: Handled paste + companion beforeinput (data=null) calls preventDefault()
+        self.assertTrue(res['companionPrevented'], "Companion beforeinput with null data must be defaultPrevented")
+
+        # Test B: Deduplication remains safe, exactly one set of blocks inserted (2 elements: VIKRAM + dialogue)
+        self.assertEqual(res['blocksAfterPaste'], 2, "Paste event must create exactly 2 blocks (character + dialogue)")
+        self.assertEqual(res['blocksAfterCompanion'], 2, "Companion beforeinput must not create duplicate blocks")
+        self.assertEqual(res['contentAfter'][0]['type'], 'character')
+        self.assertEqual(res['contentAfter'][0]['content'], 'VIKRAM')
+        self.assertEqual(res['contentAfter'][1]['type'], 'dialogue')
+        self.assertEqual(res['contentAfter'][1]['content'], 'I am ready.')
+
+        # Test C: Normal insertText typing is NOT prevented
+        self.assertFalse(res['typingPrevented'], "Normal insertText typing must NOT be prevented")
