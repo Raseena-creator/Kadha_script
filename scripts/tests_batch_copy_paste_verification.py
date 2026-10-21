@@ -1797,3 +1797,110 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
         self.assertEqual(elems_test_d2[1]['content'], 'എനിക്ക് പേടിയാകുന്നു.')
         self.assertEqual(elems_test_d2[2]['type'], 'action')
         self.assertEqual(elems_test_d2[2]['content'], 'അവൻ വാതിലിലേക്ക് നോക്കുന്നു.')
+
+        # -------------------------------------------------------------------------
+        # Batch A2 Regression Tests: Negative, Continuous, Manner & Parenthetical Actions
+        # -------------------------------------------------------------------------
+
+        # 1. Past negative verb action: "ജ്യോതി ഒന്നും പറഞ്ഞില്ല"
+        raw_a2_1 = "ജ്യോതി ഒന്നും പറഞ്ഞില്ല\nഅവൾ മുറിയിൽ നിന്ന് പുറത്തേക്ക് നടന്നു."
+        elems_a2_1 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_1
+        )
+        for el in elems_a2_1:
+            self.assertNotEqual(el['type'], 'character', "'ജ്യോതി ഒന്നും പറഞ്ഞില്ല' must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('ജ്യോതി ഒന്നും പറഞ്ഞില്ല', elems_a2_1[0]['content'])
+
+        # 2. Past negative verb action: "കുഞ്ഞു ഒന്നും മിണ്ടിയില്ല"
+        raw_a2_2 = "കുഞ്ഞു ഒന്നും മിണ്ടിയില്ല\nഅവൻ ജനലിലൂടെ പുറത്തേക്ക് നോക്കുന്നു."
+        elems_a2_2 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_2
+        )
+        for el in elems_a2_2:
+            self.assertNotEqual(el['type'], 'character', "'കുഞ്ഞു ഒന്നും മിണ്ടിയില്ല' must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('കുഞ്ഞു ഒന്നും മിണ്ടിയില്ല', elems_a2_2[0]['content'])
+
+        # 3. Continuous action: "നടന്നുകൊണ്ടിരിക്കുന്നു"
+        raw_a2_3 = "അയാൾ മുന്നോട്ട് നടന്നുകൊണ്ടിരിക്കുന്നു\nമഴ പെയ്യുന്നുണ്ട്."
+        elems_a2_3 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_3
+        )
+        for el in elems_a2_3:
+            self.assertNotEqual(el['type'], 'character', "Continuous verb phrase must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('നടന്നുകൊണ്ടിരിക്കുന്നു', elems_a2_3[0]['content'])
+
+        # 4. Continuous action: "സംസാരിച്ചുകൊണ്ടിരുന്നു"
+        raw_a2_4 = "അവർ പരസ്പരം സംസാരിച്ചുകൊണ്ടിരുന്നു\nസമയം കടന്നുപോയി."
+        elems_a2_4 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_4
+        )
+        for el in elems_a2_4:
+            self.assertNotEqual(el['type'], 'character', "Continuous verb phrase must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('സംസാരിച്ചുകൊണ്ടിരുന്നു', elems_a2_4[0]['content'])
+
+        # 5. Manner phrase: "കളിയാക്കുന്ന രീതിയിൽ"
+        raw_a2_5 = "കളിയാക്കുന്ന രീതിയിൽ\nഅയാൾ ചിരിച്ചു."
+        elems_a2_5 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_5
+        )
+        for el in elems_a2_5:
+            self.assertNotEqual(el['type'], 'character', "Manner phrase ending in രീതിയിൽ must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('കളിയാക്കുന്ന രീതിയിൽ', elems_a2_5[0]['content'])
+
+        # 6. Manner phrase: "വിനയപൂർവ്വം"
+        raw_a2_6 = "വിനയപൂർവ്വം\nഅവൻ തലകുനിച്ചു."
+        elems_a2_6 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_6
+        )
+        for el in elems_a2_6:
+            self.assertNotEqual(el['type'], 'character', "Manner phrase ending in പൂർവ്വം must NOT be classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('വിനയപൂർവ്വം', elems_a2_6[0]['content'])
+
+        # 7. Action with bracketed manner note: "അയാൾ കസേരയിൽ ഇരുന്നു (ക്ഷീണത്തോടെ)"
+        raw_a2_7 = "അയാൾ കസേരയിൽ ഇരുന്നു (ക്ഷീണത്തോടെ)\nമുറിയിൽ വലിയ നിശബ്ദത."
+        elems_a2_7 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_7
+        )
+        for el in elems_a2_7:
+            self.assertNotEqual(el['type'], 'character', "Action ending in parenthetical must NOT have action part classified as Character cue")
+            self.assertEqual(el['type'], 'action')
+        self.assertIn('അയാൾ കസേരയിൽ ഇരുന്നു', elems_a2_7[0]['content'])
+
+        # 8. Genuine character with character extension: "ദാസൻ (V.O.)"
+        raw_a2_8 = "ദാസൻ (V.O.)\nഎനിക്ക് എല്ലാം ഓർമ്മയുണ്ട്."
+        elems_a2_8 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_8
+        )
+        self.assertEqual(len(elems_a2_8), 2)
+        self.assertEqual(elems_a2_8[0]['type'], 'character')
+        self.assertEqual(elems_a2_8[0]['content'], 'ദാസൻ (V.O.)')
+        self.assertEqual(elems_a2_8[1]['type'], 'dialogue')
+        self.assertEqual(elems_a2_8[1]['content'], 'എനിക്ക് എല്ലാം ഓർമ്മയുണ്ട്.')
+
+        # 9. Genuine character with inline parenthetical: "ജ്യോതി (ചിരിച്ചുകൊണ്ട്)"
+        raw_a2_9 = "ജ്യോതി (ചിരിച്ചുകൊണ്ട്)\nനമുക്ക് തുടങ്ങാം."
+        elems_a2_9 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a2_9
+        )
+        self.assertEqual(len(elems_a2_9), 3)
+        self.assertEqual(elems_a2_9[0]['type'], 'character')
+        self.assertEqual(elems_a2_9[0]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_a2_9[1]['type'], 'parenthetical')
+        self.assertEqual(elems_a2_9[1]['content'], '(ചിരിച്ചുകൊണ്ട്)')
+        self.assertEqual(elems_a2_9[2]['type'], 'dialogue')
+        self.assertEqual(elems_a2_9[2]['content'], 'നമുക്ക് തുടങ്ങാം.')
