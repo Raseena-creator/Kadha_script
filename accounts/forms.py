@@ -98,21 +98,36 @@ class UserRegisterForm(forms.ModelForm):
         return user
 
 class UserLoginForm(forms.Form):
-    username = forms.CharField(
-        label='Username or Email',
-        widget=forms.TextInput(attrs={
-            'placeholder': 'Username or Email',
+    email = forms.CharField(
+        label='Email Address',
+        widget=forms.EmailInput(attrs={
+            'placeholder': 'name@example.com',
             'class': 'form-control',
-            'autocomplete': 'username'
+            'autocomplete': 'email',
+            'autofocus': True,
         })
     )
     password = forms.CharField(
+        label='Password',
         widget=forms.PasswordInput(attrs={
-            'placeholder': 'Password',
+            'placeholder': 'Your password',
             'class': 'form-control',
-            'autocomplete': 'current-password'
+            'autocomplete': 'current-password',
         })
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Backwards-compatibility bridge for tests/callers submitting 'username'
+        if self.data and 'email' not in self.data and 'username' in self.data:
+            self.data = self.data.copy()
+            self.data['email'] = self.data['username']
+
+    def clean_email(self):
+        email = self.cleaned_data.get('email', '').strip()
+        if not email:
+            raise forms.ValidationError('Email address is required.')
+        return email
 
 class ProfileUpdateForm(forms.ModelForm):
     first_name = forms.CharField(max_length=150, required=False)

@@ -220,3 +220,165 @@ class PasswordResetTests(TestCase):
         # 4. Anonymous user redirected from protected view
         anon_res = self.client.get(reverse('profile'))
         self.assertRedirects(anon_res, f"{reverse('login')}?next={reverse('profile')}")
+
+
+class EmailLoginAuthenticationTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.password = "ValidSecret123!"
+        self.user = User.objects.create_user(
+            username="writer_ravi",
+            email="ravi.screenwriter@kadhascript.com",
+            password=self.password,
+            first_name="Ravi"
+        )
+        Profile.objects.get_or_create(user=self.user, defaults={'pen_name': 'Ravi Screenwriter'})
+
+    def test_login_page_renders_email_field_and_no_visible_username_field(self):
+        """Login template displays Email Address input and no visible Username field."""
+        response = self.client.get(reverse('login'))
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+
+        self.assertIn('Email Address', content)
+        self.assertIn('name="email"', content)
+        self.assertIn('id="id_email"', content)
+        self.assertIn('type="email"', content)
+        self.assertIn('placeholder="name@example.com"', content)
+        self.assertIn('name="password"', content)
+        self.assertIn('id="id_password"', content)
+        self.assertNotIn('name="username"', content)
+        self.assertNotIn('>Username<', content)
+
+    def test_successful_email_login(self):
+        """User can log in using their exact registered email and password."""
+        response = self.client.post(reverse('login'), {
+            'email': 'ravi.screenwriter@kadhascript.com',
+            'password': self.password
+        })
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_case_insensitive_email_login(self):
+        """Email matching is case-insensitive (e.g. mixed-case and uppercase)."""
+        response = self.client.post(reverse('login'), {
+            'email': 'RAVI.SCREENWRITER@KADHASCRIPT.COM',
+            'password': self.password
+        })
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_whitespace_handling_in_email_login(self):
+        """Surrounding whitespace in email input is stripped safely."""
+        response = self.client.post(reverse('login'), {
+            'email': '   ravi.screenwriter@kadhascript.com   ',
+            'password': self.password
+        })
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_invalid_password_returns_generic_error(self):
+        """Invalid password returns standard generic error and does not log in."""
+        response = self.client.post(reverse('login'), {
+            'email': 'ravi.screenwriter@kadhascript.com',
+            'password': 'WrongPassword999!'
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid email or password. Please try again.')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_unknown_email_returns_generic_error(self):
+        """Unknown email returns identical generic error without revealing account existence."""
+        response = self.client.post(reverse('login'), {
+            'email': 'nonexistent.writer@kadhascript.com',
+            'password': self.password
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid email or password. Please try again.')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_empty_credentials_rejected(self):
+        """Empty email or empty password is rejected with form validation error."""
+        response = self.client.post(reverse('login'), {
+            'email': '   ',
+            'password': ''
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context['form'].errors)
+
+    def test_legacy_username_compatibility(self):
+        """Legacy username login works through the email input as backward compatibility fallback."""
+        response = self.client.post(reverse('login'), {
+            'email': 'writer_ravi',
+            'password': self.password
+        })
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_legacy_username_post_data_compatibility(self):
+        """Legacy callers submitting 'username' parameter are accepted by the form."""
+        response = self.client.post(reverse('login'), {
+            'username': 'ravi.screenwriter@kadhascript.com',
+            'password': self.password
+        })
+        self.assertRedirects(response, reverse('dashboard'))
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)
+
+    def test_duplicate_email_ambiguity_safety(self):
+        """When duplicate accounts have the same email and same password, authentication is rejected as ambiguous."""
+        User.objects.create_user(
+            username="writer_ravi_clone",
+            email="ravi.screenwriter@kadhascript.com",
+            password=self.password
+        )
+        response = self.client.post(reverse('login'), {
+            'email': 'ravi.screenwriter@kadhascript.com',
+            'password': self.password
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid email or password. Please try again.')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_inactive_account_cannot_log_in(self):
+        """Inactive accounts (is_active=False) cannot log in."""
+        self.user.is_active = False
+        self.user.save()
+        response = self.client.post(reverse('login'), {
+            'email': 'ravi.screenwriter@kadhascript.com',
+            'password': self.password
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid email or password. Please try again.')
+        self.assertNotIn('_auth_user_id', self.client.session)
+
+    def test_registration_success_message_does_not_leak_username(self):
+        """Registration success message greets the user by name without exposing the internal username."""
+        response = self.client.post(reverse('register'), {
+            'full_name': 'Anoop Menon',
+            'email': 'anoop.menon@cinema.com',
+            'password': 'StrongPassword2026!'
+        }, follow=True)
+        self.assertRedirects(response, reverse('dashboard'))
+        content = response.content.decode('utf-8')
+        created_user = User.objects.get(email='anoop.menon@cinema.com')
+        self.assertIn('Welcome to KadhaScript, Anoop!', content)
+        self.assertNotIn(f'Welcome to KadhaScript, {created_user.username}!', content)
+
+    def test_password_reset_email_wording_omits_username(self):
+        """Password reset email does not instruct the user about or expose an internal username."""
+        self.client.post(reverse('password_reset'), {
+            'email': 'ravi.screenwriter@kadhascript.com'
+        })
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertNotIn('Your username:', sent.body)
+        self.assertIn('Your account email: ravi.screenwriter@kadhascript.com', sent.body)
+
+    def test_login_redirect_and_session_preservation(self):
+        """Next parameter redirect is preserved when logging in via email."""
+        response = self.client.post(f"{reverse('login')}?next=/scripts/", {
+            'email': 'ravi.screenwriter@kadhascript.com',
+            'password': self.password
+        })
+        self.assertRedirects(response, '/scripts/')
+        self.assertEqual(int(self.client.session['_auth_user_id']), self.user.pk)

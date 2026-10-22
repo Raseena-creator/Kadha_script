@@ -12,8 +12,9 @@ def register_view(request):
         form = UserRegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
-            messages.success(request, f'Welcome to KadhaScript, {user.username}! Your screenwriting journey starts here.')
+            login(request, user, backend='accounts.backends.EmailOrUsernameModelBackend')
+            display_name = user.first_name or (user.profile.pen_name if hasattr(user, 'profile') and user.profile.pen_name else 'Writer')
+            messages.success(request, f'Welcome to KadhaScript, {display_name}! Your screenwriting journey starts here.')
             return redirect('dashboard')
         else:
             for field, errors in form.errors.items():
@@ -29,27 +30,18 @@ def login_view(request):
     if request.method == 'POST':
         form = UserLoginForm(request.POST)
         if form.is_valid():
-            login_input = form.cleaned_data['username'].strip()
+            email_or_username = form.cleaned_data['email'].strip()
             password = form.cleaned_data['password']
 
-            username_to_auth = login_input
-            if '@' in login_input:
-                from django.contrib.auth.models import User
-                try:
-                    user_matched = User.objects.get(email__iexact=login_input)
-                    username_to_auth = user_matched.username
-                except (User.DoesNotExist, User.MultipleObjectsReturned):
-                    username_to_auth = login_input
-
-            user = authenticate(request, username=username_to_auth, password=password)
+            user = authenticate(request, email=email_or_username, password=password)
             if user is not None:
                 login(request, user)
-                display_name = user.first_name or user.username
+                display_name = user.first_name or (user.profile.pen_name if hasattr(user, 'profile') and user.profile.pen_name else 'Writer')
                 messages.success(request, f'Welcome back, {display_name}!')
                 next_url = request.GET.get('next') or 'dashboard'
                 return redirect(next_url)
             else:
-                messages.error(request, 'Invalid username or password. Please try again.')
+                messages.error(request, 'Invalid email or password. Please try again.')
     else:
         form = UserLoginForm()
     return render(request, 'accounts/login.html', {'form': form})
