@@ -7349,6 +7349,62 @@ class KadhaEditor {
         }
     }
 
+    hasReliableScreenplayStructure(parsedElements, rawText, targetType = null) {
+        if (!parsedElements || !Array.isArray(parsedElements) || parsedElements.length === 0) {
+            return false;
+        }
+
+        // 1. Explicit structural screenplay elements are always authoritative
+        const hasExplicitStructure = parsedElements.some(el => {
+            if (!el || !el.type) return false;
+            return el.type === 'scene_heading' ||
+                   el.type === 'transition' ||
+                   el.type === 'parenthetical' ||
+                   el.type === 'shot';
+        });
+        if (hasExplicitStructure) return true;
+
+        // 2. Explicit character extensions like (V.O.), (O.S.), (CONT'D), (ഫോണിൽ), etc.
+        if (/\((?:V\.O\.|O\.S\.|CONT'D|ON PHONE|OFF SCREEN)\)/i.test(rawText) ||
+            /\((?:വോയ്സ്\s*ഓവർ|ഫോണിൽ|ശബ്ദം)\)/.test(rawText)) {
+            return true;
+        }
+
+        // 3. Inline or trailing colons marking dialogue cues (e.g. "NAME: DIALOGUE" or "NAME:\n...")
+        const rawLines = (rawText || '').split('\n').map(l => l.trim()).filter(Boolean);
+        const hasColonCue = rawLines.some(l => /^([^\n:]{1,35}):(?:\s+|$)/.test(l));
+        if (hasColonCue) return true;
+
+        // 4. Known characters defined in active screenplay
+        const knownCharSetLower = new Set();
+        (this.characters || []).forEach(c => {
+            const name = typeof c === 'string' ? c.trim() : (c && c.name ? String(c.name).trim() : '');
+            if (name) knownCharSetLower.add(name.toLowerCase());
+        });
+
+        // Check if any character in the plan has reliable cues (known character or standard all-caps English)
+        const characterElements = parsedElements.filter(el => el && el.type === 'character');
+        const hasReliableCharacter = characterElements.some(el => {
+            const name = (el.content || '').trim();
+            if (!name) return false;
+            if (knownCharSetLower.has(name.toLowerCase())) return true;
+            // Standard screenplay all-caps English character heading (e.g. "GEORGE", "HUNTER")
+            if (/^[A-Z0-9\s\.\-']{2,35}$/.test(name) && /[A-Z]/.test(name)) return true;
+            return false;
+        });
+
+        if (hasReliableCharacter) return true;
+
+        // When target is NOT an action element, preserve existing parser behavior
+        if (targetType !== 'action') {
+            return parsedElements.some(el => el && el.type && el.type !== 'action');
+        }
+
+        // Target IS an action element and character cues were only heuristically inferred:
+        // do not treat as structured screenplay paste.
+        return false;
+    }
+
     handlePaste(e) {
         // Only intercept in Edit Mode inside page container
         if (this.editorMode !== 'edit' || !this.pageContainer) return;
@@ -7648,7 +7704,11 @@ class KadhaEditor {
             const VALID_TYPES = new Set(['scene_heading', 'action', 'character', 'dialogue', 'parenthetical', 'transition', 'shot', 'note']);
             const isValidPlan = hasScreenplayElements && parsedElements.every(el => el && el.type && VALID_TYPES.has(el.type));
 
-            if (isValidPlan) {
+            const targetBlock = targetEditable ? targetEditable.closest('.script-element-block') : null;
+            const targetType = targetBlock ? targetBlock.dataset.type : null;
+            const isReliablePlan = this.hasReliableScreenplayStructure(parsedElements, externalText, targetType);
+
+            if (isValidPlan && isReliablePlan) {
                 const inserted = this.insertParsedScreenplayPlan(parsedElements, targetEditable, preSnap);
                 if (inserted) {
                     this._recordPasteHandled('paste', externalText);
@@ -7827,7 +7887,11 @@ class KadhaEditor {
                                           parsedElements.some(el => el && el.type && el.type !== 'action');
             const isValidPlan = hasScreenplayElements && parsedElements.every(el => el && el.type && VALID_TYPES.has(el.type));
 
-            if (isValidPlan) {
+            const targetBlock = block || (editable ? editable.closest('.script-element-block') : null);
+            const targetType = targetBlock ? targetBlock.dataset.type : null;
+            const isReliablePlan = this.hasReliableScreenplayStructure(parsedElements, normalized, targetType);
+
+            if (isValidPlan && isReliablePlan) {
                 e.preventDefault();
                 const preSnap = this.captureSnapshot();
                 const inserted = this.insertParsedScreenplayPlan(parsedElements, editable, preSnap);

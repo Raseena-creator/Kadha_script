@@ -124,8 +124,10 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
     def login_and_open_editor(self):
         d = self.driver
         d.get(f"{self.live_server_url}/accounts/login/")
-        WebDriverWait(d, 10).until(EC.presence_of_element_located((By.NAME, "username")))
-        d.find_element(By.NAME, "username").send_keys(self.username)
+        login_input = WebDriverWait(d, 10).until(
+            lambda drv: drv.find_elements(By.NAME, "email") or drv.find_elements(By.NAME, "username")
+        )[0]
+        login_input.send_keys(self.username)
         d.find_element(By.NAME, "password").send_keys("password123")
         d.find_element(By.NAME, "password").submit()
         WebDriverWait(d, 10).until(EC.url_contains("/dashboard/"))
@@ -2034,3 +2036,79 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
         self.assertEqual(elems_a3_6[0]['content'], 'JOHN "JACK"')
         self.assertEqual(elems_a3_6[1]['type'], 'dialogue')
         self.assertEqual(elems_a3_6[1]['content'], "Let's get moving.")
+
+    def test_35_multiline_plain_text_paste_into_action_block_not_split_into_character_dialogue(self):
+        """35. Multiline plain text pasted into an existing action block does not split into character/dialogue."""
+        # 1. Test exact Malayalam regression text: "\nരണ്ടാം വരി\nമൂന്നാം വരി"
+        result_plain = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+
+            // Create target action block with initial content
+            const actionBlock = inst.createElementBlock('action', 'ഒരു പഴയ മാളിക.', heading);
+            const actionEd = actionBlock.querySelector('.element-content');
+            actionEd.focus();
+            inst.activeElementBlock = actionBlock;
+            inst.setCursorToEnd(actionEd);
+
+            const beforeCount = page.querySelectorAll('.script-element-block').length;
+            const plainText = "\\nരണ്ടാം വരി\\nമൂന്നാം വരി";
+
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return plainText;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+
+            const afterCount = page.querySelectorAll('.script-element-block').length;
+            const payload = inst.extractScenePayload();
+            return {
+                beforeCount: beforeCount,
+                afterCount: afterCount,
+                actionText: actionEd.innerText,
+                actionType: actionBlock.dataset.type,
+                elements: payload.elements || []
+            };
+        """)
+
+        # Verify block count did not increase (no new character/dialogue blocks created)
+        self.assertEqual(result_plain['beforeCount'], result_plain['afterCount'])
+        # Verify target element retains 'action' semantic type
+        self.assertEqual(result_plain['actionType'], 'action')
+        # Verify both lines appear inside the target action element
+        self.assertIn('രണ്ടാം വരി', result_plain['actionText'])
+        self.assertIn('മൂന്നാം വരി', result_plain['actionText'])
+
+        # 2. Legitimate structured screenplay paste into action block still parses correctly
+        result_structured = self.driver.execute_script("""
+            const inst = window.editorInstance;
+            const page = inst.pageContainer;
+            const heading = page.querySelector('.script-element-block[data-type="scene_heading"]');
+            page.querySelectorAll('.script-element-block:not([data-type="scene_heading"])').forEach(b => b.remove());
+
+            const actionBlock = inst.createElementBlock('action', '', heading);
+            const actionEd = actionBlock.querySelector('.element-content');
+            actionEd.focus();
+            inst.activeElementBlock = actionBlock;
+
+            // Structured screenplay text with explicit scene heading, character, and dialogue
+            const structuredText = "EXT. FOREST - DUSK\\n\\nHUNTER\\nStay quiet.";
+            const event = new Event('paste', { bubbles: true, cancelable: true });
+            event.clipboardData = {
+                getData: function(format) {
+                    if (format === 'text/plain') return structuredText;
+                    return '';
+                }
+            };
+            inst.handlePaste(event);
+            return inst.extractScenePayload();
+        """)
+
+        structured_types = [e['element_type'] for e in result_structured.get('elements', [])]
+        self.assertIn('character', structured_types)
+        self.assertIn('dialogue', structured_types)
