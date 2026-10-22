@@ -1904,3 +1904,133 @@ class CopyPasteComprehensiveVerificationTests(StaticLiveServerTestCase):
         self.assertEqual(elems_a2_9[1]['content'], '(ചിരിച്ചുകൊണ്ട്)')
         self.assertEqual(elems_a2_9[2]['type'], 'dialogue')
         self.assertEqual(elems_a2_9[2]['content'], 'നമുക്ക് തുടങ്ങാം.')
+
+        # -------------------------------------------------------------------------
+        # Batch A3 Regression Tests: Action After Dialogue, Quoted Short Dialogue & State Descriptions
+        # -------------------------------------------------------------------------
+
+        # 10. Defect A: Malayalam narrative action lines immediately following dialogue without blank lines
+        raw_a3_1 = (
+            "രാഘവൻ\n"
+            "(കൈത്തണ്ട പൊത്തിപ്പിടിച്ച്, വേദനയാൽ അലറിക്കൊണ്ട്)\n"
+            "ആഹ്...! നീയെന്നെ കൊല്ലാൻ നോക്കുന്നോടാ പരട്ടപ്പട്ടീ?\n"
+            "രാഘവൻ പെട്ടെന്ന് കാലുകൊണ്ട് നിലത്തെ ചെളിവെള്ളം അരവിന്ദന്റെ കണ്ണുകളിലേക്ക് ചവിട്ടിത്തെറിപ്പിക്കുന്നു.\n"
+            "അരവിന്ദന്റെ കാഴ്ച മറയുന്നു. അവൻ കണ്ണുകൾ തുടയ്ക്കാൻ ശ്രമിക്കുമ്പോൾ, രാഘവൻ നിലത്തുനിന്നൊരു തടിക്കഷണം എടുത്ത് അരവിന്ദന്റെ വയറ്റിലേക്ക് ആഞ്ഞു കുത്തുന്നു.\n"
+            "അരവിന്ദ് ശ്വാസം കിട്ടാതെ താഴെ വീഴുന്നു. രാഘവൻ അവനെ ചവിട്ടി താഴെയിട്ട്, കഴുത്തിൽ തടിക്കഷണം അമർത്തിപ്പിടിക്കുന്നു. ചെളിയിൽ കിടന്ന് അരവിന്ദ് ശ്വാസം മുട്ടുന്നു.\n"
+            "രാഘവൻ\n"
+            "(അരവിന്ദന്റെ മുഖത്തേക്ക് ആഞ്ഞ് തുപ്പിക്കൊണ്ട്, ഭ്രാന്തമായ ദേഷ്യത്തിൽ)\n"
+            "എന്റെ സാമ്രാജ്യമാണ് നീ ഒറ്റ രാത്രികൊണ്ട് തകർത്തത്!"
+        )
+        elems_a3_1 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_1
+        )
+        self.assertEqual(len(elems_a3_1), 7, f"Expected 7 blocks, got {len(elems_a3_1)}")
+        self.assertEqual(elems_a3_1[0]['type'], 'character')
+        self.assertEqual(elems_a3_1[0]['content'], 'രാഘവൻ')
+        self.assertEqual(elems_a3_1[1]['type'], 'parenthetical')
+        self.assertIn('വേദനയാൽ അലറിക്കൊണ്ട്', elems_a3_1[1]['content'])
+        self.assertEqual(elems_a3_1[2]['type'], 'dialogue')
+        self.assertEqual(elems_a3_1[2]['content'], 'ആഹ്...! നീയെന്നെ കൊല്ലാൻ നോക്കുന്നോടാ പരട്ടപ്പട്ടീ?')
+        # The 3 action lines must NOT be absorbed into dialogue
+        self.assertEqual(elems_a3_1[3]['type'], 'action')
+        self.assertIn('ചവിട്ടിത്തെറിപ്പിക്കുന്നു', elems_a3_1[3]['content'])
+        self.assertIn('ആഞ്ഞു കുത്തുന്നു', elems_a3_1[3]['content'])
+        self.assertIn('ശ്വാസം മുട്ടുന്നു', elems_a3_1[3]['content'])
+        # Recovery to subsequent character cue, parenthetical, and dialogue
+        self.assertEqual(elems_a3_1[4]['type'], 'character')
+        self.assertEqual(elems_a3_1[4]['content'], 'രാഘവൻ')
+        self.assertEqual(elems_a3_1[5]['type'], 'parenthetical')
+        self.assertIn('ഭ്രാന്തമായ ദേഷ്യത്തിൽ', elems_a3_1[5]['content'])
+        self.assertEqual(elems_a3_1[6]['type'], 'dialogue')
+        self.assertIn('എന്റെ സാമ്രാജ്യമാണ്', elems_a3_1[6]['content'])
+
+        # 11. Defect B: Short quoted dialogue and state description
+        raw_a3_2 = (
+            "ജ്യോതിയുടെ മുഖത്ത് താല്പര്യമില്ലാത്ത ഭാവമാണ്\n\n"
+            "ജ്യോതി\n"
+            "“ഉം..”\n\n"
+            "കുഞ്ഞു\n"
+            "“അപ്പൂപ്പൻ എന്നാ ഇനി എന്നെ സ്കൂളിൽ കാണാൻ വരാ..?”"
+        )
+        elems_a3_2 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_2
+        )
+        self.assertEqual(len(elems_a3_2), 5, f"Expected 5 blocks, got {len(elems_a3_2)}")
+        self.assertEqual(elems_a3_2[0]['type'], 'action', "State description ending in ഭാവമാണ് must be Action")
+        self.assertEqual(elems_a3_2[0]['content'], 'ജ്യോതിയുടെ മുഖത്ത് താല്പര്യമില്ലാത്ത ഭാവമാണ്')
+        self.assertEqual(elems_a3_2[1]['type'], 'character', "ജ്യോതി must be Character")
+        self.assertEqual(elems_a3_2[1]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_a3_2[2]['type'], 'dialogue', "“ഉം..” must be Dialogue, not stolen as Character")
+        self.assertEqual(elems_a3_2[2]['content'], '“ഉം..”')
+        self.assertEqual(elems_a3_2[3]['type'], 'character', "കുഞ്ഞു must be Character")
+        self.assertEqual(elems_a3_2[3]['content'], 'കുഞ്ഞു')
+        self.assertEqual(elems_a3_2[4]['type'], 'dialogue', "Quoted sentence must be Dialogue")
+        self.assertEqual(elems_a3_2[4]['content'], '“അപ്പൂപ്പൻ എന്നാ ഇനി എന്നെ സ്കൂളിൽ കാണാൻ വരാ..?”')
+
+        # 12. Defect B: Trailing quotation mark after terminal punctuation in context: "അമ്മ കണ്ടോ വാള് ?”"
+        raw_a3_3 = (
+            "കുഞ്ഞു\n"
+            "അമ്മ കണ്ടോ വാള് ?”\n\n"
+            "ജ്യോതിയുടെ മുഖത്ത് താല്പര്യമില്ലാത്ത ഭാവമാണ്\n\n"
+            "ജ്യോതി\n"
+            "“ഉം..”"
+        )
+        elems_a3_3 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_3
+        )
+        self.assertEqual(len(elems_a3_3), 5, f"Expected 5 blocks, got {len(elems_a3_3)}")
+        self.assertEqual(elems_a3_3[0]['type'], 'character')
+        self.assertEqual(elems_a3_3[0]['content'], 'കുഞ്ഞു')
+        self.assertEqual(elems_a3_3[1]['type'], 'dialogue')
+        self.assertEqual(elems_a3_3[1]['content'], 'അമ്മ കണ്ടോ വാള് ?”')
+        self.assertEqual(elems_a3_3[2]['type'], 'action')
+        self.assertEqual(elems_a3_3[2]['content'], 'ജ്യോതിയുടെ മുഖത്ത് താല്പര്യമില്ലാത്ത ഭാവമാണ്')
+        self.assertEqual(elems_a3_3[3]['type'], 'character')
+        self.assertEqual(elems_a3_3[3]['content'], 'ജ്യോതി')
+        self.assertEqual(elems_a3_3[4]['type'], 'dialogue')
+        self.assertEqual(elems_a3_3[4]['content'], '“ഉം..”')
+
+        # 13. Defect C: Additional state description with "-മട്ടാണ്"
+        raw_a3_4 = "അയാൾ ചിരിക്കാത്ത മട്ടാണ്\nഅവൻ വാതിലിലേക്ക് നോക്കുന്നു."
+        elems_a3_4 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_4
+        )
+        for el in elems_a3_4:
+            self.assertNotEqual(el['type'], 'character', "Manner ending in മട്ടാണ് must NOT be Character")
+            self.assertEqual(el['type'], 'action')
+
+        # 14. Negative Test: Multi-line dialogue with 1st person pronoun ending in verb remains Dialogue
+        raw_a3_5 = (
+            "ദാസൻ\n"
+            "എനിക്ക് പേടിയാകുന്നു.\n"
+            "ഞാൻ ഇപ്പോൾ തന്നെ ഇവിടുന്ന് പോകുന്നു.\n"
+            "അവൻ വാതിലിലേക്ക് നോക്കുന്നു."
+        )
+        elems_a3_5 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_5
+        )
+        self.assertEqual(len(elems_a3_5), 3)
+        self.assertEqual(elems_a3_5[0]['type'], 'character')
+        self.assertEqual(elems_a3_5[0]['content'], 'ദാസൻ')
+        self.assertEqual(elems_a3_5[1]['type'], 'dialogue')
+        self.assertIn('എനിക്ക് പേടിയാകുന്നു.', elems_a3_5[1]['content'])
+        self.assertIn('ഞാൻ ഇപ്പോൾ തന്നെ ഇവിടുന്ന് പോകുന്നു.', elems_a3_5[1]['content'])
+        self.assertEqual(elems_a3_5[2]['type'], 'action')
+        self.assertEqual(elems_a3_5[2]['content'], 'അവൻ വാതിലിലേക്ക് നോക്കുന്നു.')
+
+        # 15. Negative Test: Character with quotation in nickname (e.g. JOHN "JACK")
+        raw_a3_6 = "JOHN \"JACK\"\nLet's get moving."
+        elems_a3_6 = self.driver.execute_script(
+            "return window.editorInstance.parseScreenplayText(arguments[0]);",
+            raw_a3_6
+        )
+        self.assertEqual(len(elems_a3_6), 2)
+        self.assertEqual(elems_a3_6[0]['type'], 'character')
+        self.assertEqual(elems_a3_6[0]['content'], 'JOHN "JACK"')
+        self.assertEqual(elems_a3_6[1]['type'], 'dialogue')
+        self.assertEqual(elems_a3_6[1]['content'], "Let's get moving.")

@@ -6514,6 +6514,7 @@ class KadhaEditor {
 
         const isDisallowedForCharacter = (clean) => {
             if (!clean || clean.length === 0 || clean.length > 40) return true;
+            if (/^["'“‘]/.test(clean)) return true;
             if (sluglineRegex.test(clean)) return true;
             if (transitionExact.has(clean.toUpperCase()) || clean.toUpperCase().endsWith(' TO:')) return true;
             if (seqMarkerExact.has(clean.toUpperCase()) || numberedShotRegex.test(clean)) return true;
@@ -6555,6 +6556,10 @@ class KadhaEditor {
             const t = str.trim();
             if (t.length === 0) return false;
 
+            // Spoken dialogue indicators: opening quotation marks or 1st/2nd person pronouns
+            if (/^["'“‘]/.test(t)) return false;
+            if (/^(?:ഞാൻ|ഞങ്ങൾ|നമുക്ക്|നീ|നിങ്ങൾ|എനിക്ക്|നമ്മൾ)\s+/.test(t)) return false;
+
             // Common English narrative starters
             if (/^(?:The|A|An|He|She|They|It|His|Her|Their|We|There|Suddenly|Then|After|Meanwhile|However|Because|Although|When|While|Outside|Inside|Later|Soon)\s+[A-Za-z]/i.test(t)) {
                 return true;
@@ -6569,7 +6574,7 @@ class KadhaEditor {
             }
 
             // Malayalam narrative action endings (verbs in present/past tense, negative verbs, continuous/auxiliary forms, participial/manner)
-            if (/(?:നടക്കുന്നു|നോക്കുന്നു|പോകുന്നു|വരുന്നു|ഇരിക്കുന്നു|നിൽക്കുന്നു|തുടങ്ങുന്നു|എടുക്കുന്നു|കൊടുക്കുന്നു|തുറക്കുന്നു|അടയ്ക്കുന്നു|ചിരിക്കുന്നു|കരയുന്നു|ഓടുന്നു|നടന്നു|നോക്കി|പോയി|വന്നു|ഇരുന്നു|നിന്നു|കണ്ടു|തുറന്നു|അടച്ചു|ചിരിച്ചു|കരഞ്ഞു|ഓടി|എടുത്തു|കൊടുത്തു|പറഞ്ഞു|ചോദിച്ചു|മിണ്ടി|മിണ്ടുന്നില്ല|കേൾക്കുന്നില്ല|അറിയുന്നില്ല|പോവുന്നില്ല|പോകുന്നില്ല|ചെയ്യുന്നില്ല|തോന്നുന്നില്ല|കഴിയുന്നില്ല|പറ്റുന്നില്ല|പറഞ്ഞില്ല|മിണ്ടിയില്ല|ചെയ്തില്ല|കണ്ടില്ല|പോയില്ല|വന്നില്ല|ചോദിച്ചില്ല|എടുത്തില്ല|കൊടുത്തില്ല|തുറന്നില്ല|അടച്ചില്ല|കേട്ടില്ല|അറിഞ്ഞില്ല|നടന്നില്ല|ചോദിക്കുകയാണ്|നോക്കുകയാണ്|നടക്കുകയാണ്|പറയുകയാണ്|വരികയാണ്|പോകുകയാണ്|ചെയ്യുകയാണ്|എടുക്കുകയാണ്|നിൽക്കുകയാണ്|ഇരിക്കുകയാണ്|നടന്നുകൊണ്ടിരിക്കുന്നു|സംസാരിച്ചുകൊണ്ടിരുന്നു|വച്ചുകൊണ്ട്|വെച്ചുകൊണ്ട്|എടുത്തുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|പറഞ്ഞുകൊണ്ട്|ചോദിച്ചുകൊണ്ട്|മട്ടിൽ|ഭാവത്തിൽ|രീതിയിൽ|വിനയപൂർവ്വം|ദയപൂർവ്വം)\.?$/.test(t)) {
+            if (/(?:നടക്കുന്നു|നോക്കുന്നു|പോകുന്നു|വരുന്നു|ഇരിക്കുന്നു|നിൽക്കുന്നു|തുടങ്ങുന്നു|എടുക്കുന്നു|കൊടുക്കുന്നു|തുറക്കുന്നു|അടയ്ക്കുന്നു|ചിരിക്കുന്നു|കരയുന്നു|ഓടുന്നു|നടന്നു|നോക്കി|പോയി|വന്നു|ഇരുന്നു|നിന്നു|കണ്ടു|തുറന്നു|അടച്ചു|ചിരിച്ചു|കരഞ്ഞു|ഓടി|എടുത്തു|കൊടുത്തു|പറഞ്ഞു|ചോദിച്ചു|മിണ്ടി|മിണ്ടുന്നില്ല|കേൾക്കുന്നില്ല|അറിയുന്നില്ല|പോവുന്നില്ല|പോകുന്നില്ല|ചെയ്യുന്നില്ല|തോന്നുന്നില്ല|കഴിയുന്നില്ല|പറ്റുന്നില്ല|പറഞ്ഞില്ല|മിണ്ടിയില്ല|ചെയ്തില്ല|കണ്ടില്ല|പോയില്ല|വന്നില്ല|ചോദിച്ചില്ല|എടുത്തില്ല|കൊടുത്തില്ല|തുറന്നില്ല|അടച്ചില്ല|കേട്ടില്ല|അറിഞ്ഞില്ല|നടന്നില്ല|ചോദിക്കുകയാണ്|നോക്കുകയാണ്|നടക്കുകയാണ്|പറയുകയാണ്|വരികയാണ്|പോകുകയാണ്|ചെയ്യുകയാണ്|എടുക്കുകയാണ്|നിൽക്കുകയാണ്|ഇരിക്കുകയാണ്|നടന്നുകൊണ്ടിരിക്കുന്നു|സംസാരിച്ചുകൊണ്ടിരുന്നു|വച്ചുകൊണ്ട്|വെച്ചുകൊണ്ട്|എടുത്തുകൊണ്ട്|നോക്കിക്കൊണ്ട്|നടന്നുകൊണ്ട്|പറഞ്ഞുകൊണ്ട്|ചോദിച്ചുകൊണ്ട്|മട്ടിൽ|ഭാവത്തിൽ|രീതിയിൽ|വിനയപൂർവ്വം|ദയപൂർവ്വം|ചവിട്ടിത്തെറിപ്പിക്കുന്നു|ത്തെറിപ്പിക്കുന്നു|കുത്തുന്നു|മുട്ടുന്നു|വീഴുന്നു|പിടിക്കുന്നു|അമർത്തിപ്പിടിക്കുന്നു|മറയുന്നു|എറിയുന്നു|ചാടുന്നു|പായുന്നു|ഓടിക്കുന്നു|അമർത്തുന്നു|ഭാവമാണ്|മട്ടാണ്)\.?$/.test(t)) {
                 return true;
             }
             // General negative Malayalam verb ending: ...ന്നില്ല / ...കുന്നില്ല / ...തില്ല / ...റില്ല / ...യില്ല
@@ -6580,8 +6585,8 @@ class KadhaEditor {
             if (/(?:ക്കുകയാണ്|ുകയാണ്|കൊണ്ടിരിക്കുന്നു|കൊണ്ടിരുന്നു|കൊണ്ടിരിക്കുകയാണ്)\.?$/.test(t)) {
                 return true;
             }
-            // General participial / action manner ending: ...കൊണ്ട് / ...ക്കൊണ്ട് / ...ത്തോടെ / ...ത്തോട് / ...രീതിയിൽ / ...പൂർവ്വം
-            if (/(?:കൊണ്ട്|ക്കൊണ്ട്|ത്തോടെ|ത്തോട്|രീതിയിൽ|പൂർവ്വം)\.?$/.test(t)) {
+            // General participial / action manner ending: ...കൊണ്ട് / ...ക്കൊണ്ട് / ...ത്തോടെ / ...ത്തോട് / ...രീതിയിൽ / ...പൂർവ്വം / ...ഭാവമാണ് / ...മട്ടാണ്
+            if (/(?:കൊണ്ട്|ക്കൊണ്ട്|ത്തോടെ|ത്തോട്|രീതിയിൽ|പൂർവ്വം|ഭാവമാണ്|മട്ടാണ്)\.?$/.test(t)) {
                 return true;
             }
 
@@ -6621,7 +6626,9 @@ class KadhaEditor {
             let withoutColon = clean.replace(/:$/, '').trim();
             let baseName = extractBaseName(withoutColon);
             if (!baseName || baseName.length > 40) return false;
-            if (/[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) return false;
+            if (/^["'“‘]/.test(baseName)) return false;
+            const unquotedBase = baseName.replace(/["'”’]+$/, '').trim();
+            if (/[.?!,;]$/.test(unquotedBase) || isNarrativeReporting(unquotedBase)) return false;
 
             // Action line should never be considered a character candidate
             if (isNarrativeActionLine(baseName)) return false;
@@ -6745,7 +6752,8 @@ class KadhaEditor {
 
             let withoutColon = curText.replace(/:$/, '').trim();
             let baseName = extractBaseName(curText);
-            if (!baseName || /[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) continue;
+            const unquotedBase = baseName.replace(/["'”’]+$/, '').trim();
+            if (!baseName || /[.?!,;]$/.test(unquotedBase) || isNarrativeReporting(unquotedBase)) continue;
 
             // 1. Explicit known character
             if (knownCharSet.has(baseName) || knownCharSetLower.has(baseName.toLowerCase())) {
@@ -6795,7 +6803,8 @@ class KadhaEditor {
 
             let withoutColon = clean.replace(/:$/, '').trim();
             let baseName = extractBaseName(clean);
-            if (!baseName || /[.?!,;]$/.test(baseName) || isNarrativeReporting(baseName)) return false;
+            const unquotedBase = baseName.replace(/["'”’]+$/, '').trim();
+            if (!baseName || /[.?!,;]$/.test(unquotedBase) || isNarrativeReporting(unquotedBase)) return false;
 
             // 1. Matches known or discovered character
             if (knownCharSet.has(baseName) || knownCharSetLower.has(baseName.toLowerCase()) ||
