@@ -119,15 +119,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-right: 0.35rem;
+    position: absolute;
+    bottom: 0.25rem;
+    right: 0.5rem;
+    left: auto;
     padding: 0.1rem 0.2rem;
     color: #d97706; /* amber-600 */
     font-size: 0.75rem;
     line-height: 1;
     border-radius: 3px;
     cursor: pointer;
-    vertical-align: middle;
-    flex-shrink: 0;
+    z-index: 2;
     transition: color 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
 }
 
@@ -145,6 +147,11 @@
 .scene-item.active .scene-nav-note-badge {
     color: #b45309;
 }
+
+.scene-item:has(.scene-nav-note-badge) {
+    padding-bottom: 1.25rem;
+}
+
 
 /* Visual highlight pulse when navigating to note */
 .note-pulse-highlight {
