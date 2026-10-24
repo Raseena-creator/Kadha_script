@@ -307,7 +307,7 @@
     top: auto;
 }
 
-/* Sequence Dropdown Stacking & Visibility Fix (Batch 3 Step 4) */
+/* Sequence Dropdown Stacking & Visibility Fix (Batch 3 Step 4 & Mobile Overflow Fix) */
 .editor-top-toolbars-pinned.has-dropdown-open {
     z-index: 1050 !important;
 }
@@ -315,9 +315,9 @@
     z-index: 1050 !important;
 }
 .editor-top-toolbars-pinned.has-dropdown-open .editor-scene-toolbar-left {
-    overflow-x: visible !important;
+    overflow-x: auto !important;
     overflow-y: visible !important;
-    -webkit-overflow-scrolling: auto !important;
+    -webkit-overflow-scrolling: touch !important;
 }
 #sequenceDropdownContainer {
     position: relative;
@@ -1129,20 +1129,24 @@
         position: relative;
         top: auto;
         z-index: 20;
+        max-width: 100vw;
+        box-sizing: border-box;
     }
     .editor-scene-toolbar-left {
         width: calc(100% - 36px);
         gap: 0.35rem;
-        padding-right: 0.25rem;
+        padding-right: 0.5rem;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
         flex-wrap: nowrap;
+        box-sizing: border-box;
     }
     .editor-scene-buttons-group {
         gap: 0.3rem;
         display: inline-flex;
         flex-wrap: nowrap;
         flex-shrink: 0;
+        padding-right: 0.35rem;
     }
     .btn-scene-control {
         font-size: 0.74rem;

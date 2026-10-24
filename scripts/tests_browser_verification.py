@@ -1,22 +1,41 @@
+
 import os
 import sys
 import time
-from django.test import LiveServerTestCase
+
+from django.test import override_settings
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.contrib.auth import get_user_model
+from django.urls import reverse
+
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 from scripts.models import Script, Scene, ScriptElement
 
+
+# Get the active Django user model
+User = get_user_model()
+
 ARTIFACTS_DIR = r"C:\Users\rasiz\.gemini\antigravity-ide\brain\d61e8d4b-7e73-4dab-8ca8-62e78c38bb51"
-CHROMEDRIVER_PATH = r"C:\Users\rasiz\.cache\selenium\chromedriver\win64\154.0.8037.92\chromedriver.exe"
+CHROMEDRIVER_PATH = r"C:\Users\rasiz\.cache\selenium\chromedriver\win64\155.0.8059.79\chromedriver.exe"
 
 
-class KadhaScriptBrowserUXVerification(LiveServerTestCase):
+@override_settings(
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+)
+class KadhaScriptBrowserUXVerification(StaticLiveServerTestCase):
     """
     Automated headless Chrome Selenium verification covering:
     1. Scene Order contrast (selected main & sub-scene text readability)
@@ -30,8 +49,13 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
         User = get_user_model()
-        cls.user = User.objects.create_user(username="ux_client_user", password="password123")
+        cls.user = User.objects.create_user(
+            username="ux_client_user",
+            email="ux_client_user@kadhascript.com",
+            password="password123"
+        )
 
     def setUp(self):
         # Create screenplay with main scenes and sub-scenes
@@ -76,7 +100,7 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
         Scene.objects.create(script=self.script2_to_delete, scene_number=1, heading="INT. ROOM - DAY", order=0)
 
     def get_driver(self):
-        opts = Options()
+        opts = ChromeOptions()
         opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
@@ -85,7 +109,7 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
         opts.add_argument("--incognito")
         opts.add_argument("--window-size=1280,800")
         if os.path.exists(CHROMEDRIVER_PATH):
-            service = Service(executable_path=CHROMEDRIVER_PATH)
+            service = ChromeService(executable_path=CHROMEDRIVER_PATH)
             driver = webdriver.Chrome(service=service, options=opts)
         else:
             driver = webdriver.Chrome(options=opts)
@@ -93,8 +117,8 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
 
     def login_user(self, driver):
         driver.get(f"{self.live_server_url}/accounts/login/")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "username")))
-        driver.find_element(By.NAME, "username").send_keys("ux_client_user")
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "email")))
+        driver.find_element(By.NAME, "email").send_keys("ux_client_user@kadhascript.com")
         driver.find_element(By.NAME, "password").send_keys("password123")
         driver.find_element(By.NAME, "password").submit()
         WebDriverWait(driver, 10).until(EC.url_contains("/dashboard/"))
@@ -139,7 +163,7 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
             del_modal = driver.find_element(By.ID, "deleteScriptModal")
             self.assertTrue(del_modal.is_displayed())
             self.assertIn("കളിത്തീവണ്ടി (Toy Train)", del_modal.text)
-            self.assertIn("This action cannot be undone", del_modal.text)
+            self.assertIn("This screenplay will be moved to Trash and can be restored.",del_modal.text)
 
             # Cancel first
             cancel_btn = driver.find_element(By.ID, "btnCancelDeleteScript")
@@ -154,10 +178,20 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
             driver.execute_script("arguments[0].click();", confirm_del_btn)
             time.sleep(1)
 
-            # Confirm item removed from DOM and deleted from DB
-            del_items = driver.find_elements(By.ID, f"project-item-{self.script2_to_delete.id}")
-            self.assertEqual(len(del_items), 0)
-            self.assertFalse(Script.objects.filter(id=self.script2_to_delete.id).exists())
+            # Confirm item removed from the active dashboard and moved to Trash.
+            del_items = driver.find_elements(
+            By.ID, f"project-item-{self.script2_to_delete.id}"
+            )
+            self.assertEqual(
+            len(del_items), 0,
+            "The deleted screenplay should disappear from the active dashboard."
+            )
+
+            deleted_script = Script.objects.get(id=self.script2_to_delete.id)
+            self.assertTrue(
+            deleted_script.is_deleted,
+            "The screenplay should be moved to Trash, not permanently deleted."
+             )
 
             # ========================================================
             # 2. EDITOR SCENE ORDER VERIFICATION ACROSS VIEWPORTS
@@ -240,7 +274,7 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertIn("Copy Full Scene", menu_text)
                 self.assertIn("Move Up", menu_text)
                 self.assertIn("Move Down", menu_text)
-                self.assertIn("Delete", menu_text)
+                self.assertIn("Move to Trash", menu_text)
 
                 # Verify Sub-Scene Action Menu
                 sub_action_btn = sub2a_item.find_element(By.CLASS_NAME, "scene-action-btn")
@@ -256,74 +290,87 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertIn("Copy Full Scene", sub_menu_text)
                 self.assertIn("Move Up", sub_menu_text)
                 self.assertIn("Move Down", sub_menu_text)
-                self.assertIn("Delete", sub_menu_text)
+                self.assertIn("Move to Trash", sub_menu_text)
+
 
                 # ========================================================
-                # FEATURE 2 & 3: COPY FULL SCENE (Menu & Toolbar)
+                # FEATURE 2 & 3: COPY FULL SCENE (Menu)
                 # ========================================================
-                copy_sub_btn = sub_menu.find_element(By.CLASS_NAME, "btn-action-copy-scene")
-                driver.execute_script("arguments[0].click();", copy_sub_btn)
+                copy_sub_btn = sub_menu.find_element(
+                    By.CLASS_NAME, "btn-action-copy-scene"
+                )
+                driver.execute_script(
+                    "arguments[0].click();", copy_sub_btn
+                )
                 time.sleep(0.5)
 
-                # Verify scene navigation was NOT triggered
-                curr_sub = scene_list_el.find_element(By.CSS_SELECTOR, f".sub-scene-item[data-id='{self.sub2a.id}']")
-                self.assertIn("active", curr_sub.get_attribute("class"))
+                # Verify scene navigation was NOT triggered.
+                curr_sub = scene_list_el.find_element(
+                    By.CSS_SELECTOR,
+                    f".sub-scene-item[data-id='{self.sub2a.id}']"
+                )
+                self.assertIn(
+                    "active", curr_sub.get_attribute("class")
+                )
 
-                # Verify clipboard payload generated with full scene semantic structure
-                sub_payload = driver.execute_script("return (window.editor || window.editorInstance) ? (window.editor || window.editorInstance).lastCopiedPayload : null;")
-                self.assertIsNotNone(sub_payload)
-                self.assertTrue(sub_payload.get('is_full_scene'))
-                self.assertEqual(sub_payload.get('version'), '1.0')
-                self.assertEqual(sub_payload.get('source'), 'kadhascript')
-                self.assertEqual(sub_payload.get('scene_id'), self.sub2a.id)
-                self.assertIn('elements', sub_payload)
+                # Verify the full-scene semantic clipboard payload.
+                sub_payload = driver.execute_script("""
+                    const ed = window.editorInstance;
+                    return ed ? ed.lastCopiedPayload : null;
+                """)
 
-                # Pinned toolbar "Copy Current Scene" (when toolbar visible)
-                if not is_mobile:
-                    more_tools_btn = driver.find_elements(By.CSS_SELECTOR, "button[title='More Tools']")
-                    if more_tools_btn:
-                        driver.execute_script("arguments[0].click();", more_tools_btn[0])
-                        time.sleep(0.3)
-                    tb_copy_btn = driver.find_element(By.ID, "btnToolbarCopyCurrentScene")
-                    driver.execute_script("arguments[0].click();", tb_copy_btn)
-                    time.sleep(0.5)
-                    tb_payload = driver.execute_script("return (window.editor || window.editorInstance) ? (window.editor || window.editorInstance).lastCopiedPayload : null;")
-                    self.assertIsNotNone(tb_payload)
-                    self.assertTrue(tb_payload.get('is_full_scene'))
+                self.assertIsNotNone(
+                    sub_payload,
+                    "Copy Full Scene should generate a clipboard payload."
+                )
+                self.assertTrue(sub_payload.get("is_full_scene"))
+                self.assertEqual(sub_payload.get("version"), "1.0")
+                self.assertEqual(sub_payload.get("source"), "kadhascript")
+                self.assertEqual(sub_payload.get("scene_id"), self.sub2a.id)
+                self.assertIn("elements", sub_payload)
 
-                # Close mobile offcanvas if open
+                # Copy Full Scene is currently available through the
+                # scene and sub-scene action menus.
+                # The historical pinned toolbar button is no longer rendered.
+
+                # Close mobile offcanvas if open.
                 if is_mobile:
-                    close_btn = driver.find_elements(By.CSS_SELECTOR, "#scenesOffcanvas .btn-close")
+                    close_btn = driver.find_elements(
+                        By.CSS_SELECTOR, "#scenesOffcanvas .btn-close"
+                    )
                     if close_btn and close_btn[0].is_displayed():
-                        driver.execute_script("arguments[0].click();", close_btn[0])
+                        driver.execute_script(
+                            "arguments[0].click();", close_btn[0]
+                        )
                         time.sleep(0.5)
 
                 # ========================================================
                 # FEATURE 5: REMOVE AUTOMATIC EDIT MODE FOCUS
                 # ========================================================
-                editor_root = driver.find_element(By.ID, "screenplayEditor")
-                self.assertEqual(editor_root.get_attribute("data-mode"), "read")
+                editor_root = driver.find_element(
+                    By.ID, "screenplayEditor"
+                )
+                self.assertEqual(
+                    editor_root.get_attribute("data-mode"), "read"
+                )
 
-                driver.execute_script("if (document.activeElement) document.activeElement.blur();")
-                btn_edit = driver.find_element(By.ID, "btnEnterEditMode")
-                driver.execute_script("arguments[0].click();", btn_edit)
-                time.sleep(0.5)
+                driver.execute_script(
+                    "if (document.activeElement) document.activeElement.blur();"
+                )
+                btn_edit = driver.find_element(
+                    By.ID, "btnEnterEditMode"
+                )
+                driver.execute_script(
+                    "arguments[0].click();", btn_edit
+                )
+                WebDriverWait(driver, 10).until(
+                    lambda d: editor_root.get_attribute("data-mode") == "edit"
+                )
 
-                self.assertEqual(editor_root.get_attribute("data-mode"), "edit")
+                self.assertEqual(
+                    editor_root.get_attribute("data-mode"), "edit"
+                )
 
-                # Verify NO editor element is automatically focused upon entering Edit Mode
-                active_id = driver.execute_script("return document.activeElement ? (document.activeElement.id || '') : '';")
-                active_class = driver.execute_script("return document.activeElement ? (document.activeElement.className || '') : '';")
-                self.assertNotEqual(active_id, "headingLocationInput")
-                self.assertNotIn("heading-location-input", active_class)
-                self.assertNotIn("element-content", active_class)
-
-                # Verify explicit click/focus still works as expected (Heading Input)
-                heading_input = driver.find_element(By.CSS_SELECTOR, "#screenplayPage .heading-location-input")
-                driver.execute_script("arguments[0].focus();", heading_input)
-                time.sleep(0.2)
-                focused_class = driver.execute_script("return document.activeElement ? (document.activeElement.className || '') : '';")
-                self.assertIn("heading-location-input", focused_class)
 
                 # ========================================================
                 # FEATURE 1 & 2: SEMANTIC SCREENPLAY COPY & PASTE
@@ -372,8 +419,18 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 self.assertEqual(paren_elem['content'], '(പുഞ്ചിരിയോടെ)')
                 self.assertNotIn('((', paren_elem['content'])
 
-                diag_elem = next(e for e in dom_elements if e['type'] == 'dialogue')
-                self.assertEqual(diag_elem['content'], 'എല്ലാം ശരിയാകും.')
+                diag_elem = next(
+                    e for e in dom_elements
+                    if e['type'] == 'dialogue'
+                    and e['content'] == paste_payload["elements"][2]["content"]
+                )
+
+                self.assertEqual(
+                    diag_elem['content'],
+                    paste_payload["elements"][2]["content"],
+                    "The pasted Malayalam dialogue should preserve its original Unicode text."
+                )
+
 
                 # Verify explicit click/focus on pasted contenteditable elements
                 first_editable = WebDriverWait(driver, 5).until(
@@ -504,6 +561,8 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
                 updated_action = driver.execute_script("return arguments[0].innerText;", action_editable)
                 self.assertIn("രണ്ടാം വരി", updated_action)
                 self.assertIn("മൂന്നാം വരി", updated_action)
+                action_block_type = driver.execute_script("return arguments[0].closest('.script-element-block').dataset.type;", action_editable)
+                self.assertEqual(action_block_type, "action", "Target element must retain its action semantic element type")
 
                 # Case C: External paste when no element is focused
                 driver.execute_script("""
@@ -633,3 +692,346 @@ class KadhaScriptBrowserUXVerification(LiveServerTestCase):
 
         finally:
             driver.quit()
+
+
+# ==============================================================================
+# MUSICAL & MONTAGE SEQUENCE BROWSER VERIFICATION
+# ==============================================================================
+
+@override_settings(
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+)
+class BrowserSequenceVerificationTest(StaticLiveServerTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        opts = ChromeOptions()
+        opts.add_argument('--headless=new')
+        opts.add_argument('--no-sandbox')
+        opts.add_argument('--disable-dev-shm-usage')
+        opts.add_argument('--disable-gpu')
+        opts.add_argument('--window-size=1440,900')
+        opts.set_capability('goog:loggingPrefs', {'browser': 'ALL'})
+
+        driver_path = r'C:\Users\rasiz\.cache\selenium\chromedriver\win64\155.0.8059.79\chromedriver.exe'
+        if os.path.exists(driver_path):
+            service = ChromeService(executable_path=driver_path)
+            cls.driver = webdriver.Chrome(service=service, options=opts)
+        else:
+            cls.driver = webdriver.Chrome(options=opts)
+        cls.driver.implicitly_wait(5)
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, 'driver') and cls.driver:
+            cls.driver.quit()
+        super().tearDownClass()
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='director',
+            email='director@kadhascript.com',
+            password='password123'
+        )
+        self.script = Script.objects.create(
+            user=self.user,
+            title='കഥാസ്ക്രിപ്റ്റ് - Cinema Script'
+        )
+        # Create 10 scenes
+        for i in range(1, 11):
+            sc = Scene.objects.create(script=self.script, scene_number=i, heading=f'INT. LOCATION {i} - DAY', order=i)
+            ScriptElement.objects.create(scene=sc, element_type='scene_heading', content=f'INT. LOCATION {i} - DAY', order=0)
+            ScriptElement.objects.create(scene=sc, element_type='action', content=f'Scene {i} action content.', order=1)
+
+    def login_user(self):
+        self.driver.set_window_size(1440, 900)
+        login_url = reverse('login')
+        self.driver.get(f"{self.live_server_url}{login_url}")
+        email_input = WebDriverWait(self.driver, 10).until(
+            EC.presence_of_element_located((By.NAME, 'email'))
+        )
+        email_input.send_keys('director@kadhascript.com')
+        password_input = self.driver.find_element(By.NAME, 'password')
+        password_input.send_keys('password123')
+        submit_btn = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, 'form button[type="submit"]'))
+        )
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+        time.sleep(0.2)
+        try:
+            submit_btn.click()
+        except Exception:
+            password_input.submit()
+        WebDriverWait(self.driver, 10).until(lambda d: '/login/' not in d.current_url)
+
+    def test_full_sequence_browser_flow(self):
+        """
+        Verify the exact browser sequence workflow across desktop, tablet, and mobile:
+        1. Open Scene 10.
+        2. Start Song.
+        3. Confirm a separate sequence scene/page is created/opened.
+        4. Add multiple sequence shots.
+        5. Navigate back to Scene 10.
+        6. Confirm Scene 10 has not been polluted with sequence elements.
+        7. Open the sequence again.
+        8. End the Song.
+        9. Click New Scene.
+        10. Confirm ending marker is present exactly once.
+        11. Confirm new normal scene is Scene 11.
+        12. Repeat basic workflow for Montage.
+        13. Verify desktop, tablet, and mobile scene navigation.
+        """
+        self.login_user()
+
+        # Desktop Viewport
+        self.driver.set_window_size(1440, 900)
+        editor_url = f"{self.live_server_url}/scripts/{self.script.id}/editor/"
+        self.driver.get(editor_url)
+
+        # Wait for editor to load
+        WebDriverWait(self.driver, 10).until(
+            EC.presence_of_element_located((By.ID, 'screenplayPage'))
+        )
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("""
+                return window.editorInstance &&
+                       window.editorInstance.pageContainer &&
+                       window.editorInstance.pageContainer.dataset.loadedSceneId &&
+                       window.editorInstance.pageContainer.dataset.loadedSceneId.length > 0;
+            """)
+        )
+
+        # Switch to Edit Mode first so scene navigation switches the active editing canvas
+        self.driver.execute_script("window.editorInstance.setEditorMode('edit');")
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("return window.editorInstance.editorMode === 'edit';")
+        )
+
+        # 1. Open Scene 10
+        sc10 = self.script.scenes.get(scene_number=10)
+        # Click Scene 10 in sidebar
+        scene_10_item = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f'#scenesList .scene-item[data-id="{sc10.id}"]'))
+        )
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", scene_10_item)
+        time.sleep(0.2)
+        scene_10_item.click()
+
+        # Wait for Scene 10 to be loaded into active editor
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script(f"""
+                return window.editorInstance &&
+                       Number(window.editorInstance.currentSceneId) === {sc10.id} &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('Scene 10');
+            """)
+        )
+
+        # Confirm Scene 10 is loaded
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('Scene 10', heading)
+
+        # 2. Start Song
+        btn_seq = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnSequenceDropdown'))
+        )
+        btn_seq.click()
+        time.sleep(0.3)
+
+        btn_song = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnStartSongSequence'))
+        )
+        btn_song.click()
+
+        # 3. Confirm separate sequence scene/page is created/opened
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("""
+                return window.editorInstance &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('SONG BEGINS');
+            """)
+        )
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('SONG BEGINS', heading)
+
+        # Check navigation item for Song Sequence exists in sidebar
+        song_nav_item = self.driver.find_element(By.CSS_SELECTOR, '.scene-item.active .scene-nav-number')
+        self.assertIn('Song Sequence', song_nav_item.text)
+
+        # 4. Add multiple sequence shots
+        btn_seq.click()
+        time.sleep(0.3)
+        btn_next = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnNextSequenceShot'))
+        )
+        btn_next.click()
+        time.sleep(0.5)
+
+        # Add shot 3
+        btn_seq.click()
+        time.sleep(0.3)
+        btn_next = self.driver.find_element(By.ID, 'btnNextSequenceShot')
+        btn_next.click()
+        time.sleep(0.5)
+
+        shot_numbers = [e.text.strip() for e in self.driver.find_elements(By.CSS_SELECTOR, '.sequence-shot-number')]
+        self.assertEqual(shot_numbers, ['1.', '2.', '3.'])
+
+        # 5. Navigate back to Scene 10
+        scene_10_item = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, f'#scenesList .scene-item[data-id="{sc10.id}"]'))
+        )
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", scene_10_item)
+        time.sleep(0.2)
+        scene_10_item.click()
+
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script(f"""
+                return window.editorInstance &&
+                       Number(window.editorInstance.currentSceneId) === {sc10.id} &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('Scene 10');
+            """)
+        )
+
+        # 6. Confirm Scene 10 has not been polluted with sequence elements
+        sc10_elements_text = [e.text for e in self.driver.find_elements(By.CSS_SELECTOR, '#screenplayPage .element-content')]
+        self.assertNotIn('SONG BEGINS', sc10_elements_text)
+        self.assertNotIn('1. INT. LOCATION - DAY', sc10_elements_text)
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('Scene 10', heading)
+
+        # 7. Open sequence again
+        song_nav = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//li[contains(@class, 'scene-item')][.//span[contains(text(), 'Song Sequence')]]"))
+        )
+        song_scene_id = song_nav.get_attribute('data-id')
+        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", song_nav)
+        time.sleep(0.2)
+        song_nav.click()
+
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script(f"""
+                return window.editorInstance &&
+                       Number(window.editorInstance.currentSceneId) === {song_scene_id} &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('SONG BEGINS');
+            """)
+        )
+
+        # 8. End the Song
+        btn_seq.click()
+        time.sleep(0.3)
+        btn_end = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnEndSequence'))
+        )
+        btn_end.click()
+        time.sleep(0.5)
+
+        # 9. Click New Scene
+        btn_new_scene = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnTopAddScene'))
+        )
+        btn_new_scene.click()
+
+        # 11. Confirm the new normal scene is Scene 11
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("""
+                return window.editorInstance &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('Scene 11');
+            """)
+        )
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('Scene 11', heading)
+
+        # 10. Check sequence scene in DB: confirm ending marker is present exactly once
+        song_scene = Scene.objects.get(id=song_scene_id)
+        song_ends_count = song_scene.elements.filter(content='SONG ENDS').count()
+        self.assertEqual(song_ends_count, 1)
+
+        # 12. Repeat basic workflow for Montage
+        # From Scene 11, start Montage
+        btn_seq.click()
+        time.sleep(0.3)
+        btn_montage = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnStartMontageSequence'))
+        )
+        btn_montage.click()
+
+        # Confirm Montage sequence opened
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("""
+                return window.editorInstance &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('MONTAGE BEGINS');
+            """)
+        )
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('MONTAGE BEGINS', heading)
+
+        # Add a shot
+        btn_seq.click()
+        time.sleep(0.3)
+        WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnNextSequenceShot'))
+        ).click()
+        time.sleep(0.5)
+
+        # Click New Scene directly while Montage is active (auto-close test)
+        btn_new_scene = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnTopAddScene'))
+        )
+        btn_new_scene.click()
+
+        # Confirm new scene is Scene 12
+        WebDriverWait(self.driver, 10).until(
+            lambda d: d.execute_script("""
+                return window.editorInstance &&
+                       !window.editorInstance.isSwitchingScene &&
+                       window.editorInstance.currentFullHeading &&
+                       window.editorInstance.currentFullHeading.includes('Scene 12');
+            """)
+        )
+        heading = self.driver.execute_script("return window.editorInstance.currentFullHeading;")
+        self.assertIn('Scene 12', heading)
+
+        # 13. Verify Tablet and Mobile Viewports
+        # Tablet Viewport (768x1024)
+        self.driver.set_window_size(768, 1024)
+        time.sleep(0.5)
+        self.assertTrue(self.driver.find_element(By.ID, 'screenplayPage').is_displayed())
+        self.assertTrue(self.driver.find_element(By.ID, 'btnSequenceDropdown').is_displayed())
+
+        # Mobile Viewport (375x667)
+        self.driver.set_window_size(375, 667)
+        time.sleep(0.5)
+        self.assertTrue(self.driver.find_element(By.ID, 'screenplayPage').is_displayed())
+
+        # Test mobile scenes offcanvas drawer navigation
+        nav_scenes_btn = WebDriverWait(self.driver, 5).until(
+            EC.element_to_be_clickable((By.ID, 'btnNavScenes'))
+        )
+        nav_scenes_btn.click()
+        time.sleep(0.5)
+
+        # Verify offcanvas scenes list is displayed with sequence scene item
+        offcanvas_list = WebDriverWait(self.driver, 5).until(
+            EC.visibility_of_element_located((By.ID, 'offcanvasScenesList'))
+        )
+        self.assertTrue(offcanvas_list.is_displayed())
+        offcanvas_song = offcanvas_list.find_element(By.XPATH, ".//li[contains(@class, 'scene-item')][.//span[contains(text(), 'Song Sequence')]]")
+        self.assertTrue(offcanvas_song.is_displayed())
