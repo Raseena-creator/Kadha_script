@@ -167,6 +167,11 @@
                 data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
                 <div class="scene-nav-item">
                     <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
+                    {% if sc.has_notes %}
+                    <span class="scene-nav-note-badge" title="Scene has {{ sc.note_count }} note{{ sc.note_count|pluralize }}" aria-label="Scene has {{ sc.note_count }} note{{ sc.note_count|pluralize }}" role="button" tabindex="0" data-scene-id="{{ sc.id }}">
+                        <i class="bi bi-sticky-fill"></i>
+                    </span>
+                    {% endif %}
                     <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
                     {% if sc.action_preview %}
                     <span class="scene-nav-action-preview font-malayalam" title="{{ sc.action_preview }}">{{ sc.action_preview }}</span>
@@ -274,6 +279,11 @@
                     data-id="{{ sc.id }}" data-parent="{{ sc.parent_scene_id|default:'' }}">
                     <div class="scene-nav-item">
                         <span class="scene-nav-number font-screenplay">{{ sc.nav_identifier }}</span>
+                        {% if sc.has_notes %}
+                        <span class="scene-nav-note-badge" title="Scene has {{ sc.note_count }} note{{ sc.note_count|pluralize }}" aria-label="Scene has {{ sc.note_count }} note{{ sc.note_count|pluralize }}" role="button" tabindex="0" data-scene-id="{{ sc.id }}">
+                            <i class="bi bi-sticky-fill"></i>
+                        </span>
+                        {% endif %}
                         <span class="scene-nav-location font-malayalam" title="{{ sc.clean_location }}">{{ sc.clean_location }}</span>
                         {% if sc.action_preview %}
                         <span class="scene-nav-action-preview font-malayalam" title="{{ sc.action_preview }}">{{ sc.action_preview }}</span>

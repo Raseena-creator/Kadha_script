@@ -2682,6 +2682,43 @@ class KadhaEditor {
                         });
                     }
 
+                    if (result.has_notes !== undefined) {
+                        const hasNotes = Boolean(result.has_notes);
+                        const noteCount = Number(result.note_count) || (hasNotes ? 1 : 0);
+                        if (treeItem) {
+                            treeItem.has_notes = hasNotes;
+                            treeItem.note_count = noteCount;
+                        }
+                        const sceneCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
+                        sceneCards.forEach(card => {
+                            const navItem = card.querySelector('.scene-nav-item');
+                            if (!navItem) return;
+                            let badgeEl = navItem.querySelector('.scene-nav-note-badge');
+                            if (hasNotes) {
+                                const notePlural = noteCount === 1 ? '' : 's';
+                                const noteTooltip = `Scene has ${noteCount} note${notePlural}`;
+                                if (!badgeEl) {
+                                    badgeEl = document.createElement('span');
+                                    badgeEl.className = 'scene-nav-note-badge';
+                                    badgeEl.setAttribute('role', 'button');
+                                    badgeEl.setAttribute('tabindex', '0');
+                                    badgeEl.dataset.sceneId = targetSceneId;
+                                    badgeEl.innerHTML = '<i class="bi bi-sticky-fill"></i>';
+                                    const numberEl = navItem.querySelector('.scene-nav-number');
+                                    if (numberEl && numberEl.nextSibling) {
+                                        navItem.insertBefore(badgeEl, numberEl.nextSibling);
+                                    } else {
+                                        navItem.appendChild(badgeEl);
+                                    }
+                                }
+                                badgeEl.title = noteTooltip;
+                                badgeEl.setAttribute('aria-label', noteTooltip);
+                            } else if (badgeEl) {
+                                badgeEl.remove();
+                            }
+                        });
+                    }
+
                     if (result.heading) {
                         const sceneCards = document.querySelectorAll(`.scene-item[data-id="${targetSceneId}"]`);
                         sceneCards.forEach(card => {
@@ -2825,10 +2862,20 @@ class KadhaEditor {
             const escapedActionPreview = actionPreview.replace(/"/g, '&quot;');
             const actionPreviewHtml = actionPreview ? `<span class="scene-nav-action-preview font-malayalam" title="${escapedActionPreview}">${actionPreview}</span>` : '';
 
+            const noteCount = Number(sc.note_count) || (sc.has_notes ? 1 : 0);
+            const notePlural = noteCount === 1 ? '' : 's';
+            const noteTooltip = `Scene has ${noteCount} note${notePlural}`;
+            const noteBadgeHtml = sc.has_notes ? `
+                <span class="scene-nav-note-badge" title="${noteTooltip}" aria-label="${noteTooltip}" role="button" tabindex="0" data-scene-id="${sc.id}">
+                    <i class="bi bi-sticky-fill"></i>
+                </span>
+            ` : '';
+
             htmlChunks.push(`
                 <li class="scene-item ${isSub ? 'sub-scene-item' : ''} ${isActive ? 'active' : ''}" data-id="${sc.id}" data-parent="${sc.parent_scene_id || ''}">
                     <div class="scene-nav-item">
                         <span class="scene-nav-number font-screenplay">${navId}</span>
+                        ${noteBadgeHtml}
                         <span class="scene-nav-location font-malayalam" title="${cleanLoc.replace(/"/g, '&quot;')}">${cleanLoc}</span>
                         ${actionPreviewHtml}
                     </div>
@@ -3066,6 +3113,18 @@ class KadhaEditor {
                 return;
             }
 
+            // Note indicator click: navigate directly to first note in scene
+            const noteBadge = e.target.closest('.scene-nav-note-badge');
+            if (noteBadge) {
+                e.preventDefault();
+                e.stopPropagation();
+                const sceneId = noteBadge.dataset.sceneId || (noteBadge.closest('.scene-item') ? noteBadge.closest('.scene-item').dataset.id : null);
+                if (sceneId) {
+                    await this.navigateToSceneNote(sceneId);
+                }
+                return;
+            }
+
             // Switch scene if clicked on the scene item row (outside dropdown)
             if (e.target.closest('.scene-item-actions') || e.target.closest('.dropdown-menu') || e.target.closest('.dropdown-toggle')) {
                 return;
@@ -3103,6 +3162,105 @@ class KadhaEditor {
                 }
             }
         });
+
+        // Keyboard navigation for note indicator (Enter and Space)
+        container.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                const noteBadge = e.target.closest('.scene-nav-note-badge');
+                if (noteBadge) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const sceneId = noteBadge.dataset.sceneId || (noteBadge.closest('.scene-item') ? noteBadge.closest('.scene-item').dataset.id : null);
+                    if (sceneId) {
+                        await this.navigateToSceneNote(sceneId);
+                    }
+                }
+            }
+        });
+    }
+
+    async navigateToSceneNote(sceneId) {
+        const targetId = Number(sceneId);
+        if (isNaN(targetId)) return;
+
+        if (this.editorMode === 'read') {
+            this.readModeActiveSceneId = targetId;
+            document.querySelectorAll('.scene-item').forEach(el => {
+                el.classList.toggle('active', Number(el.dataset.id) === targetId);
+            });
+            this.isNavigatingToScene = true;
+            clearTimeout(this._navSceneTimer);
+            this._navSceneTimer = setTimeout(() => { this.isNavigatingToScene = false; }, 600);
+
+            const sceneSec = document.getElementById(`read-scene-${targetId}`);
+            if (sceneSec) {
+                const noteBlocks = sceneSec.querySelectorAll('.read-element-block.element-type-note');
+                let targetNoteEl = null;
+                for (const nb of noteBlocks) {
+                    if ((nb.textContent || '').trim().length > 0) {
+                        targetNoteEl = nb;
+                        break;
+                    }
+                }
+                const scrollEl = targetNoteEl || sceneSec;
+                scrollEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (targetNoteEl) {
+                    targetNoteEl.classList.remove('note-pulse-highlight');
+                    void targetNoteEl.offsetWidth;
+                    targetNoteEl.classList.add('note-pulse-highlight');
+                    setTimeout(() => {
+                        targetNoteEl.classList.remove('note-pulse-highlight');
+                    }, 2000);
+                }
+            }
+            if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+                this.bsOffcanvas.hide();
+            }
+        } else {
+            if (Number(this.currentSceneId) !== targetId) {
+                document.querySelectorAll('.scene-item').forEach(el => {
+                    el.classList.toggle('active', Number(el.dataset.id) === targetId);
+                });
+                await this.switchScene(targetId);
+                if (Number(this.currentSceneId) !== targetId) {
+                    return;
+                }
+            }
+
+            if (this.pageContainer) {
+                const noteBlocks = this.pageContainer.querySelectorAll('.script-element-block[data-type="note"]');
+                let targetEditable = null;
+                let targetBlock = null;
+                for (const nb of noteBlocks) {
+                    const ed = nb.querySelector('.element-content[contenteditable="true"]');
+                    if (ed && (ed.textContent || '').trim().length > 0) {
+                        targetEditable = ed;
+                        targetBlock = nb;
+                        break;
+                    }
+                }
+                if (!targetEditable && noteBlocks.length > 0) {
+                    targetBlock = noteBlocks[0];
+                    targetEditable = targetBlock.querySelector('.element-content[contenteditable="true"]');
+                }
+
+                if (targetEditable && targetBlock) {
+                    targetBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetEditable.focus();
+                    this.setCursorToStart(targetEditable);
+                    targetBlock.classList.remove('note-pulse-highlight');
+                    void targetBlock.offsetWidth;
+                    targetBlock.classList.add('note-pulse-highlight');
+                    setTimeout(() => {
+                        targetBlock.classList.remove('note-pulse-highlight');
+                    }, 2000);
+                }
+            }
+
+            if (this.bsOffcanvas && this.offcanvasEl && this.offcanvasEl.classList.contains('show')) {
+                this.bsOffcanvas.hide();
+            }
+        }
     }
 
     async switchScene(newSceneId) {

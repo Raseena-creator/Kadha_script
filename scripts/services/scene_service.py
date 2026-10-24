@@ -1060,6 +1060,8 @@ def serialize_scenes_hierarchy(script: Script) -> list:
             'summary': sc.summary,
             'order': sc.order,
             'word_count': sc.word_count,
+            'has_notes': sc.has_notes,
+            'note_count': sc.note_count,
             'sub_scenes': [],
         })
 

@@ -213,6 +213,8 @@ def api_save_scene(request, script_id, scene_id):
             'action_preview': scene.action_preview,
             'heading': scene.heading,
             'transition': scene.transition or 'CUT TO',
+            'has_notes': scene.has_notes,
+            'note_count': scene.note_count,
             'updated_at': script.updated_at.strftime('%H:%M:%S'),
             'script_stats': {
                 'word_count': script.word_count,

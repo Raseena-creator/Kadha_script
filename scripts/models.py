@@ -278,6 +278,26 @@ class Scene(models.Model):
         return not self.is_intercut
 
     @property
+    def has_notes(self) -> bool:
+        """True if this scene contains at least one non-empty note element."""
+        return self.note_count > 0
+
+    @property
+    def note_count(self) -> int:
+        """Number of non-empty note elements in this scene."""
+        if hasattr(self, '_prefetched_objects_cache') and 'elements' in self._prefetched_objects_cache:
+            return sum(
+                1 for e in self.elements.all()
+                if e.element_type == 'note' and bool(e.content and e.content.strip())
+            )
+        if not hasattr(self, '_cached_note_count'):
+            self._cached_note_count = sum(
+                1 for e in self.elements.filter(element_type='note')
+                if bool(e.content and e.content.strip())
+            )
+        return self._cached_note_count
+
+    @property
     def has_transition_element(self) -> bool:
         """True if this scene contains at least one non-empty transition ScriptElement."""
         return self.elements.filter(element_type='transition').exclude(content='').exists()
