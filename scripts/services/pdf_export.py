@@ -14,16 +14,232 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+import unicodedata
+import uharfbuzz
+from reportlab.pdfbase.ttfonts import (
+    ShapedFragWord, ShapedStr, ShapeData, makeShapedFragWord
+)
+
 # Font registration helper
 _FONT_REGISTERED = False
 _MALAYALAM_FONT_NAME = 'MalayalamFont'
 _MALAYALAM_FONT_BOLD = 'MalayalamFont-Bold'
+_MIXED_SCRIPT_SHAPING_ENABLED = False
+_ORIG_SHAPE_FRAG_WORD = None
+
+
+# =============================================================================
+# KadhaScript Mixed-Script Unicode Shaping Engine
+#
+# Tested on: ReportLab 5.0.1 + uharfbuzz 0.56.2 (Python 3.13)
+#
+# Why this integration is required:
+# In ReportLab, Paragraph line-breaking splits text into whitespace-delimited
+# tokens (FragWords). When a hyphenated or punctuation-joined mixed-script token
+# such as "SHO-യോട്" or "ABC/യോട്" is encountered (having no whitespace), ReportLab's
+# built-in `shapeFragWord` (reportlab.pdfbase.ttfonts) sends the entire string
+# into a single uharfbuzz.Buffer and calls `guess_segment_properties()`.
+# Because the leading characters ('SHO-') are Latin, HarfBuzz tags the entire buffer
+# as `script: Latn` and routes it through the Latin OpenType shaper.
+# In the Latin shaper, Malayalam Indic layout rules (such as decomposing the two-part
+# vowel sign U+0D4B 'ോ' into pre-base 'േ' and post-base 'ാ') are completely skipped.
+# The unshaped vowel sign glyph 'oovowelsignmlym' is rendered with an advance width
+# of 0, collapsing directly over the consonant 'യ' and creating severe character collision.
+#
+# What this corrects:
+# It segments mixed-script tokens into coherent Unicode script runs ('SHO-' as Latn,
+# 'യോട്' as Mlym). Neutral punctuation binds to the active script context.
+# Each script run is shaped through HarfBuzz with its true native script tag,
+# generating correctly decomposed and reordered OpenType glyphs with non-zero advances.
+#
+# Why this is limited and safe:
+# Tokens that contain only one non-common script (e.g. pure Malayalam, pure English,
+# numbers, or space-separated words) bypass custom shaping entirely and delegate
+# directly to ReportLab's original `shapeFragWord` with zero modification or overhead.
+# If any unexpected exception occurs, it safely falls back to ReportLab's original shaper.
+# =============================================================================
+
+def _get_char_script(ch):
+    cp = ord(ch)
+    if 0x0D00 <= cp <= 0x0D7F:
+        return 'Mlym'
+    if (0x0041 <= cp <= 0x005A) or (0x0061 <= cp <= 0x007A) or (0x00C0 <= cp <= 0x024F):
+        return 'Latn'
+    return 'Common'
+
+
+def _segment_text_into_script_runs(text):
+    if not text:
+        return []
+    tagged = [(ch, _get_char_script(ch)) for ch in text]
+    non_common_scripts = {s for _, s in tagged if s != 'Common'}
+    if len(non_common_scripts) <= 1:
+        script = non_common_scripts.pop() if non_common_scripts else 'Latn'
+        return [(text, script)]
+
+    first_explicit = next((s for _, s in tagged if s != 'Common'), 'Latn')
+    current_script = first_explicit
+    resolved = []
+    for ch, sc in tagged:
+        if sc == 'Common':
+            resolved.append((ch, current_script))
+        else:
+            current_script = sc
+            resolved.append((ch, sc))
+
+    runs = []
+    for ch, sc in resolved:
+        if runs and runs[-1][1] == sc:
+            runs[-1] = (runs[-1][0] + ch, sc)
+        else:
+            runs.append((ch, sc))
+
+    return runs
+
+
+def _kadhascript_shapeFragWord(w, features=dict(kern=True, liga=True, dlig=True), force=False):
+    global _ORIG_SHAPE_FRAG_WORD
+    if isinstance(w, ShapedFragWord):
+        return w
+
+    text = ''
+    for f, s in w[1:]:
+        if not hasattr(f, 'cbDefn'):
+            text += s
+
+    runs = _segment_text_into_script_runs(text)
+    # Fast path: Single-script token, delegate directly to standard ReportLab shaper
+    if len(runs) <= 1:
+        return _ORIG_SHAPE_FRAG_WORD(w, features=features, force=force)
+
+    try:
+        F = []
+        text = ''
+        specials = {}
+        for f, s in w[1:]:
+            if hasattr(f, 'cbDefn'):
+                specials.setdefault(len(text), []).append(f)
+                continue
+            F.extend(len(s) * [f])
+            text += s
+        if not F:
+            return w
+        ttfn = F[0].fontName
+        ttfs = F[0].fontSize
+        ttf = pdfmetrics.getFont(ttfn)
+        hbf = ttf.hbFont(ttfs)
+        ttfs /= 1000
+
+        items = []
+        offset = 0
+        for run_text, run_script in runs:
+            buf = uharfbuzz.Buffer()
+            buf.cluster_level = uharfbuzz.BufferClusterLevel.MONOTONE_CHARACTERS
+            buf.add_str(run_text)
+            buf.script = run_script
+            buf.direction = 'ltr'
+            uharfbuzz.shape(hbf, buf, features)
+            for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
+                items.append((info.codepoint, info.cluster + offset, pos))
+            offset += len(run_text)
+
+        changed = False
+        shaped = False
+        new = makeShapedFragWord(w)([])
+        new0 = 0
+        nf = None
+        shapeDataAppend = [].append
+        ntext = len(text)
+        ns = ''
+        for i, (gid, cluster, pos) in enumerate(items):
+            name = hbf.glyph_to_string(gid)
+            x_advance = pos.x_advance
+            x_offset = pos.x_offset
+            y_advance = pos.y_advance
+            y_offset = pos.y_offset
+            f = F[cluster]
+            if nf is not f:
+                if nf:
+                    new.append((nf, ShapedStr(ns, shapeData=shapeDataAppend.__self__)))
+                    new0 += newlen
+                nf = f
+                ns = ''
+                newlen = 0
+                shapeDataAppend = [].append
+                _ = nf.fontName
+                if _ != ttfn:
+                    ttfn = _
+                    ttf = pdfmetrics.getFont(ttfn)
+                ttfs = nf.fontSize / 1000
+            try:
+                uchar = ttf.face.glyphToChar[gid][0]
+            except KeyError:
+                uchar = ttf.hbAddPrivate(name, gid, x_advance)
+            ucharWidth = ttf.face.charWidths[uchar]
+            uchar = chr(uchar)
+            ns += uchar
+            x_advance = ttf.pdfScale(x_advance)
+            x_offset = ttf.pdfScale(x_offset)
+            y_advance = ttf.pdfScale(y_advance)
+            y_offset = ttf.pdfScale(y_offset)
+            if x_advance:
+                newlen += x_advance * ttfs
+            shaped = shaped or (x_offset != 0 or y_offset != 0 or i >= ntext or (text[i] == uchar and x_advance != ucharWidth))
+            changed = changed or shaped or i >= ntext or text[i] != uchar or force
+            shapeDataAppend(ShapeData(cluster, x_advance, y_advance, x_offset, y_offset, ucharWidth))
+        if nf:
+            new.append((nf, ShapedStr(ns, shapeData=shapeDataAppend.__self__)))
+            new0 += newlen
+        if not changed:
+            return w
+        if not shaped:
+            if changed:
+                new = new.__class__([new[0]] + [tuple(_) for _ in new[1:]])
+            else:
+                return w
+        if specials:
+            S = []
+            for k, v in specials.items():
+                S.append(((k, k), v))
+            for _ in new:
+                S.append(((_[1].__shapeData__[0].cluster, _[1].__shapeData__[-1].cluster), _))
+            new[:] = [_[1] for _ in sorted(S)]
+        new.insert(0, new0)
+        return new
+    except Exception:
+        return _ORIG_SHAPE_FRAG_WORD(w, features=features, force=force)
+
+
+def enable_mixed_script_shaping():
+    """Installs KadhaScript's script-aware mixed-script shaper into ReportLab."""
+    global _MIXED_SCRIPT_SHAPING_ENABLED, _ORIG_SHAPE_FRAG_WORD
+    if _MIXED_SCRIPT_SHAPING_ENABLED:
+        return
+
+    import reportlab.pdfbase.ttfonts as rlb_ttfonts
+    import reportlab.platypus.paragraph as rlb_paragraph
+
+    _ORIG_SHAPE_FRAG_WORD = rlb_ttfonts.shapeFragWord
+    rlb_ttfonts.shapeFragWord = _kadhascript_shapeFragWord
+    rlb_paragraph.shapeFragWord = _kadhascript_shapeFragWord
+
+    try:
+        import reportlab.platypus.tables as rlb_tables
+        if hasattr(rlb_tables, 'shapeFragWord'):
+            rlb_tables.shapeFragWord = _kadhascript_shapeFragWord
+    except (ImportError, AttributeError):
+        pass
+
+    _MIXED_SCRIPT_SHAPING_ENABLED = True
 
 
 def register_malayalam_fonts():
     global _FONT_REGISTERED, _MALAYALAM_FONT_NAME, _MALAYALAM_FONT_BOLD
     if _FONT_REGISTERED:
         return _MALAYALAM_FONT_NAME, _MALAYALAM_FONT_BOLD
+
+    # Ensure script-aware mixed-script shaping is active
+    enable_mixed_script_shaping()
 
     fonts_dir = Path(settings.BASE_DIR) / 'static' / 'fonts'
     noto_regular = fonts_dir / 'NotoSansMalayalam-Regular.ttf'
@@ -215,8 +431,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'SceneHeading',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             spaceBefore=16,
             spaceAfter=8,
             keepWithNext=True,
@@ -228,8 +444,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Action',
             parent=styles['Normal'],
             fontName=font_regular,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             leftIndent=0,
             rightIndent=0,
             firstLineIndent=0,
@@ -242,8 +458,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Character',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=15,
+            fontSize=13,
+            leading=16,
             leftIndent=2.0 * inch,
             spaceBefore=12,
             spaceAfter=2,
@@ -254,8 +470,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Dialogue',
             parent=styles['Normal'],
             fontName=font_regular,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             leftIndent=1.0 * inch,
             rightIndent=1.0 * inch,
             spaceBefore=0,
@@ -266,8 +482,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Parenthetical',
             parent=styles['Normal'],
             fontName=font_regular,
-            fontSize=10.5,
-            leading=13,
+            fontSize=11,
+            leading=14,
             leftIndent=1.5 * inch,
             rightIndent=1.5 * inch,
             spaceBefore=0,
@@ -279,8 +495,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Transition',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=15,
+            fontSize=13,
+            leading=16,
             alignment=TA_RIGHT,
             spaceBefore=14,
             spaceAfter=14,
@@ -290,8 +506,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'Shot',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=15,
+            fontSize=13,
+            leading=16,
             spaceBefore=10,
             spaceAfter=6,
             shaping=True,
@@ -312,8 +528,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'SequenceHeading',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             alignment=TA_CENTER,
             spaceBefore=16,
             spaceAfter=8,
@@ -326,8 +542,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'SequenceBeginLabel',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             alignment=TA_LEFT,
             spaceBefore=8,
             spaceAfter=14,
@@ -338,8 +554,8 @@ def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
             'SequenceEndLabel',
             parent=styles['Normal'],
             fontName=font_bold,
-            fontSize=12,
-            leading=16,
+            fontSize=13,
+            leading=17.5,
             alignment=TA_LEFT,
             spaceBefore=20,
             spaceAfter=12,
@@ -397,71 +613,9 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     clean_title = effective_title.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
     story.append(Paragraph(clean_title.upper(), title_style))
 
-    if title_page and title_page.subtitle:
-        subtitle_clean = title_page.subtitle.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-        story.append(Paragraph(subtitle_clean, subtitle_style))
-        story.append(Spacer(1, 0.1 * inch))
-
-    story.append(Spacer(1, 0.15 * inch))
-    story.append(Paragraph("എഴുതിയത് / Written by", by_style))
+    story.append(Spacer(1, 0.25 * inch))
     clean_author = effective_author.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     story.append(Paragraph(clean_author, author_style))
-
-    if title_page and title_page.adaptation_credits:
-        credits_clean = title_page.adaptation_credits.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-        story.append(Paragraph(credits_clean, credits_style))
-
-    has_bottom_metadata = title_page and (
-        title_page.draft_revision or title_page.draft_date or
-        title_page.copyright_registration or
-        title_page.contact_name or title_page.contact_email or title_page.contact_phone
-    )
-
-    story.append(Spacer(1, 1.8 * inch))
-
-    if has_bottom_metadata:
-        left_lines = []
-        if title_page.draft_revision:
-            dr_clean = title_page.draft_revision.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            left_lines.append(f"<b>{dr_clean}</b>")
-        if title_page.draft_date:
-            dd_clean = title_page.draft_date.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            left_lines.append(dd_clean)
-        if title_page.copyright_registration:
-            if left_lines:
-                left_lines.append("")
-            cr_clean = title_page.copyright_registration.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-            left_lines.append(f"<font color='#555555'>{cr_clean}</font>")
-
-        right_lines = []
-        if title_page.contact_name:
-            cn_clean = title_page.contact_name.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            right_lines.append(f"<b>{cn_clean}</b>")
-        if title_page.contact_email:
-            ce_clean = title_page.contact_email.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            right_lines.append(ce_clean)
-        if title_page.contact_phone:
-            cp_clean = title_page.contact_phone.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-            right_lines.append(cp_clean)
-
-        left_para = Paragraph("<br/>".join(left_lines), meta_left_style) if left_lines else Paragraph("", meta_left_style)
-        right_para = Paragraph("<br/>".join(right_lines), meta_right_style) if right_lines else Paragraph("", meta_right_style)
-
-        table_data = [[left_para, right_para]]
-        footer_table = Table(table_data, colWidths=[3.0 * inch, 3.0 * inch])
-        footer_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ]))
-        story.append(footer_table)
-    else:
-        meta_text = f"Genre: {script.genre} &nbsp;|&nbsp; Format: {script.script_type} &nbsp;|&nbsp; Language: {script.language}"
-        story.append(Paragraph(meta_text, meta_style))
-        story.append(Spacer(1, 0.2 * inch))
-        story.append(Paragraph("KadhaScript Screenplay Management Platform", meta_style))
 
     story.append(PageBreak())
 

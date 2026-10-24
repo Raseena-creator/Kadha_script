@@ -632,44 +632,44 @@ class ExportPaginationTests(TestCase):
 
     def test_screenplay_pdf_paragraph_styles_typography(self):
         """
-        Verify that main screenplay PDF paragraph styles use the intended font sizes (~12 pt),
-        leading (15-16 pt), parenthetical (10.5 pt, 13 pt leading), and Unicode shaping is preserved.
+        Verify that main screenplay PDF paragraph styles use the intended font sizes (~13 pt),
+        leading (16-17.5 pt), parenthetical (11 pt, 14 pt leading), and Unicode shaping is preserved.
         """
         styles = get_screenplay_pdf_styles()
 
-        # Scene heading: 12 pt, 16 pt leading, shaping=True
-        self.assertEqual(styles['SceneHeading'].fontSize, 12)
-        self.assertEqual(styles['SceneHeading'].leading, 16)
+        # Scene heading: 13 pt, 17.5 pt leading, shaping=True
+        self.assertEqual(styles['SceneHeading'].fontSize, 13)
+        self.assertEqual(styles['SceneHeading'].leading, 17.5)
         self.assertTrue(styles['SceneHeading'].shaping)
 
-        # Action: 12 pt, 16 pt leading, shaping=True
-        self.assertEqual(styles['Action'].fontSize, 12)
-        self.assertEqual(styles['Action'].leading, 16)
+        # Action: 13 pt, 17.5 pt leading, shaping=True
+        self.assertEqual(styles['Action'].fontSize, 13)
+        self.assertEqual(styles['Action'].leading, 17.5)
         self.assertTrue(styles['Action'].shaping)
 
-        # Character: 12 pt, 15 pt leading, shaping=True
-        self.assertEqual(styles['Character'].fontSize, 12)
-        self.assertEqual(styles['Character'].leading, 15)
+        # Character: 13 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['Character'].fontSize, 13)
+        self.assertEqual(styles['Character'].leading, 16)
         self.assertTrue(styles['Character'].shaping)
 
-        # Dialogue: 12 pt, 16 pt leading, shaping=True
-        self.assertEqual(styles['Dialogue'].fontSize, 12)
-        self.assertEqual(styles['Dialogue'].leading, 16)
+        # Dialogue: 13 pt, 17.5 pt leading, shaping=True
+        self.assertEqual(styles['Dialogue'].fontSize, 13)
+        self.assertEqual(styles['Dialogue'].leading, 17.5)
         self.assertTrue(styles['Dialogue'].shaping)
 
-        # Parenthetical: 10.5 pt, 13 pt leading, shaping=True
-        self.assertEqual(styles['Parenthetical'].fontSize, 10.5)
-        self.assertEqual(styles['Parenthetical'].leading, 13)
+        # Parenthetical: 11 pt, 14 pt leading, shaping=True
+        self.assertEqual(styles['Parenthetical'].fontSize, 11)
+        self.assertEqual(styles['Parenthetical'].leading, 14)
         self.assertTrue(styles['Parenthetical'].shaping)
 
-        # Transition: 12 pt, 15 pt leading, shaping=True
-        self.assertEqual(styles['Transition'].fontSize, 12)
-        self.assertEqual(styles['Transition'].leading, 15)
+        # Transition: 13 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['Transition'].fontSize, 13)
+        self.assertEqual(styles['Transition'].leading, 16)
         self.assertTrue(styles['Transition'].shaping)
 
-        # Shot: 12 pt, 15 pt leading, shaping=True
-        self.assertEqual(styles['Shot'].fontSize, 12)
-        self.assertEqual(styles['Shot'].leading, 15)
+        # Shot: 13 pt, 16 pt leading, shaping=True
+        self.assertEqual(styles['Shot'].fontSize, 13)
+        self.assertEqual(styles['Shot'].leading, 16)
         self.assertTrue(styles['Shot'].shaping)
 
     def test_long_dialogue_across_page_boundaries_english_and_malayalam(self):
