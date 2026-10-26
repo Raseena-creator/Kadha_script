@@ -5467,42 +5467,163 @@ class KadhaEditor {
                     }
                 });
             }
-            const pinnedToolbars = document.getElementById('editorTopToolbarsPinned');
-            const removeDropdownOpen = () => {
-                if (pinnedToolbars) {
-                    pinnedToolbars.classList.remove('has-dropdown-open');
-                }
-            };
-            btnSequenceDropdown.addEventListener('show.bs.dropdown', () => {
-                if (pinnedToolbars) {
-                    pinnedToolbars.classList.add('has-dropdown-open');
-                }
-                try {
-                    this.updateSequenceToolbarState();
-                } catch (err) {
-                    console.error("Error updating sequence toolbar state:", err);
-                }
-            });
-            btnSequenceDropdown.addEventListener('hide.bs.dropdown', removeDropdownOpen);
-            btnSequenceDropdown.addEventListener('hidden.bs.dropdown', removeDropdownOpen);
 
-            if (window.visualViewport) {
-                window.visualViewport.addEventListener('resize', () => {
-                    const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
-                    if (inst && inst._popper) {
-                        inst._popper.update();
+            if (btnSequenceDropdown.dataset.boundSequenceEvents !== 'true') {
+                btnSequenceDropdown.dataset.boundSequenceEvents = 'true';
+
+                let suppressNextClick = false;
+                let suppressionTimer = null;
+                let touchActive = false;
+                let touchIdentifier = null;
+                let touchStartX = 0;
+                let touchStartY = 0;
+                let hasMoved = false;
+
+                const resetTouchState = () => {
+                    touchActive = false;
+                    touchIdentifier = null;
+                    touchStartX = 0;
+                    touchStartY = 0;
+                    hasMoved = false;
+                };
+
+                const cleanupSuppression = () => {
+                    suppressNextClick = false;
+                    if (suppressionTimer) {
+                        clearTimeout(suppressionTimer);
+                        suppressionTimer = null;
                     }
-                });
-            }
+                    window.removeEventListener('click', onCaptureClick, true);
+                };
 
-            const toolbarLeft = document.querySelector('.editor-scene-toolbar-left');
-            if (toolbarLeft) {
-                toolbarLeft.addEventListener('scroll', () => {
-                    const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
-                    if (inst && inst._popper) {
-                        inst._popper.update();
+                const onCaptureClick = (e) => {
+                    const isTarget = Boolean(
+                        suppressNextClick &&
+                        e.target &&
+                        typeof e.target.closest === 'function' &&
+                        e.target.closest('#btnSequenceDropdown')
+                    );
+
+                    if (isTarget) {
+                        cleanupSuppression();
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                    }
+                };
+
+                const armSuppression = () => {
+                    cleanupSuppression();
+                    suppressNextClick = true;
+                    window.addEventListener('click', onCaptureClick, true);
+                    suppressionTimer = setTimeout(cleanupSuppression, 400);
+                };
+
+                btnSequenceDropdown.addEventListener('touchstart', (e) => {
+                    if (!e.touches || e.touches.length !== 1) {
+                        resetTouchState();
+                        return;
+                    }
+                    const touch = e.touches[0];
+                    touchActive = true;
+                    touchIdentifier = touch.identifier;
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    hasMoved = false;
+                }, { passive: true });
+
+                btnSequenceDropdown.addEventListener('touchmove', (e) => {
+                    if (!touchActive) return;
+                    const touch = Array.from(e.touches || []).find(t => t.identifier === touchIdentifier);
+                    if (!touch) {
+                        resetTouchState();
+                        return;
+                    }
+                    const deltaX = Math.abs(touch.clientX - touchStartX);
+                    const deltaY = Math.abs(touch.clientY - touchStartY);
+                    if (deltaX > 8 || deltaY > 8) {
+                        hasMoved = true;
+                        touchActive = false;
                     }
                 }, { passive: true });
+
+                btnSequenceDropdown.addEventListener('touchcancel', () => {
+                    resetTouchState();
+                });
+
+                btnSequenceDropdown.addEventListener('touchend', (e) => {
+                    if (!touchActive || hasMoved) {
+                        resetTouchState();
+                        return;
+                    }
+                    const touch = Array.from(e.changedTouches || []).find(t => t.identifier === touchIdentifier);
+                    if (!touch) {
+                        resetTouchState();
+                        return;
+                    }
+                    const deltaX = Math.abs(touch.clientX - touchStartX);
+                    const deltaY = Math.abs(touch.clientY - touchStartY);
+                    resetTouchState();
+
+                    // If moved more than 8px, it is a horizontal toolbar scroll, not a tap
+                    if (deltaX > 8 || deltaY > 8) return;
+
+                    if (e.cancelable) {
+                        e.preventDefault();
+                    }
+
+                    // Transient, single-use suppression strictly for synthetic click following this touch
+                    armSuppression();
+
+                    if (window.bootstrap && window.bootstrap.Dropdown) {
+                        const inst = window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown);
+                        if (inst) {
+                            inst.toggle();
+                        }
+                    }
+                });
+
+                const pinnedToolbars = document.getElementById('editorTopToolbarsPinned');
+                const removeDropdownOpen = () => {
+                    if (pinnedToolbars) {
+                        pinnedToolbars.classList.remove('has-dropdown-open');
+                    }
+                };
+                btnSequenceDropdown.addEventListener('show.bs.dropdown', () => {
+                    if (pinnedToolbars) {
+                        pinnedToolbars.classList.add('has-dropdown-open');
+                    }
+                    try {
+                        this.updateSequenceToolbarState();
+                    } catch (err) {
+                        console.error("Error updating sequence toolbar state:", err);
+                    }
+                });
+                btnSequenceDropdown.addEventListener('hide.bs.dropdown', removeDropdownOpen);
+                btnSequenceDropdown.addEventListener('hidden.bs.dropdown', removeDropdownOpen);
+
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', () => {
+                        const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
+                        if (inst && inst._popper) {
+                            inst._popper.update();
+                        }
+                    });
+                }
+
+                const toolbarLeft = document.querySelector('.editor-scene-toolbar-left');
+                if (toolbarLeft) {
+                    toolbarLeft.addEventListener('scroll', () => {
+                        if (touchActive) {
+                            hasMoved = true;
+                            touchActive = false;
+                        }
+                        const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
+                        if (inst && inst._popper) {
+                            inst._popper.update();
+                        }
+                    }, { passive: true });
+                }
             }
         }
 
