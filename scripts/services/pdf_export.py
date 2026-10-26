@@ -14,6 +14,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
+import html
 import unicodedata
 import uharfbuzz
 from reportlab.pdfbase.ttfonts import (
@@ -24,6 +25,10 @@ from reportlab.pdfbase.ttfonts import (
 _FONT_REGISTERED = False
 _MALAYALAM_FONT_NAME = 'MalayalamFont'
 _MALAYALAM_FONT_BOLD = 'MalayalamFont-Bold'
+_COURIER_FONT_REGULAR = 'Courier'
+_COURIER_FONT_BOLD = 'Courier-Bold'
+_COURIER_FONT_OBLIQUE = 'Courier-Oblique'
+_COURIER_FONT_BOLDOBLIQUE = 'Courier-BoldOblique'
 _MIXED_SCRIPT_SHAPING_ENABLED = False
 _ORIG_SHAPE_FRAG_WORD = None
 
@@ -49,13 +54,12 @@ _ORIG_SHAPE_FRAG_WORD = None
 # What this corrects:
 # It segments mixed-script tokens into coherent Unicode script runs ('SHO-' as Latn,
 # 'യോട്' as Mlym). Neutral punctuation binds to the active script context.
-# Each script run is shaped through HarfBuzz with its true native script tag,
-# generating correctly decomposed and reordered OpenType glyphs with non-zero advances.
+# Latin segments render using standard Courier fonts, while Malayalam segments
+# shape through HarfBuzz with native Noto Sans Malayalam.
 #
 # Why this is limited and safe:
-# Tokens that contain only one non-common script (e.g. pure Malayalam, pure English,
-# numbers, or space-separated words) bypass custom shaping entirely and delegate
-# directly to ReportLab's original `shapeFragWord` with zero modification or overhead.
+# Tokens that contain only one script (e.g. pure Malayalam, pure English,
+# numbers, or space-separated words) delegate directly with zero modification.
 # If any unexpected exception occurs, it safely falls back to ReportLab's original shaper.
 # =============================================================================
 
@@ -97,114 +101,159 @@ def _segment_text_into_script_runs(text):
     return runs
 
 
+def _get_font_for_script(script, is_bold=False, is_italic=False):
+    """Resolves the appropriate font variant for a given script and style variant."""
+    if script == 'Latn':
+        if is_bold and is_italic:
+            return _COURIER_FONT_BOLDOBLIQUE
+        elif is_bold:
+            return _COURIER_FONT_BOLD
+        elif is_italic:
+            return _COURIER_FONT_OBLIQUE
+        else:
+            return _COURIER_FONT_REGULAR
+    else:
+        # Malayalam ('Mlym') or other scripts fallback to Noto Sans Malayalam
+        if is_bold:
+            return _MALAYALAM_FONT_BOLD
+        else:
+            return _MALAYALAM_FONT_NAME
+
+
+def format_screenplay_text(text, is_bold=False, is_italic=False):
+    """
+    Formats text for ReportLab Paragraphs by segmenting it into script runs
+    and tagging Latin/English with Courier variants and Malayalam with Noto Sans Malayalam.
+    Safely escapes XML entities (&, <, >) and preserves line breaks (<br/>).
+    """
+    if not text:
+        return ""
+    normalized = text.replace('\r\n', '\n').replace('<br/>', '\n').replace('<br>', '\n')
+    normalized = html.unescape(normalized)
+
+    lines = normalized.split('\n')
+    formatted_lines = []
+    for line in lines:
+        if not line:
+            formatted_lines.append("")
+            continue
+        runs = _segment_text_into_script_runs(line)
+        line_parts = []
+        for run_text, script in runs:
+            escaped = run_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            font_name = _get_font_for_script(script, is_bold=is_bold, is_italic=is_italic)
+            line_parts.append(f'<font name="{font_name}">{escaped}</font>')
+        formatted_lines.append(''.join(line_parts))
+    return '<br/>'.join(formatted_lines)
+
+
+def _shape_single_ttfont_run(f, text, script, features):
+    """Shapes a single text run with a TTFont using HarfBuzz."""
+    ttf = pdfmetrics.getFont(f.fontName)
+    hbf = ttf.hbFont(f.fontSize)
+    ttfs = f.fontSize / 1000
+
+    buf = uharfbuzz.Buffer()
+    buf.cluster_level = uharfbuzz.BufferClusterLevel.MONOTONE_CHARACTERS
+    buf.add_str(text)
+    buf.script = script
+    buf.direction = 'ltr'
+    uharfbuzz.shape(hbf, buf, features)
+
+    items = []
+    for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
+        items.append((info.codepoint, info.cluster, pos))
+
+    shapeData = []
+    ns = ''
+    total_w = 0
+    for gid, cluster, pos in items:
+        name = hbf.glyph_to_string(gid)
+        x_advance = pos.x_advance
+        x_offset = pos.x_offset
+        y_advance = pos.y_advance
+        y_offset = pos.y_offset
+        try:
+            uchar = ttf.face.glyphToChar[gid][0]
+        except KeyError:
+            uchar = ttf.hbAddPrivate(name, gid, x_advance)
+        ucharWidth = ttf.face.charWidths[uchar]
+        uchar = chr(uchar)
+        ns += uchar
+        x_advance = ttf.pdfScale(x_advance)
+        x_offset = ttf.pdfScale(x_offset)
+        y_advance = ttf.pdfScale(y_advance)
+        y_offset = ttf.pdfScale(y_offset)
+        if x_advance:
+            total_w += x_advance * ttfs
+        shapeData.append(ShapeData(cluster, x_advance, y_advance, x_offset, y_offset, ucharWidth))
+
+    return total_w, (f, ShapedStr(ns, shapeData=shapeData))
+
+
 def _kadhascript_shapeFragWord(w, features=dict(kern=True, liga=True, dlig=True), force=False):
     global _ORIG_SHAPE_FRAG_WORD
-    if isinstance(w, ShapedFragWord):
+    if isinstance(w, ShapedFragWord) or len(w) <= 1:
         return w
 
-    text = ''
+    # Inspect all fragments
+    fonts = []
+    has_tt = False
+    has_type1 = False
     for f, s in w[1:]:
-        if not hasattr(f, 'cbDefn'):
-            text += s
+        if hasattr(f, 'cbDefn'):
+            continue
+        font = pdfmetrics.getFont(f.fontName)
+        if hasattr(font, 'hbFont'):
+            has_tt = True
+        else:
+            has_type1 = True
+        fonts.append((f, s, font))
 
-    runs = _segment_text_into_script_runs(text)
-    # Fast path: Single-script token, delegate directly to standard ReportLab shaper
-    if len(runs) <= 1:
+    # If no fragments or all are non-TT (e.g. pure Courier), delegate to standard shaper
+    if not has_tt:
         return _ORIG_SHAPE_FRAG_WORD(w, features=features, force=force)
 
+    # If all fragments are TTFont and share the same font:
+    # If the combined text has <= 1 script run, delegate to _ORIG_SHAPE_FRAG_WORD
+    if not has_type1 and len(set(f.fontName for f, _, _ in fonts)) == 1:
+        combined_text = ''.join(s for _, s, _ in fonts)
+        runs = _segment_text_into_script_runs(combined_text)
+        if len(runs) <= 1:
+            return _ORIG_SHAPE_FRAG_WORD(w, features=features, force=force)
+
+    # Mixed-font or mixed-script TTFont token
     try:
-        F = []
-        text = ''
-        specials = {}
-        for f, s in w[1:]:
-            if hasattr(f, 'cbDefn'):
-                specials.setdefault(len(text), []).append(f)
-                continue
-            F.extend(len(s) * [f])
-            text += s
-        if not F:
-            return w
-        ttfn = F[0].fontName
-        ttfs = F[0].fontSize
-        ttf = pdfmetrics.getFont(ttfn)
-        hbf = ttf.hbFont(ttfs)
-        ttfs /= 1000
-
-        items = []
-        offset = 0
-        for run_text, run_script in runs:
-            buf = uharfbuzz.Buffer()
-            buf.cluster_level = uharfbuzz.BufferClusterLevel.MONOTONE_CHARACTERS
-            buf.add_str(run_text)
-            buf.script = run_script
-            buf.direction = 'ltr'
-            uharfbuzz.shape(hbf, buf, features)
-            for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
-                items.append((info.codepoint, info.cluster + offset, pos))
-            offset += len(run_text)
-
-        changed = False
-        shaped = False
         new = makeShapedFragWord(w)([])
-        new0 = 0
-        nf = None
-        shapeDataAppend = [].append
-        ntext = len(text)
-        ns = ''
-        for i, (gid, cluster, pos) in enumerate(items):
-            name = hbf.glyph_to_string(gid)
-            x_advance = pos.x_advance
-            x_offset = pos.x_offset
-            y_advance = pos.y_advance
-            y_offset = pos.y_offset
-            f = F[cluster]
-            if nf is not f:
-                if nf:
-                    new.append((nf, ShapedStr(ns, shapeData=shapeDataAppend.__self__)))
-                    new0 += newlen
-                nf = f
-                ns = ''
-                newlen = 0
-                shapeDataAppend = [].append
-                _ = nf.fontName
-                if _ != ttfn:
-                    ttfn = _
-                    ttf = pdfmetrics.getFont(ttfn)
-                ttfs = nf.fontSize / 1000
-            try:
-                uchar = ttf.face.glyphToChar[gid][0]
-            except KeyError:
-                uchar = ttf.hbAddPrivate(name, gid, x_advance)
-            ucharWidth = ttf.face.charWidths[uchar]
-            uchar = chr(uchar)
-            ns += uchar
-            x_advance = ttf.pdfScale(x_advance)
-            x_offset = ttf.pdfScale(x_offset)
-            y_advance = ttf.pdfScale(y_advance)
-            y_offset = ttf.pdfScale(y_offset)
-            if x_advance:
-                newlen += x_advance * ttfs
-            shaped = shaped or (x_offset != 0 or y_offset != 0 or i >= ntext or (text[i] == uchar and x_advance != ucharWidth))
-            changed = changed or shaped or i >= ntext or text[i] != uchar or force
-            shapeDataAppend(ShapeData(cluster, x_advance, y_advance, x_offset, y_offset, ucharWidth))
-        if nf:
-            new.append((nf, ShapedStr(ns, shapeData=shapeDataAppend.__self__)))
-            new0 += newlen
-        if not changed:
-            return w
-        if not shaped:
-            if changed:
-                new = new.__class__([new[0]] + [tuple(_) for _ in new[1:]])
+        total_w = 0
+        for f, s, font in fonts:
+            if not s:
+                continue
+            if not hasattr(font, 'hbFont'):
+                # Non-TTFont (Type 1 font, e.g. Courier)
+                w_sub = pdfmetrics.stringWidth(s, f.fontName, f.fontSize)
+                total_w += w_sub
+                new.append((f, s))
             else:
-                return w
-        if specials:
-            S = []
-            for k, v in specials.items():
-                S.append(((k, k), v))
-            for _ in new:
-                S.append(((_[1].__shapeData__[0].cluster, _[1].__shapeData__[-1].cluster), _))
-            new[:] = [_[1] for _ in sorted(S)]
-        new.insert(0, new0)
+                # TTFont (e.g. MalayalamFont)
+                runs = _segment_text_into_script_runs(s)
+                if len(runs) <= 1:
+                    # Single script in this fragment: standard shape
+                    sub_w = _ORIG_SHAPE_FRAG_WORD([0, (f, s)], features=features, force=force)
+                    if isinstance(sub_w, (list, tuple)):
+                        total_w += sub_w[0]
+                        new.extend(sub_w[1:])
+                    else:
+                        total_w += pdfmetrics.stringWidth(s, f.fontName, f.fontSize)
+                        new.append((f, s))
+                else:
+                    # Mixed script within this TTFont fragment
+                    for run_text, run_script in runs:
+                        run_w, run_item = _shape_single_ttfont_run(f, run_text, run_script, features)
+                        total_w += run_w
+                        new.append(run_item)
+
+        new.insert(0, total_w)
         return new
     except Exception:
         return _ORIG_SHAPE_FRAG_WORD(w, features=features, force=force)
@@ -329,7 +378,7 @@ class NumberedCanvas(canvas.Canvas):
             self.__dict__.update(state)
             if self._pageNumber > 1:
                 # Top header for screenplay: Page number on the upper right margin
-                self.setFont(_MALAYALAM_FONT_NAME, 10)
+                self.setFont(_COURIER_FONT_REGULAR, 10)
                 self.drawRightString(8.5 * inch - 1.0 * inch, 11 * inch - 0.5 * inch, f"{self._pageNumber}.")
             canvas.Canvas.showPage(self)
         canvas.Canvas.save(self)
@@ -610,12 +659,10 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
     )
 
     story.append(Spacer(1, 2.0 * inch))
-    clean_title = effective_title.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-    story.append(Paragraph(clean_title.upper(), title_style))
+    story.append(Paragraph(format_screenplay_text(effective_title.strip().upper(), is_bold=True), title_style))
 
     story.append(Spacer(1, 0.25 * inch))
-    clean_author = effective_author.strip().replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-    story.append(Paragraph(clean_author, author_style))
+    story.append(Paragraph(format_screenplay_text(effective_author.strip(), is_bold=True), author_style))
 
     story.append(PageBreak())
 
@@ -641,11 +688,11 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
                 seq_begin_text = "Song Begins:"
                 seq_end_text = "Song Ends"
 
-            story.append(Paragraph(seq_heading_text, sequence_heading_style))
-            story.append(Paragraph(seq_begin_text, sequence_begin_style))
+            story.append(Paragraph(format_screenplay_text(seq_heading_text, is_bold=True), sequence_heading_style))
+            story.append(Paragraph(format_screenplay_text(seq_begin_text, is_bold=True), sequence_begin_style))
         else:
             heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
-            story.append(Paragraph(heading_text, scene_heading_style))
+            story.append(Paragraph(format_screenplay_text(heading_text, is_bold=True), scene_heading_style))
 
         elements = scene.elements.all().order_by('order', 'id')
         rendered_seq_end = False
@@ -654,9 +701,6 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             text = (elem.content or '').strip()
             if not text:
                 continue
-
-            # XML escape safeguard
-            clean_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
             if elem.element_type == 'scene_heading':
                 # Skip duplicate primary scene heading already rendered at the scene header
@@ -668,55 +712,53 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
                     or elem_text_upper == raw_heading_upper
                 ):
                     continue
-                story.append(Paragraph(clean_text.upper(), scene_heading_style))
+                story.append(Paragraph(format_screenplay_text(text.upper(), is_bold=True), scene_heading_style))
             elif elem.element_type == 'action':
                 raw_paras = [p.strip() for p in text.split('\n\n') if p.strip()]
                 if not raw_paras:
                     raw_paras = [text]
                 for p_text in raw_paras:
-                    clean_para = p_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-                    story.append(Paragraph(clean_para, action_style))
+                    story.append(Paragraph(format_screenplay_text(p_text, is_bold=False), action_style))
             elif elem.element_type == 'character':
-                story.append(Paragraph(clean_text.upper(), character_style))
+                story.append(Paragraph(format_screenplay_text(text.upper(), is_bold=True), character_style))
             elif elem.element_type == 'dialogue':
-                story.append(Paragraph(clean_text, dialogue_style))
+                story.append(Paragraph(format_screenplay_text(text, is_bold=False), dialogue_style))
             elif elem.element_type == 'parenthetical':
-                if not (clean_text.startswith('(') and clean_text.endswith(')')):
-                    clean_text = f"({clean_text})"
-                story.append(Paragraph(clean_text, parenthetical_style))
+                clean_paren = text
+                if not (clean_paren.startswith('(') and clean_paren.endswith(')')):
+                    clean_paren = f"({clean_paren})"
+                story.append(Paragraph(format_screenplay_text(clean_paren, is_bold=False), parenthetical_style))
             elif elem.element_type == 'transition':
-                story.append(Paragraph(clean_text.upper(), transition_style))
+                story.append(Paragraph(format_screenplay_text(text.upper(), is_bold=True), transition_style))
             elif elem.element_type == 'shot':
-                uc_text = clean_text.upper()
+                uc_text = text.upper()
                 if scene.is_sequence:
                     if uc_text in ('SONG BEGINS', 'MONTAGE BEGINS', 'SONG BEGINS:', 'MONTAGE BEGINS:'):
                         continue
                     if uc_text in ('SONG ENDS', 'MONTAGE ENDS'):
-                        story.append(Paragraph(seq_end_text, sequence_end_style))
+                        story.append(Paragraph(format_screenplay_text(seq_end_text, is_bold=True), sequence_end_style))
                         rendered_seq_end = True
                         continue
 
-                story.append(Paragraph(clean_text.upper(), shot_style))
+                story.append(Paragraph(format_screenplay_text(text.upper(), is_bold=True), shot_style))
             elif elem.element_type == 'note' and include_notes:
                 raw_paras = [p.strip() for p in text.split('\n\n') if p.strip()]
                 if not raw_paras:
                     raw_paras = [text]
                 for p_text in raw_paras:
                     p_clean = p_text if (p_text.startswith('[[') and p_text.endswith(']]')) else f"[[ {p_text} ]]"
-                    clean_para = p_clean.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-                    story.append(Paragraph(clean_para, note_style))
+                    story.append(Paragraph(format_screenplay_text(p_clean, is_bold=False), note_style))
 
         # For sequence scenes, ensure ending label is present if not already rendered
         if scene.is_sequence and not rendered_seq_end:
-            story.append(Paragraph(seq_end_text, sequence_end_style))
+            story.append(Paragraph(format_screenplay_text(seq_end_text, is_bold=True), sequence_end_style))
 
         # Scene-end transition fallback:
         # If the scene does not already end with an explicit transition element, render scene.transition fallback.
         if not scene.is_sequence and not scene.has_scene_ending_transition(elements):
             scene_trans = (scene.transition or 'CUT TO').strip()
             if scene_trans:
-                clean_trans = scene_trans.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
-                story.append(Paragraph(clean_trans.upper(), transition_style))
+                story.append(Paragraph(format_screenplay_text(scene_trans.upper(), is_bold=True), transition_style))
 
     # Build PDF with standard screenplay page numbers
     doc.build(story, canvasmaker=NumberedCanvas)
