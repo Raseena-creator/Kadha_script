@@ -641,6 +641,7 @@
     margin-right: 0.2rem;
     user-select: none;
     font-family: 'Courier Prime', 'Noto Sans Malayalam', 'Manjari', monospace;
+    text-transform: uppercase;
 }
 .scene-heading-builder {
     display: inline-flex;
@@ -679,6 +680,7 @@
     font-weight: 700;
     font-size: 14px;
     letter-spacing: 0.5px;
+    text-transform: uppercase;
     background-color: #ffffff;
     border: 1px solid #d4cec2;
     border-radius: 4px;

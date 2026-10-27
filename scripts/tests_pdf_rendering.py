@@ -406,3 +406,87 @@ class PDFRenderingTypographyAndShapingTests(TestCase):
             pil_image = bitmap.to_pil()
             self.assertGreater(pil_image.width, 100)
             self.assertGreater(pil_image.height, 100)
+
+    def test_scene_headings_uppercase_export_and_malayalam_safety(self):
+        """
+        Verify Requirement: Scene headings must display/export completely in uppercase:
+        1. Model-level properties remain unchanged (mixed-case) for backwards compatibility.
+        2. PDF export renders headings completely in uppercase (e.g. 'SCENE 1 : INT. HOUSE - DAY', 'SCENE 1.A :').
+        3. Malayalam text inside headings remains unchanged and properly formed.
+        4. Read-mode initial template rendering in editor.html renders uppercase headings.
+        5. Edit-mode CSS rules enforce uppercase presentation.
+        """
+        script = Script.objects.create(
+            user=self.user,
+            title='Uppercase Heading Verification Script',
+            language='Malayalam'
+        )
+        # Main Scene 1
+        sc1 = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. HOUSE - DAY',
+            order=0
+        )
+        # Sub-Scene 1.A
+        sc1_a = Scene.objects.create(
+            script=script,
+            parent_scene=sc1,
+            scene_number=1,
+            heading='INT. BEDROOM - NIGHT',
+            order=1
+        )
+        # Scene 2 with Malayalam in location
+        sc2 = Scene.objects.create(
+            script=script,
+            scene_number=2,
+            heading='INT. വീട് - DAY',
+            order=2
+        )
+
+        # 1. Model-level expectations remain unchanged (backwards compatibility)
+        self.assertEqual(sc1.scene_identifier, 'Scene 1')
+        self.assertEqual(sc1.full_display_heading, 'Scene 1 : INT. HOUSE - DAY')
+        self.assertEqual(sc1_a.scene_identifier, 'Scene 1.A')
+        self.assertEqual(sc1_a.full_display_heading, 'Scene 1.A : INT. BEDROOM - NIGHT')
+        self.assertEqual(sc2.scene_identifier, 'Scene 2')
+        self.assertEqual(sc2.full_display_heading, 'Scene 2 : INT. വീട് - DAY')
+
+        # 2. PDF Export contains complete uppercase scene headings
+        pdf_bytes = generate_screenplay_pdf(script)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF-'))
+
+        if HAS_PDFIUM:
+            doc = pdfium.PdfDocument(io.BytesIO(pdf_bytes))
+            all_text = ""
+            for page in doc:
+                all_text += page.get_textpage().get_text_range() + "\n"
+
+            # Must contain fully uppercase headings
+            self.assertIn('SCENE 1 : INT. HOUSE - DAY', all_text)
+            self.assertIn('SCENE 1.A : INT. BEDROOM - NIGHT', all_text)
+            self.assertIn('SCENE 2 : INT. വീട് - DAY', all_text)
+
+            # Must NOT contain lowercase/mixed-case 'Scene ' prefixes
+            self.assertNotIn('Scene 1 :', all_text)
+            self.assertNotIn('Scene 1.A :', all_text)
+            self.assertNotIn('Scene 2 :', all_text)
+
+        # 3. Read mode initial template rendering renders uppercase
+        self.client.force_login(self.user)
+        res = self.client.get(f'/scripts/{script.id}/editor/')
+        self.assertEqual(res.status_code, 200)
+        html = res.content.decode('utf-8')
+        self.assertIn('SCENE 1 : INT. HOUSE - DAY', html)
+        self.assertIn('SCENE 1.A : INT. BEDROOM - NIGHT', html)
+        self.assertIn('SCENE 2 : INT. വീട് - DAY', html)
+        self.assertNotIn('<span class="read-scene-identifier">Scene 1 :', html)
+
+        # 4. Verify CSS text-transform: uppercase in editor.css
+        from django.conf import settings
+        import os
+        css_path = os.path.join(settings.BASE_DIR, 'static', 'css', 'editor.css')
+        with open(css_path, 'r', encoding='utf-8') as f:
+            css_content = f.read()
+        self.assertIn('.script-element-block[data-type="scene_heading"] .scene-prefix-label', css_content)
+        self.assertIn('.scene-heading-builder .heading-location-input', css_content)

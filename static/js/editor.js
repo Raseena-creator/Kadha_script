@@ -376,7 +376,7 @@ class KadhaEditor {
             const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
             const fallbackIdent = (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
                 || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
-            prefix.innerText = (this.currentSceneIdentifier || fallbackIdent) + ' :';
+            prefix.innerText = ((this.currentSceneIdentifier || fallbackIdent) + ' :').toUpperCase();
             lineWrapper.appendChild(prefix);
 
             const builder = document.createElement('div');
@@ -1707,7 +1707,7 @@ class KadhaEditor {
             const currentSceneMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(this.currentSceneId));
             const fallbackIdent = (currentSceneMeta && (currentSceneMeta.scene_identifier || currentSceneMeta.nav_identifier || currentSceneMeta.display_number))
                 || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
-            prefix.innerText = (this.currentSceneIdentifier || fallbackIdent) + ' :';
+            prefix.innerText = ((this.currentSceneIdentifier || fallbackIdent) + ' :').toUpperCase();
             lineWrapper.appendChild(prefix);
 
             if (editable) {
@@ -2945,7 +2945,7 @@ class KadhaEditor {
             if (headingEl) {
                 const fullHeading = sc.full_display_heading ||
                     `${sc.scene_identifier || sc.display_number_formatted || ('Scene ' + sc.scene_number)} : ${sc.clean_heading || sc.heading || 'UNTITLED SCENE'}`;
-                headingEl.innerText = fullHeading;
+                headingEl.innerText = fullHeading.toUpperCase();
             }
 
             // Update transition if present (only if the scene does not already end with an explicit transition)
@@ -6300,13 +6300,14 @@ class KadhaEditor {
         if (headingEl) {
             const scMeta = (this.scenesTree || []).find(s => Number(s.id) === Number(sceneId));
             if (scMeta && scMeta.full_display_heading) {
-                headingEl.innerText = scMeta.full_display_heading;
+                headingEl.innerText = scMeta.full_display_heading.toUpperCase();
             } else {
                 const currentIdent = (scMeta && (scMeta.nav_identifier || scMeta.scene_identifier || scMeta.display_number || (scMeta.scene_number ? 'Scene ' + scMeta.scene_number : '')))
                     || this.currentSceneIdentifier
                     || (this.currentSceneIsSub ? 'Sub-Scene' : 'Scene');
                 const cleanHeading = (payload.heading || (scMeta && scMeta.heading) || '').replace(/^(?:Scene\s+\d+(?:\.[A-Za-z]+)?\s*[:—\-]\s*)+/i, '').trim();
-                headingEl.innerText = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
+                const displayHeading = cleanHeading ? `${currentIdent} : ${cleanHeading}` : `${currentIdent} : UNTITLED SCENE`;
+                headingEl.innerText = displayHeading.toUpperCase();
             }
         }
 

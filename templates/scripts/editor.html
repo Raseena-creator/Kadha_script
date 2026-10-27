@@ -515,7 +515,7 @@
                 {% for sc in scenes %}
                 <section class="read-mode-scene" id="read-scene-{{ sc.id }}" data-scene-id="{{ sc.id }}">
                     <div class="read-scene-heading font-screenplay">
-                        <span class="read-scene-identifier">{{ sc.full_display_heading }}</span>
+                        <span class="read-scene-identifier">{{ sc.full_display_heading|upper }}</span>
                     </div>
                     <div class="read-scene-elements">
                         {% for elem in sc.elements.all %}

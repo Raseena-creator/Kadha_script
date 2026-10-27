@@ -691,7 +691,7 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             story.append(Paragraph(format_screenplay_text(seq_heading_text, is_bold=True), sequence_heading_style))
             story.append(Paragraph(format_screenplay_text(seq_begin_text, is_bold=True), sequence_begin_style))
         else:
-            heading_text = f"{scene.scene_identifier} : {scene.clean_heading.upper()}"
+            heading_text = f"{scene.scene_identifier.upper()} : {scene.clean_heading.upper()}"
             story.append(Paragraph(format_screenplay_text(heading_text, is_bold=True), scene_heading_style))
 
         elements = scene.elements.all().order_by('order', 'id')

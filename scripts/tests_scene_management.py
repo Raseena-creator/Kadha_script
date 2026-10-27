@@ -726,7 +726,7 @@ class SceneManagementAndMobileTests(TestCase):
         import html
         editor_content = html.unescape(editor_res.content.decode('utf-8'))
         for expected in expected_headings:
-            self.assertIn(expected, editor_content)
+            self.assertIn(expected.upper(), editor_content)
 
         # Verify TXT Export
         txt_export = generate_screenplay_txt(self.script_a)
