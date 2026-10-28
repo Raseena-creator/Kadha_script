@@ -34,6 +34,12 @@ class Script(models.Model):
     script_type = models.CharField(max_length=50, choices=SCRIPT_TYPE_CHOICES, default='Short Film')
     author_name = models.CharField(max_length=150, blank=True)
     language = models.CharField(max_length=50, default='Malayalam')
+    watermark = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Custom watermark text for screenplay exports and print preview.'
+    )
     is_deleted = models.BooleanField(
         default=False,
         db_index=True,

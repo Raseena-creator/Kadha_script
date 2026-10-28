@@ -29,6 +29,8 @@ _COURIER_FONT_REGULAR = 'Courier'
 _COURIER_FONT_BOLD = 'Courier-Bold'
 _COURIER_FONT_OBLIQUE = 'Courier-Oblique'
 _COURIER_FONT_BOLDOBLIQUE = 'Courier-BoldOblique'
+_WATERMARK_FONT_REGISTERED = False
+_WATERMARK_FONT_NAME = 'Helvetica-Bold'
 _MIXED_SCRIPT_SHAPING_ENABLED = False
 _ORIG_SHAPE_FRAG_WORD = None
 
@@ -362,6 +364,40 @@ def register_malayalam_fonts():
     return _MALAYALAM_FONT_NAME, _MALAYALAM_FONT_BOLD
 
 
+def register_watermark_font():
+    """
+    Registers Calibri Bold ('Calibri-Bold') for PDF watermark rendering via ReportLab TTFont.
+    Checks project static/fonts first, then Windows system fonts (C:/Windows/Fonts/calibrib.ttf).
+    Falls back to 'Helvetica-Bold' only if Calibri Bold is unavailable.
+    Does not interfere with Malayalam screenplay font registration or shaping.
+    """
+    global _WATERMARK_FONT_REGISTERED, _WATERMARK_FONT_NAME
+    if _WATERMARK_FONT_REGISTERED:
+        return _WATERMARK_FONT_NAME
+
+    fonts_dir = Path(settings.BASE_DIR) / 'static' / 'fonts'
+    candidate_paths = [
+        fonts_dir / 'calibrib.ttf',
+        fonts_dir / 'Calibri-Bold.ttf',
+        Path('C:/Windows/Fonts/calibrib.ttf'),
+        Path('C:/Windows/Fonts/calibri.ttf'),
+    ]
+
+    for font_path in candidate_paths:
+        if font_path.exists():
+            try:
+                pdfmetrics.registerFont(TTFont('Calibri-Bold', str(font_path)))
+                _WATERMARK_FONT_NAME = 'Calibri-Bold'
+                _WATERMARK_FONT_REGISTERED = True
+                return _WATERMARK_FONT_NAME
+            except Exception:
+                continue
+
+    _WATERMARK_FONT_NAME = 'Helvetica-Bold'
+    _WATERMARK_FONT_REGISTERED = True
+    return _WATERMARK_FONT_NAME
+
+
 class NumberedCanvas(canvas.Canvas):
     """Adds screenplay standard running header and page numbers (Top right, e.g. '2.')"""
     def __init__(self, *args, **kwargs):
@@ -382,6 +418,65 @@ class NumberedCanvas(canvas.Canvas):
                 self.drawRightString(8.5 * inch - 1.0 * inch, 11 * inch - 0.5 * inch, f"{self._pageNumber}.")
             canvas.Canvas.showPage(self)
         canvas.Canvas.save(self)
+
+
+def _draw_watermark_on_canvas(canv, doc, watermark_text, font_bold=None):
+    """
+    Renders a subtle, diagonal watermark centered on the canvas behind screenplay content.
+    Uses Calibri-Bold for Latin watermarks (or MalayalamFont-Bold when Malayalam characters
+    are present), 64 pt base size (~39% larger than previous 46 pt base), -35 degree rotation,
+    and subtle light gray with low alpha transparency.
+    """
+    if not watermark_text:
+        return
+
+    canv.saveState()
+    try:
+        # 1. Font selection: use registered Malayalam font if Malayalam characters are present,
+        #    otherwise use Calibri Bold (registered via TTFont).
+        has_malayalam = any(0x0D00 <= ord(ch) <= 0x0D7F for ch in watermark_text)
+        if has_malayalam:
+            font_name = font_bold or _MALAYALAM_FONT_BOLD
+        else:
+            font_name = register_watermark_font()
+
+        # 2. Dimensions & center
+        page_width, page_height = getattr(doc, 'pagesize', letter)
+        center_x = page_width / 2.0
+        center_y = page_height / 2.0
+
+        # 3. Dynamic font size (base 64 pt, ~39% increase over previous 46 pt base,
+        #    scaled down proportionally for long watermarks so horizontal projection stays within page)
+        base_size = 64
+        max_allowed_width = page_width * 1.02
+        font_size = base_size
+        try:
+            str_width = pdfmetrics.stringWidth(watermark_text, font_name, font_size)
+            if str_width > max_allowed_width and str_width > 0:
+                scale = max_allowed_width / str_width
+                font_size = max(16, int(font_size * scale))
+        except Exception:
+            font_size = base_size
+
+        # 4. Opacity & Color: subtle light gray with low alpha (~8% effective darkness on white,
+        #    matching the dashboard live preview rgba(0, 0, 0, 0.08) -> ~#EBEBEB).
+        #    setFillAlpha must be applied after/with setFillColor because HexColor defaults to alpha=1.0.
+        watermark_color = colors.HexColor('#B8B8B8')
+        if hasattr(canv, 'setFillAlpha'):
+            canv.setFillColor(watermark_color, alpha=0.15)
+            canv.setFillAlpha(0.15)
+        else:
+            canv.setFillColor(colors.HexColor('#EBEBEB'))
+
+        # 5. Position & rotate -35 degrees
+        canv.translate(center_x, center_y)
+        canv.rotate(-35)
+        canv.setFont(font_name, font_size)
+
+        # 6. Draw centered horizontally and vertically
+        canv.drawCentredString(0, -font_size * 0.3, watermark_text)
+    finally:
+        canv.restoreState()
 
 
 def get_screenplay_pdf_styles(font_regular=None, font_bold=None):
@@ -760,8 +855,14 @@ def generate_screenplay_pdf(script, include_notes=False) -> bytes:
             if scene_trans:
                 story.append(Paragraph(format_screenplay_text(scene_trans.upper(), is_bold=True), transition_style))
 
-    # Build PDF with standard screenplay page numbers
-    doc.build(story, canvasmaker=NumberedCanvas)
+    # Build PDF with standard screenplay page numbers and optional watermark
+    watermark_text = (getattr(script, 'watermark', '') or '').strip()
+    if watermark_text:
+        clean_watermark = ' '.join(watermark_text.split())
+        watermark_cb = lambda canv, d: _draw_watermark_on_canvas(canv, d, clean_watermark, font_bold)
+        doc.build(story, canvasmaker=NumberedCanvas, onFirstPage=watermark_cb, onLaterPages=watermark_cb)
+    else:
+        doc.build(story, canvasmaker=NumberedCanvas)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes

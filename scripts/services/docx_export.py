@@ -1,8 +1,10 @@
 import io
+import html
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
+from docx.oxml import parse_xml
 
 DEFAULT_MALAYALAM_FONT = "Noto Sans Malayalam"
 
@@ -27,6 +29,78 @@ def _set_run_font(run, font_name=DEFAULT_MALAYALAM_FONT, size=None, bold=None, i
         run.font.italic = italic
     if color is not None:
         run.font.color.rgb = color
+
+
+def _apply_docx_watermark(doc, watermark_text: str):
+    """
+    Applies a standard Word VML diagonal watermark (PowerPlusWaterMarkObject)
+    to all sections in the document via the header.
+    Runs behind document text without affecting body flow, margins, or pagination.
+    """
+    if not watermark_text:
+        return
+
+    # Remove XML 1.0-invalid control characters before XML construction
+    sanitized_watermark = ''.join(
+        ch for ch in watermark_text
+        if (
+            (cp := ord(ch)) in (0x09, 0x0A, 0x0D)
+            or (0x20 <= cp <= 0xD7FF)
+            or (0xE000 <= cp <= 0xFFFD)
+            or (0x10000 <= cp <= 0x10FFFF)
+        )
+    )
+    clean_watermark = ' '.join(sanitized_watermark.split())
+    if not clean_watermark:
+        return
+
+    # Safely escape for XML attributes, including quotes and special characters
+    escaped_text = html.escape(clean_watermark, quote=True)
+
+    # Check if watermark contains Malayalam characters
+    has_malayalam = any(0x0D00 <= ord(ch) <= 0x0D7F for ch in clean_watermark)
+    font_family = f"&quot;{DEFAULT_MALAYALAM_FONT}&quot;,Arial,sans-serif" if has_malayalam else "Arial,sans-serif"
+
+    # Standard Word VML diagonal watermark shape definition
+    vml_xml = (
+        '<w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:v="urn:schemas-microsoft-com:vml" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office">'
+        '  <w:pPr>'
+        '    <w:pStyle w:val="Header"/>'
+        '  </w:pPr>'
+        '  <w:r>'
+        '    <w:rPr>'
+        '      <w:noProof/>'
+        '    </w:rPr>'
+        '    <w:pict>'
+        '      <v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e">'
+        '        <v:path textpathok="t" o:connecttype="rect"/>'
+        '        <v:textpath on="t" fitshape="t"/>'
+        '        <o:lock v:ext="edit" text="t" shapetype="t"/>'
+        '      </v:shapetype>'
+        '      <v:shape id="PowerPlusWaterMarkObject" o:spid="_x0000_s1025" type="#_x0000_t136" '
+        '        style="position:absolute;left:0;text-align:left;margin-left:0;margin-top:0;width:520pt;height:120pt;rotation:-35;z-index:-251658752;mso-position-horizontal:center;mso-position-horizontal-relative:page;mso-position-vertical:center;mso-position-vertical-relative:page" '
+        '        fillcolor="#d0d0d0" stroked="f">'
+        '        <v:fill opacity="0.15"/>'
+        f'        <v:textpath style="font-family:{font_family};font-size:1pt" string="{escaped_text}"/>'
+        '      </v:shape>'
+        '    </w:pict>'
+        '  </w:r>'
+        '</w:p>'
+    )
+
+    for section in doc.sections:
+        headers = [section.header]
+        if getattr(section, 'different_first_page_header_footer', False):
+            headers.append(section.first_page_header)
+
+        for hdr in headers:
+            new_p = parse_xml(vml_xml)
+            if len(hdr.paragraphs) == 1 and not hdr.paragraphs[0].text.strip():
+                hdr.paragraphs[0]._p.getparent().replace(hdr.paragraphs[0]._p, new_p)
+            else:
+                hdr._element.append(new_p)
 
 
 def generate_screenplay_docx(script, include_notes=False) -> bytes:
@@ -260,6 +334,11 @@ def generate_screenplay_docx(script, include_notes=False) -> bytes:
                 elem_p.paragraph_format.space_after = Pt(12)
                 run = elem_p.add_run(scene_trans.upper())
                 _set_run_font(run, size=Pt(11), bold=True)
+
+    # Apply custom watermark if configured on script
+    watermark_text = (getattr(script, 'watermark', '') or '').strip()
+    if watermark_text:
+        _apply_docx_watermark(doc, watermark_text)
 
     buffer = io.BytesIO()
     doc.save(buffer)

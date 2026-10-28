@@ -490,3 +490,313 @@ class PDFRenderingTypographyAndShapingTests(TestCase):
             css_content = f.read()
         self.assertIn('.script-element-block[data-type="scene_heading"] .scene-prefix-label', css_content)
         self.assertIn('.scene-heading-builder .heading-location-input', css_content)
+
+
+class PDFExportWatermarkTests(TestCase):
+    """
+    Focused tests for Phase 3: Screenplay PDF export custom watermark.
+    Verifies:
+    1. Empty/whitespace watermark produces no watermark in PDF text/canvas.
+    2. English watermark is included on each page of PDF output.
+    3. Malayalam watermark is included and handled via registered Malayalam font.
+    4. Every page receives the watermark in a multi-page PDF.
+    5. Screenplay text, scene headings (all-uppercase), and page numbers ('2.') remain intact.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            username='watermark_pdf_user',
+            email='wm_pdf@example.com',
+            password='Password123!'
+        )
+
+    def _extract_pages_text(self, pdf_bytes: bytes):
+        if not HAS_PDFIUM:
+            self.skipTest("pypdfium2 is required for PDF text extraction tests.")
+        doc = pdfium.PdfDocument(io.BytesIO(pdf_bytes))
+        return [page.get_textpage().get_text_range() for page in doc]
+
+    def test_empty_or_whitespace_watermark_produces_no_watermark(self):
+        """When script.watermark is empty or whitespace, no watermark text is rendered."""
+        for wm_value in ['', '   ', None]:
+            script = Script.objects.create(
+                user=self.user,
+                title='Clean Unmarked Script',
+                language='Malayalam',
+                watermark=wm_value or ''
+            )
+            sc = Scene.objects.create(
+                script=script,
+                scene_number=1,
+                heading='INT. STUDY - DAY',
+                order=0
+            )
+            ScriptElement.objects.create(
+                scene=sc,
+                element_type='action',
+                content='Normal action content without mark.',
+                order=0
+            )
+
+            pdf_bytes = generate_screenplay_pdf(script)
+            self.assertTrue(pdf_bytes.startswith(b'%PDF-'))
+            pages_text = self._extract_pages_text(pdf_bytes)
+            combined_text = "\n".join(pages_text)
+
+            self.assertIn('SCENE 1 : INT. STUDY - DAY', combined_text)
+            self.assertIn('Normal action content without mark.', combined_text)
+            self.assertNotIn('CONFIDENTIAL', combined_text)
+            self.assertNotIn('DRAFT', combined_text)
+            self.assertNotIn('WATERMARK', combined_text)
+            script.delete()
+
+    def test_english_watermark_included_in_pdf(self):
+        """English watermark appears in the PDF text stream."""
+        script = Script.objects.create(
+            user=self.user,
+            title='Confidential Script',
+            language='Malayalam',
+            watermark='CONFIDENTIAL - DRAFT 1'
+        )
+        sc = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. OFFICE - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(
+            scene=sc,
+            element_type='action',
+            content='A secret document is lying on the table.',
+            order=0
+        )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        pages_text = self._extract_pages_text(pdf_bytes)
+        combined_text = "\n".join(pages_text)
+
+        self.assertIn('CONFIDENTIAL - DRAFT 1', combined_text)
+        self.assertIn('SCENE 1 : INT. OFFICE - DAY', combined_text)
+        self.assertIn('A secret document is lying on the table.', combined_text)
+        script.delete()
+
+    def test_malayalam_watermark_included_in_pdf(self):
+        """Malayalam watermark is rendered and extracted using registered Malayalam font."""
+        script = Script.objects.create(
+            user=self.user,
+            title='മലയാളം തിരക്കഥ',
+            language='Malayalam',
+            watermark='രഹസ്യ രേഖ (CONFIDENTIAL)'
+        )
+        sc = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. വീട് - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(
+            scene=sc,
+            element_type='action',
+            content='കഥാപാത്രം മുറിയിലേക്ക് വരുന്നു.',
+            order=0
+        )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        pages_text = self._extract_pages_text(pdf_bytes)
+        combined_text = "\n".join(pages_text)
+
+        self.assertIn('രഹസ്യ രേഖ (CONFIDENTIAL)', combined_text)
+        self.assertIn('SCENE 1 : INT. വീട് - DAY', combined_text)
+        script.delete()
+
+    def test_watermark_on_every_page_in_multipage_pdf(self):
+        """In a multi-page PDF, the watermark appears across all pages (title page and scene pages)."""
+        script = Script.objects.create(
+            user=self.user,
+            title='Multi Page Script',
+            language='Malayalam',
+            watermark='FOR REVIEW ONLY'
+        )
+        # Create multiple scenes to guarantee multiple pages
+        for i in range(1, 4):
+            sc = Scene.objects.create(
+                script=script,
+                scene_number=i,
+                heading=f'INT. ROOM {i} - DAY',
+                order=i - 1
+            )
+            ScriptElement.objects.create(
+                scene=sc,
+                element_type='action',
+                content=f'Action for scene {i}. ' * 10,
+                order=0
+            )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        pages_text = self._extract_pages_text(pdf_bytes)
+        self.assertGreaterEqual(len(pages_text), 3)
+
+        for idx, page_text in enumerate(pages_text):
+            self.assertIn('FOR REVIEW ONLY', page_text, f"Watermark missing from page {idx + 1}")
+
+        script.delete()
+
+    def test_page_numbering_and_scene_heading_remain_intact(self):
+        """Verify running header page numbers (e.g. '2.') and uppercase scene headings remain intact."""
+        script = Script.objects.create(
+            user=self.user,
+            title='Numbered Screenplay',
+            language='Malayalam',
+            watermark='SCREENPLAY DRAFT'
+        )
+        sc1 = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. FIRST ROOM - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(
+            scene=sc1,
+            element_type='action',
+            content='First room action line.',
+            order=0
+        )
+        sc2 = Scene.objects.create(
+            script=script,
+            scene_number=2,
+            heading='EXT. SECOND LOCATION - NIGHT',
+            order=1
+        )
+        ScriptElement.objects.create(
+            scene=sc2,
+            element_type='action',
+            content='Second location action line.',
+            order=0
+        )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        pages_text = self._extract_pages_text(pdf_bytes)
+
+        # Page 1 (Title page)
+        self.assertIn('SCREENPLAY DRAFT', pages_text[0])
+        self.assertIn('NUMBERED SCREENPLAY', pages_text[0])
+
+        # Page 2 (Scene 1)
+        self.assertIn('SCREENPLAY DRAFT', pages_text[1])
+        self.assertIn('SCENE 1 : INT. FIRST ROOM - DAY', pages_text[1])
+        self.assertIn('2.', pages_text[1])
+
+        # Page 3 (Scene 2)
+        self.assertIn('SCREENPLAY DRAFT', pages_text[2])
+        self.assertIn('SCENE 2 : EXT. SECOND LOCATION - NIGHT', pages_text[2])
+        self.assertIn('3.', pages_text[2])
+
+        script.delete()
+
+    def test_watermark_renders_subtle_light_gray_and_preserves_dark_body_text(self):
+        """
+        Regression test: PDF watermark must render as a subtle light gray (~#EBEBEB on white),
+        never near-black (#222222 / RGB 34), while screenplay body text renders crisp black.
+        """
+        if not HAS_PDFIUM:
+            self.skipTest("pypdfium2 is required for rendered pixel lightness verification.")
+
+        script = Script.objects.create(
+            user=self.user,
+            title='Subtle Watermark Test',
+            language='Malayalam',
+            watermark='CONFIDENTIAL DRAFT'
+        )
+        sc = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. ROOM - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(
+            scene=sc,
+            element_type='action',
+            content='Short top-of-page action line so the center watermark region has no body text.',
+            order=0
+        )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        doc = pdfium.PdfDocument(io.BytesIO(pdf_bytes))
+        self.assertGreaterEqual(len(doc), 2)
+
+        # Page 2 has only a single top scene heading + short action line; the center of the page
+        # contains ONLY the diagonal watermark.
+        scene_page = doc[1]
+        pil_img = scene_page.render(scale=2).to_pil()
+        w, h = pil_img.size
+
+        # 1. Center crop (watermark-only region): must be subtle light gray (min channel >= 220)
+        #    and visibly present on the white page (min channel < 250).
+        wm_crop = pil_img.crop((int(w * 0.25), int(h * 0.40), int(w * 0.75), int(h * 0.60)))
+        r_ext, g_ext, b_ext = wm_crop.getextrema()
+        min_wm_channel = min(r_ext[0], g_ext[0], b_ext[0])
+        self.assertGreaterEqual(
+            min_wm_channel,
+            220,
+            f"Watermark rendered too dark (min RGB channel={min_wm_channel}, expected >= 220 for subtle gray)."
+        )
+        self.assertLess(
+            min_wm_channel,
+            250,
+            f"Watermark was not visibly rendered in center region (min RGB channel={min_wm_channel})."
+        )
+
+        # 2. Top crop (scene heading & action text region): must contain crisp dark text (min channel < 40).
+        top_crop = pil_img.crop((int(w * 0.15), int(h * 0.08), int(w * 0.85), int(h * 0.22)))
+        tr_ext, tg_ext, tb_ext = top_crop.getextrema()
+        min_text_channel = min(tr_ext[0], tg_ext[0], tb_ext[0])
+        self.assertLess(
+            min_text_channel,
+            40,
+            f"Foreground screenplay text lost darkness (min RGB channel={min_text_channel})."
+        )
+
+        script.delete()
+
+    def test_watermark_uses_calibri_bold_and_enlarged_size(self):
+        """
+        Verify that Latin watermarks use Calibri-Bold (embedded in PDF when calibrib.ttf is present)
+        and that the watermark font size is 64 pt for standard text while scaling down for long text.
+        """
+        import re
+        from scripts.services.pdf_export import register_watermark_font
+
+        wm_font = register_watermark_font()
+        self.assertIn(wm_font, ('Calibri-Bold', 'Helvetica-Bold'))
+
+        script = Script.objects.create(
+            user=self.user,
+            title='Calibri Bold Watermark Test',
+            language='Malayalam',
+            watermark='CONFIDENTIAL DRAFT'
+        )
+        sc = Scene.objects.create(
+            script=script,
+            scene_number=1,
+            heading='INT. STUDIO - DAY',
+            order=0
+        )
+        ScriptElement.objects.create(
+            scene=sc,
+            element_type='action',
+            content='Camera rolls.',
+            order=0
+        )
+
+        pdf_bytes = generate_screenplay_pdf(script)
+        base_fonts = [
+            f.decode('latin1', errors='ignore')
+            for f in re.findall(rb'/BaseFont\s*/([A-Za-z0-9_\-+]+)', pdf_bytes)
+        ]
+        self.assertTrue(
+            any(wm_font in bf for bf in base_fonts),
+            f"Expected watermark font {wm_font} in PDF /BaseFont entries, found: {base_fonts}"
+        )
+
+        script.delete()

@@ -384,6 +384,50 @@ def script_rename_view(request, script_id):
 
 
 @login_required
+def script_watermark_view(request, script_id):
+    """
+    Set, update, or clear the custom watermark text for a screenplay.
+    Accepts POST requests only.
+    """
+    if request.method != 'POST':
+        return HttpResponseNotAllowed(['POST'])
+
+    script = get_user_script(request.user, script_id)
+
+    raw_watermark = ''
+    if request.content_type == 'application/json':
+        try:
+            data = json.loads(request.body)
+            raw_watermark = data.get('watermark')
+        except Exception:
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON payload.'}, status=400)
+    else:
+        raw_watermark = request.POST.get('watermark')
+
+    if raw_watermark is None:
+        clean_watermark = ''
+    elif not isinstance(raw_watermark, str):
+        clean_watermark = str(raw_watermark).strip()
+    else:
+        clean_watermark = raw_watermark.strip()
+
+    if len(clean_watermark) > 255:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Watermark text cannot exceed 255 characters.'
+        }, status=400)
+
+    script.watermark = clean_watermark
+    script.save(update_fields=['watermark', 'updated_at'])
+
+    return JsonResponse({
+        'status': 'ok',
+        'watermark': script.watermark,
+        'script_id': script.id
+    })
+
+
+@login_required
 def script_editor_view(request, script_id):
     """The dedicated writing platform for screenwriters."""
     script = get_user_script(request.user, script_id)
