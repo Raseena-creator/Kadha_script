@@ -240,13 +240,17 @@ class SixRequirementsRegressionTests(TestCase):
             self.assertFalse(default_token_generator.check_token(self.user, valid_token))
 
     def test_password_reset_safe_error_handling(self):
-        """When mail sending raises an exception, view logs safely and does not crash."""
+        """When mail sending raises an exception, view logs safely, prevents enumeration, and does not crash."""
         with patch('django.contrib.auth.forms.PasswordResetForm.save', side_effect=RuntimeError("SMTP Connection Lost")):
-            response = self.client.post(reverse('password_reset'), {
-                'email': 'existing@kadhascript.com'
-            })
-            # Should still redirect to password_reset_done rather than crashing with 500
+            with self.assertLogs('accounts.views', level='ERROR') as cm:
+                response = self.client.post(reverse('password_reset'), {
+                    'email': 'existing@kadhascript.com'
+                }, follow=True)
+            # Should redirect to password_reset_done to prevent account enumeration without crashing or leaking errors
             self.assertRedirects(response, reverse('password_reset_done'))
+            self.assertNotContains(response, 'SMTP Connection Lost')
+            self.assertNotContains(response, 'RuntimeError')
+            self.assertIn('RuntimeError', "\n".join(cm.output))
 
     # =========================================================================
     # REQUIREMENT 5: Backup Feature Cleanup Verification

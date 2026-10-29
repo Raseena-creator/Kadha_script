@@ -90,14 +90,31 @@ def change_password_view(request):
     return render(request, 'accounts/change_password.html', {'form': form})
 
 import logging
+import smtplib
+from django.conf import settings
 from django.contrib.auth import views as auth_views
 
 logger = logging.getLogger(__name__)
 
 class CustomPasswordResetView(auth_views.PasswordResetView):
+    EMAIL_DELIVERY_EXCEPTIONS = (
+        smtplib.SMTPException,
+        OSError,
+        ValueError,
+        RuntimeError,
+    )
+
     def form_valid(self, form):
         try:
             return super().form_valid(form)
-        except Exception as e:
-            logger.error("Failed to send password reset email: %s", type(e).__name__)
+        except self.EMAIL_DELIVERY_EXCEPTIONS as e:
+            logger.error(
+                "Failed to send password reset email (error_type=%s, backend=%s, host=%s, port=%s, tls=%s, ssl=%s)",
+                type(e).__name__,
+                getattr(settings, 'EMAIL_BACKEND', ''),
+                getattr(settings, 'EMAIL_HOST', ''),
+                getattr(settings, 'EMAIL_PORT', ''),
+                getattr(settings, 'EMAIL_USE_TLS', ''),
+                getattr(settings, 'EMAIL_USE_SSL', ''),
+            )
             return redirect(self.get_success_url())
