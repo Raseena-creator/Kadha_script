@@ -5451,32 +5451,104 @@ class KadhaEditor {
 
         const btnSequenceDropdown = document.getElementById('btnSequenceDropdown');
         if (btnSequenceDropdown) {
-            if (window.bootstrap && window.bootstrap.Dropdown) {
-                window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown, {
-                    popperConfig: {
-                        strategy: 'fixed',
-                        modifiers: [
-                            {
-                                name: 'preventOverflow',
-                                options: {
-                                    boundary: 'viewport',
-                                    padding: 8
+            const toolbarLeft = document.querySelector('.editor-scene-toolbar-left');
+
+            const positionSequenceDropdownMenu = () => {
+                const container = document.getElementById('sequenceDropdownContainer');
+                const menu = container ? container.querySelector('.dropdown-menu') : null;
+                if (!menu || !menu.classList.contains('show')) return;
+
+                const btnRect = btnSequenceDropdown.getBoundingClientRect();
+                const layoutVw = document.documentElement.clientWidth || window.innerWidth || 390;
+                const vw = (window.visualViewport && window.visualViewport.width)
+                    ? Math.min(layoutVw, window.visualViewport.width)
+                    : layoutVw;
+                const layoutVh = document.documentElement.clientHeight || window.innerHeight || 844;
+                const vh = (window.visualViewport && window.visualViewport.height)
+                    ? Math.min(layoutVh, window.visualViewport.height)
+                    : layoutVh;
+                const padding = 8;
+
+                menu.style.setProperty('position', 'fixed', 'important');
+                menu.style.setProperty('inset', 'auto', 'important');
+                menu.style.setProperty('right', 'auto', 'important');
+                menu.style.setProperty('bottom', 'auto', 'important');
+                menu.style.setProperty('margin', '0px', 'important');
+                menu.style.setProperty('transform', 'none', 'important');
+
+                const menuRect = menu.getBoundingClientRect();
+                const menuWidth = menuRect.width || menu.offsetWidth || 200;
+                const menuHeight = menuRect.height || menu.offsetHeight || 168;
+
+                const isEndAligned = menu.classList.contains('dropdown-menu-end');
+                let left = isEndAligned ? (btnRect.right - menuWidth) : btnRect.left;
+                const maxLeft = Math.max(padding, vw - menuWidth - padding);
+                left = Math.min(Math.max(padding, left), maxLeft);
+
+                let top = btnRect.bottom + 2;
+                if (top + menuHeight > vh - padding && btnRect.top - menuHeight - 2 >= padding) {
+                    top = btnRect.top - menuHeight - 2;
+                }
+
+                menu.style.setProperty('left', `${Math.round(left)}px`, 'important');
+                menu.style.setProperty('top', `${Math.round(top)}px`, 'important');
+            };
+
+            const getSequenceDropdownInstance = () => {
+                if (!window.bootstrap || !window.bootstrap.Dropdown) return null;
+                return window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown, {
+                    popperConfig: (defaultBsPopperConfig) => {
+                        const baseModifiers = (defaultBsPopperConfig && Array.isArray(defaultBsPopperConfig.modifiers))
+                            ? defaultBsPopperConfig.modifiers.filter(
+                                m => m.name !== 'preventOverflow' && m.name !== 'computeStyles' && m.name !== 'sequenceViewportPosition'
+                            )
+                            : [];
+                        return {
+                            ...(defaultBsPopperConfig || {}),
+                            strategy: 'fixed',
+                            modifiers: [
+                                ...baseModifiers,
+                                {
+                                    name: 'computeStyles',
+                                    options: {
+                                        gpuAcceleration: false,
+                                        adaptive: false
+                                    }
+                                },
+                                {
+                                    name: 'preventOverflow',
+                                    options: {
+                                        boundary: 'viewport',
+                                        padding: 8
+                                    }
+                                },
+                                {
+                                    name: 'sequenceViewportPosition',
+                                    enabled: true,
+                                    phase: 'afterWrite',
+                                    fn: () => {
+                                        positionSequenceDropdownMenu();
+                                    }
                                 }
-                            }
-                        ]
+                            ]
+                        };
                     }
                 });
-            }
+            };
+
+            getSequenceDropdownInstance();
 
             if (btnSequenceDropdown.dataset.boundSequenceEvents !== 'true') {
                 btnSequenceDropdown.dataset.boundSequenceEvents = 'true';
 
+                const TAP_MOVE_THRESHOLD = 10;
                 let suppressNextClick = false;
                 let suppressionTimer = null;
                 let touchActive = false;
                 let touchIdentifier = null;
                 let touchStartX = 0;
                 let touchStartY = 0;
+                let touchStartScrollLeft = 0;
                 let hasMoved = false;
 
                 const resetTouchState = () => {
@@ -5484,6 +5556,7 @@ class KadhaEditor {
                     touchIdentifier = null;
                     touchStartX = 0;
                     touchStartY = 0;
+                    touchStartScrollLeft = 0;
                     hasMoved = false;
                 };
 
@@ -5497,19 +5570,28 @@ class KadhaEditor {
                 };
 
                 const onCaptureClick = (e) => {
-                    const isTarget = Boolean(
-                        suppressNextClick &&
-                        e.target &&
-                        typeof e.target.closest === 'function' &&
-                        e.target.closest('#btnSequenceDropdown')
-                    );
+                    if (!suppressNextClick) return;
+                    const targetEl = e.target instanceof Element
+                        ? e.target
+                        : (e.target && e.target.parentElement ? e.target.parentElement : null);
 
-                    if (isTarget) {
+                    // Allow genuine clicks on dropdown menu options
+                    if (targetEl && targetEl.closest('#sequenceDropdownContainer .dropdown-item')) {
+                        cleanupSuppression();
+                        return;
+                    }
+
+                    // Suppress only the synthetic click aimed at #btnSequenceDropdown following touchend
+                    if (targetEl && targetEl.closest('#btnSequenceDropdown')) {
                         cleanupSuppression();
                         e.preventDefault();
                         e.stopPropagation();
                         e.stopImmediatePropagation();
+                        return;
                     }
+
+                    // Clicks outside or elsewhere should not be suppressed
+                    cleanupSuppression();
                 };
 
                 const armSuppression = () => {
@@ -5529,6 +5611,7 @@ class KadhaEditor {
                     touchIdentifier = touch.identifier;
                     touchStartX = touch.clientX;
                     touchStartY = touch.clientY;
+                    touchStartScrollLeft = toolbarLeft ? toolbarLeft.scrollLeft : 0;
                     hasMoved = false;
                 }, { passive: true });
 
@@ -5541,7 +5624,7 @@ class KadhaEditor {
                     }
                     const deltaX = Math.abs(touch.clientX - touchStartX);
                     const deltaY = Math.abs(touch.clientY - touchStartY);
-                    if (deltaX > 8 || deltaY > 8) {
+                    if (deltaX > TAP_MOVE_THRESHOLD || deltaY > TAP_MOVE_THRESHOLD) {
                         hasMoved = true;
                         touchActive = false;
                     }
@@ -5563,10 +5646,11 @@ class KadhaEditor {
                     }
                     const deltaX = Math.abs(touch.clientX - touchStartX);
                     const deltaY = Math.abs(touch.clientY - touchStartY);
+                    const scrollDelta = toolbarLeft ? Math.abs(toolbarLeft.scrollLeft - touchStartScrollLeft) : 0;
                     resetTouchState();
 
-                    // If moved more than 8px, it is a horizontal toolbar scroll, not a tap
-                    if (deltaX > 8 || deltaY > 8) return;
+                    // If moved more than threshold, it is a horizontal toolbar scroll, not a tap
+                    if (deltaX > TAP_MOVE_THRESHOLD || deltaY > TAP_MOVE_THRESHOLD || scrollDelta > TAP_MOVE_THRESHOLD) return;
 
                     if (e.cancelable) {
                         e.preventDefault();
@@ -5575,11 +5659,14 @@ class KadhaEditor {
                     // Transient, single-use suppression strictly for synthetic click following this touch
                     armSuppression();
 
-                    if (window.bootstrap && window.bootstrap.Dropdown) {
-                        const inst = window.bootstrap.Dropdown.getOrCreateInstance(btnSequenceDropdown);
-                        if (inst) {
-                            inst.toggle();
+                    const savedScrollLeft = toolbarLeft ? toolbarLeft.scrollLeft : null;
+                    const inst = getSequenceDropdownInstance();
+                    if (inst) {
+                        inst.toggle();
+                        if (toolbarLeft && savedScrollLeft !== null && Math.abs(toolbarLeft.scrollLeft - savedScrollLeft) > 1) {
+                            toolbarLeft.scrollLeft = savedScrollLeft;
                         }
+                        positionSequenceDropdownMenu();
                     }
                 });
 
@@ -5587,6 +5674,17 @@ class KadhaEditor {
                 const removeDropdownOpen = () => {
                     if (pinnedToolbars) {
                         pinnedToolbars.classList.remove('has-dropdown-open');
+                    }
+                    const menu = document.querySelector('#sequenceDropdownContainer .dropdown-menu');
+                    if (menu) {
+                        menu.style.removeProperty('position');
+                        menu.style.removeProperty('inset');
+                        menu.style.removeProperty('left');
+                        menu.style.removeProperty('top');
+                        menu.style.removeProperty('right');
+                        menu.style.removeProperty('bottom');
+                        menu.style.removeProperty('margin');
+                        menu.style.removeProperty('transform');
                     }
                 };
                 btnSequenceDropdown.addEventListener('show.bs.dropdown', () => {
@@ -5599,29 +5697,36 @@ class KadhaEditor {
                         console.error("Error updating sequence toolbar state:", err);
                     }
                 });
+                btnSequenceDropdown.addEventListener('shown.bs.dropdown', () => {
+                    positionSequenceDropdownMenu();
+                    requestAnimationFrame(() => {
+                        positionSequenceDropdownMenu();
+                    });
+                });
                 btnSequenceDropdown.addEventListener('hide.bs.dropdown', removeDropdownOpen);
                 btnSequenceDropdown.addEventListener('hidden.bs.dropdown', removeDropdownOpen);
 
+                const updateOpenSequenceDropdownPosition = () => {
+                    positionSequenceDropdownMenu();
+                    const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
+                    if (inst && inst._popper) {
+                        inst._popper.update();
+                    }
+                };
+
+                window.addEventListener('resize', updateOpenSequenceDropdownPosition, { passive: true });
                 if (window.visualViewport) {
-                    window.visualViewport.addEventListener('resize', () => {
-                        const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
-                        if (inst && inst._popper) {
-                            inst._popper.update();
-                        }
-                    });
+                    window.visualViewport.addEventListener('resize', updateOpenSequenceDropdownPosition, { passive: true });
+                    window.visualViewport.addEventListener('scroll', updateOpenSequenceDropdownPosition, { passive: true });
                 }
 
-                const toolbarLeft = document.querySelector('.editor-scene-toolbar-left');
                 if (toolbarLeft) {
                     toolbarLeft.addEventListener('scroll', () => {
-                        if (touchActive) {
+                        if (touchActive && Math.abs(toolbarLeft.scrollLeft - touchStartScrollLeft) > TAP_MOVE_THRESHOLD) {
                             hasMoved = true;
                             touchActive = false;
                         }
-                        const inst = window.bootstrap && window.bootstrap.Dropdown ? window.bootstrap.Dropdown.getInstance(btnSequenceDropdown) : null;
-                        if (inst && inst._popper) {
-                            inst._popper.update();
-                        }
+                        updateOpenSequenceDropdownPosition();
                     }, { passive: true });
                 }
             }

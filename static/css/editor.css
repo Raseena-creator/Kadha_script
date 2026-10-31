@@ -324,7 +324,7 @@
 .editor-top-toolbars-pinned.has-dropdown-open .editor-scene-toolbar-left {
     overflow-x: auto !important;
     overflow-y: visible !important;
-    -webkit-overflow-scrolling: touch !important;
+    -webkit-overflow-scrolling: auto !important;
 }
 #sequenceDropdownContainer {
     position: relative;
